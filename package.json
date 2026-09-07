@@ -1,0 +1,26 @@
+{
+  "name": "zillion",
+  "version": "1.0.0",
+  "description": "Zillion is a private chat powered by an advanced mix of Nostr and e2e encryption.",
+  "keywords": [
+    "zillion",
+    "chat",
+    "nostr",
+    "e2e"
+  ],
+  "homepage": "https://github.com/44Billion/zillion#readme",
+  "bugs": {
+    "url": "https://github.com/44Billion/zillion/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/44Billion/zillion.git"
+  },
+  "license": "MIT",
+  "author": "arthurfranca",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
