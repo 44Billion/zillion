@@ -19,8 +19,48 @@
   "license": "MIT",
   "author": "arthurfranca",
   "type": "module",
-  "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "NODE_ENV=development node bin/build.js",
+    "build": "NODE_ENV=production node bin/build.js",
+    "upload": "npm run build && npx --yes nappup@latest ./dist/zillion/",
+    "serve": "python3 server.py",
+    "test": "node --test 'tests/**/*.test.js'",
+    "test:only": "node --test --test-only 'tests/**/*.test.js'",
+    "lint": "eslint ."
+  },
+  "imports": {
+    "#f": "thenameisf",
+    "#f/*": "thenameisf/*",
+    "#bin/*": "./bin/*",
+    "#lib/*": "./lib/*",
+    "#*": [
+      "./src/*"
+    ],
+    "#assets/*": "./src/assets/*",
+    "#config/*": "./src/config/*",
+    "#helpers/*": "./src/helpers/*",
+    "#services/*": "./src/services/*",
+    "#hooks/*": "./src/components/hooks/*",
+    "#shared/*": "./src/components/shared/*",
+    "#views/*": "./src/components/views/*"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@dicebear/core": "^10.7.0",
+    "@dicebear/styles": "^10.6.0",
+    "libp2r2p": "^0.10.11",
+    "thenameisf": "^1.2.7"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.1",
+    "eslint": "^9.22.0",
+    "eslint-plugin-html": "^8.1.2",
+    "fake-indexeddb": "^6.2.5",
+    "globals": "^15.12.0",
+    "jsonc-parser": "^3.3.1",
+    "nappup": "^2.3.9",
+    "neostandard": "^0.12.1"
   }
 }
