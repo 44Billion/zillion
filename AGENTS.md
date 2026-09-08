@@ -1,8 +1,8 @@
 # Zillion
 
 A Nostr client for private chat inspired by WhatsApp and Signal. The project
-is in its initial phase: a placeholder screen, avatar/cache foundations, and
-build/publishing tooling exist. Do not describe planned features as already implemented.
+is in its initial phase: a fixture-backed home layout, avatar/cache foundations,
+and build/publishing tooling exist. Do not describe planned features as already implemented.
 
 ## Living documentation
 
@@ -156,6 +156,26 @@ build/publishing tooling exist. Do not describe planned features as already impl
   reloads, and browser Back/Forward; serve the app shell for SPA route URLs.
 - Scope component style selectors to the host or component root; account for
   accessibility, keyboard use, and small screens.
+
+## Home layout preview
+
+- Home currently renders fixed JSON from `src/components/views/home/fixtures/`.
+  This visual preview deliberately ships sample data and local portraits. It is
+  separate from browser-test fixtures, which remain excluded from publication.
+- Do not fetch real identity, contacts, or messages for this preview. `a-avatar`
+  receives provided data-URL profiles without public keys, so no Nostr lookup is
+  triggered. Search, compose, profile, contact, More, and conversation controls
+  are intentionally inert until interaction work is requested.
+- Keep the main column at a maximum of 718px, centered with vertical borders on
+  wider screens. Use the same mobile composition at every width. The contact
+  strip fits whole items while keeping 44px portraits and a persistent More cell.
+- The upper-right profile portrait matches the 26px action icons; the upper-left
+  42px Z monogram is a temporary logo placeholder. Inbox rows are DMs only.
+- Authored UI colors belong to `src/assets/styles/theme.js` as light/dark pairs,
+  consumed as CSS variables. Follow the system color scheme, preserve portrait
+  colors, and use `:active` plus `:focus-visible` instead of hover-specific styles.
+- Preview labels/messages are fixed English fixtures. Runtime locale, identity,
+  and router integration remain separate implementation work; keep app.js lean.
 
 ## Structure and imports
 

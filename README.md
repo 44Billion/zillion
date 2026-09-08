@@ -6,8 +6,8 @@ which combines private messages (`private-message`) with transport over private
 channels (`private-channel`). The entire front-end uses **thenameisf**.
 
 The project is just getting started: this repository contains documentation,
-tooling, a placeholder screen, and reusable avatar/cache foundations. Conversations, identity, and messaging
-integration have yet to be implemented.
+tooling, a home preview with fixed sample DMs, and reusable avatar/cache foundations.
+Real conversations, identity, and messaging integration have yet to be implemented.
 
 Zillion will run as a SPA inside the **44billion launcher**, using its
 [committed injected API contract](https://github.com/44Billion/44billion/blob/main/APP_API.md).
@@ -24,6 +24,14 @@ for disposable session data. Cached content renders before remote refreshes;
 uncached avatars use a generated fallback. HTTPS images need a successful
 CORS download to be reliably available offline. Message attachment rendering
 and conversation persistence are still planned.
+
+## Home preview
+
+The home follows one mobile layout, capped at 718px and centered on wider screens.
+It includes a temporary Z logo, top-right profile portrait, responsive pinned/recent
+contacts, and a DM list with unread counters. Light and dark themes follow the
+system; backgrounds are off-white and graphite. Preview content is fixed English
+JSON with local portraits, and every control is intentionally inert.
 
 ## Development
 
@@ -79,8 +87,9 @@ are saved under `tmp/browser-failures/`.
 
 A **draft version update clears app data before reloading**. An ordinary document
 reload does not. The workflow preserves that launcher behavior. Browser fixtures
-are excluded from published builds; the avatar is still not mounted in the app's
-placeholder screen. `serve` provides no injected launcher APIs.
+are excluded from published builds. The home preview's fixed JSON and bundled
+portraits are intentionally included for visual review; no controls perform
+actions and no real identity, contacts, or messages are read. `serve` provides no injected launcher APIs.
 
 ## Publishing
 

@@ -63,7 +63,7 @@
   "dependencies": {
     "@dicebear/core": "^10.7.0",
     "@dicebear/styles": "^10.6.0",
-    "libp2r2p": "^0.10.11",
+    "libp2r2p": "^0.10.12",
     "thenameisf": "^1.2.7"
   },
   "devDependencies": {
@@ -73,7 +73,7 @@
     "fake-indexeddb": "^6.2.5",
     "globals": "^15.12.0",
     "jsonc-parser": "^3.3.1",
-    "nappup": "^2.3.9",
+    "nappup": "^2.3.10",
     "neostandard": "^0.12.1"
   }
 }

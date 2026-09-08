@@ -1,0 +1,12 @@
+* { box-sizing: border-box; }
+html {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 16px;
+  -webkit-text-size-adjust: 100%;
+  background: var(--z-canvas);
+  color: var(--z-text);
+}
+body { margin: 0; }
+button { font: inherit; color: inherit; -webkit-tap-highlight-color: transparent; }
+button:focus-visible { outline: 2px solid var(--z-accent-text); outline-offset: 3px; }
+img { display: block; }

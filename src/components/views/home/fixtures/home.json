@@ -1,0 +1,27 @@
+{
+  "user": { "id": "user", "name": "Alex Morgan", "avatar": "user" },
+  "contacts": [
+    { "id": "maya", "name": "Maya Chen", "shortName": "Maya", "avatar": "maya", "pinned": true },
+    { "id": "daniel", "name": "Daniel Costa", "shortName": "Daniel", "avatar": "daniel", "pinned": true },
+    { "id": "ellie", "name": "Ellie Parker", "shortName": "Ellie", "avatar": "ellie", "pinned": true },
+    { "id": "james", "name": "James Wilson", "shortName": "James", "avatar": "james", "pinned": false },
+    { "id": "nina", "name": "Nina Patel", "shortName": "Nina", "avatar": "nina", "pinned": false },
+    { "id": "juliette", "name": "Juliette Roux", "shortName": "Juliette", "avatar": "juliette", "pinned": false },
+    { "id": "matteo", "name": "Matteo Rossi", "shortName": "Matteo", "avatar": "matteo", "pinned": false },
+    { "id": "sofia", "name": "Sofia Martins", "shortName": "Sofia", "avatar": "sofia", "pinned": false },
+    { "id": "alex", "name": "Alex Kim", "shortName": "Alex", "avatar": "alex", "pinned": false },
+    { "id": "sam", "name": "Sam Taylor", "shortName": "Sam", "avatar": "sam", "pinned": false }
+  ],
+  "conversations": [
+    { "id": "maya", "contactId": "maya", "message": "That sounds like a perfect plan ☀️", "lastMessageAt": "2026-09-08T09:41:00Z", "timeLabel": "09:41", "unread": 3 },
+    { "id": "daniel", "contactId": "daniel", "message": "I'll send you the photos in a bit", "lastMessageAt": "2026-09-08T09:35:00Z", "timeLabel": "09:35", "unread": 1 },
+    { "id": "ellie", "contactId": "ellie", "message": "You: See you there!", "lastMessageAt": "2026-09-08T09:18:00Z", "timeLabel": "09:18", "unread": 0 },
+    { "id": "james", "contactId": "james", "message": "Found a new place for coffee", "lastMessageAt": "2026-09-08T09:02:00Z", "timeLabel": "09:02", "unread": 0 },
+    { "id": "nina", "contactId": "nina", "message": "Wait, you have to hear this 😂", "lastMessageAt": "2026-09-08T08:46:00Z", "timeLabel": "08:46", "unread": 12 },
+    { "id": "juliette", "contactId": "juliette", "message": "Merci! That means a lot", "lastMessageAt": "2026-09-08T08:30:00Z", "timeLabel": "08:30", "unread": 0 },
+    { "id": "matteo", "contactId": "matteo", "message": "You: On my way", "lastMessageAt": "2026-09-07T21:15:00Z", "timeLabel": "Yesterday", "unread": 0 },
+    { "id": "sofia", "contactId": "sofia", "message": "A little inspiration for the weekend 🌿", "lastMessageAt": "2026-09-07T19:40:00Z", "timeLabel": "Yesterday", "unread": 0 },
+    { "id": "alex", "contactId": "alex", "message": "Let's catch up soon", "lastMessageAt": "2026-09-07T16:05:00Z", "timeLabel": "Yesterday", "unread": 0 },
+    { "id": "sam", "contactId": "sam", "message": "You: Thanks for the recommendation!", "lastMessageAt": "2026-09-06T18:30:00Z", "timeLabel": "Sunday", "unread": 0 }
+  ]
+}

@@ -1,9 +1,10 @@
 import { f } from '#f'
+import { themeCss } from '#assets/styles/theme.js'
+import globalCss from '#assets/styles/global.css'
+import '#views/home/index.js'
 
-// Placeholder screen to validate the setup while chat is being implemented.
-f('z-app', ({ h }) => h`
-  <main>
-    <h1>Zillion</h1>
-    <p>Chat privado sobre Nostr. Em desenvolvimento.</p>
-  </main>
-`)
+const style = document.createElement('style')
+style.textContent = themeCss + globalCss
+document.head.append(style)
+
+f('z-app', ({ h }) => h`<z-home />`)

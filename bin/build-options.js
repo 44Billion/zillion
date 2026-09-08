@@ -39,7 +39,7 @@ export function buildOptions ({ development = false, projectRoot = root, onStart
       }
     }],
     inject: ['zillion:metadata'],
-    loader: { '.html': 'copy', '.ico': 'copy', '.svg': 'text', '.webp': 'dataurl', '.png': 'copy' },
+    loader: { '.html': 'copy', '.ico': 'copy', '.svg': 'text', '.webp': 'dataurl', '.jpg': 'dataurl', '.png': 'copy' },
     define: { IS_DEVELOPMENT: JSON.stringify(development), IS_PRODUCTION: JSON.stringify(!development) },
     entryPoints: ['src/components/app.js', 'src/assets/html/index.html'],
     outdir, entryNames: '[name]', bundle: true, platform: 'browser', format: 'esm',
