@@ -33,7 +33,11 @@ strip (pinned first, then alphabetical), and a DM list sharing its unread counte
 with contact avatars. Touch scrolling snaps to
 whole contacts; mousewheel and arrow keys move by contact. Only More stays fixed
 in the strip. The header and the strip divider remain visible during vertical
-scrolling. Contact avatars mount as they approach the visible strip.
+scrolling. Once the divider reaches the header, further scrolling gradually
+compacts the header and logo to 48px including the divider (plus any device
+safe-area inset). The placeholder ends at 28x28px as the Zillion wordmark fades
+out; both reverse when scrolling back. Contact avatars mount as they approach
+the visible strip.
 Light and dark themes follow the system; backgrounds are off-white and graphite.
 Preview content is fixed English JSON with local portraits, and the buttons
 remain intentionally inert.

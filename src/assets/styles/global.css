@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
 html {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 16px;
   -webkit-text-size-adjust: 100%;
   background: var(--z-canvas);

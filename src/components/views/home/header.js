@@ -8,15 +8,24 @@ f('z-home-header', ({ h, props }) => h`
     <style>${`
       z-home-header .home-header {
         display: flex; align-items: center; justify-content: space-between;
-        gap: 10px; height: var(--home-header-height); padding: calc(22px + env(safe-area-inset-top)) 18px 18px;
-        position: sticky; top: 0; z-index: 3; background: var(--z-surface);
-        .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-        .logo-placeholder {
-          display: grid; place-items: center; width: 42px; height: 42px;
-          flex: none; border-radius: 13px; background: var(--z-logo);
-          color: var(--z-accent-text); font-size: 27px; font-weight: 650;
+        gap: 10px; height: var(--home-header-height);
+        padding-top: calc(22px + env(safe-area-inset-top) - 20.5px * var(--home-header-collapse));
+        padding-bottom: calc(18px - 16.5px * var(--home-header-collapse));
+        padding-inline: calc(18px - 6px * var(--home-header-collapse));
+        pointer-events: auto; background: var(--z-surface);
+        .brand {
+          display: flex; align-items: center; min-width: 0; font-size: 25px;
+          gap: calc(11px - 3px * var(--home-header-collapse));
         }
-        h1 { margin: 0; font-size: 25px; font-weight: 650; letter-spacing: -.8px; }
+        .logo-placeholder {
+          --logo-size: calc(42px - 14px * var(--home-header-collapse));
+          display: grid; place-items: center; width: var(--logo-size); height: var(--logo-size);
+          flex: none; border-radius: calc(var(--logo-size) * 13 / 42); background: var(--z-logo);
+          color: var(--z-accent-text); font-weight: 650;
+          .logo-letter { font-size: calc(var(--logo-size) * 27 / 42); line-height: 1; }
+          img, svg { width: 100%; height: 100%; object-fit: contain; }
+        }
+        h1 { opacity: calc(1 - var(--home-header-collapse)); margin: 0; font-size: inherit; line-height: 1; font-weight: 650; letter-spacing: -.8px; }
         .actions { display: flex; align-items: center; gap: 2px; }
         button {
           display: grid; place-items: center; width: 40px; height: 44px;
@@ -28,7 +37,7 @@ f('z-home-header', ({ h, props }) => h`
       }
     `}</style>
     <div class="brand">
-      <span class="logo-placeholder" aria-hidden="true">Z</span>
+      <span class="logo-placeholder" aria-hidden="true"><span class="logo-letter">Z</span></span>
       <h1>Zillion</h1>
     </div>
     <div class="actions">

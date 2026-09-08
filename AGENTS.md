@@ -174,7 +174,18 @@ and build/publishing tooling exist. Do not describe planned features as already 
   unread counts with their conversations through `z-unread-badge`.
 - Use native horizontal scroll snap for touch inertia and whole-contact wheel
   destinations; respect reduced motion. The header is sticky and a separate
-  sticky divider preserves the contact strip's bottom edge below it.
+  sticky divider preserves the contact strip's bottom edge below it. After the
+  divider reaches the header, the next 96px of scroll synchronously shrink its
+  padding and square logo. The minimum is 48px including the divider, plus the
+  device's top safe-area inset; action hit areas stay 44px high. The placeholder
+  ends at 28x28px while the Zillion wordmark fades to zero opacity using the same
+  progress. Keep its semantic heading and layout space while faded. Keep an
+  expanded flow slot so this visual change cannot alter the collapse threshold
+  or trigger scroll-anchoring jumps.
+- The final logo is still being explored. Use a single artwork for both themes.
+  Its transparent safety margin must remain outside the 28px measurement: the
+  longest visible bubble dimension, including its tail, should be 28px when
+  collapsed. Do not install an unselected logo concept as the app's identity.
 - Mount contact avatars only near the horizontal viewport. The installed
   thenameisf visibility task creates an observer without calling `observe()`;
   until fixed upstream, use an IntersectionObserver inside a normal `useTask`,

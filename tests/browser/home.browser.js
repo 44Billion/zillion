@@ -71,16 +71,75 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     await evaluate('document.querySelector(".contact-list").scrollTo({left: 10000, behavior: "instant"})')
     await browser.until(() => evaluate('Boolean([...document.querySelectorAll(".contact-item")].at(-1).querySelector("img")?.naturalWidth)'), 'newly revealed avatar')
 
-    await evaluate('window.scrollTo(0, 220)')
-    const sticky = await evaluate(`(() => {
-      const header = document.querySelector('.home-header').getBoundingClientRect();
+    const measureHeader = async scroll => evaluate(`(async () => {
+      window.scrollTo(0, ${scroll});
+      await new Promise(requestAnimationFrame);
+      await new Promise(requestAnimationFrame);
+      const header = document.querySelector('.home-header');
+      const rect = header.getBoundingClientRect();
+      const style = getComputedStyle(header);
+      const logo = document.querySelector('.logo-placeholder').getBoundingClientRect();
+      const contacts = document.querySelector('.home-contacts-space').getBoundingClientRect();
       const divider = document.querySelector('.contacts-divider').getBoundingClientRect();
-      const contacts = document.querySelector('.contact-strip').getBoundingClientRect();
-      return {top:header.top, bottom:header.bottom, divider:divider.top, contacts:contacts.bottom};
+      const conversation = document.querySelector('.conversation').getBoundingClientRect();
+      return {
+        top: rect.top, height: rect.height, bottom: rect.bottom, scroll: scrollY,
+        logoWidth: logo.width, logoHeight: logo.height,
+        titleOpacity: Number(getComputedStyle(document.querySelector(".home-header h1")).opacity),
+        paddingTop: parseFloat(style.paddingTop), paddingBottom: parseFloat(style.paddingBottom),
+        paddingInline: parseFloat(style.paddingLeft),
+        brandGap: parseFloat(getComputedStyle(document.querySelector('.brand')).gap),
+        divider: divider.top, border: divider.height, contactsBottom: contacts.bottom,
+        conversationTop: conversation.top + scrollY, extent: document.documentElement.scrollHeight
+      };
     })()`)
-    assert.ok(Math.abs(sticky.top) < 1)
-    assert.ok(Math.abs(sticky.divider - sticky.bottom) < 1)
-    assert.ok(sticky.contacts <= sticky.bottom)
+    const expanded = await measureHeader(0)
+    const threshold = expanded.contactsBottom - expanded.height
+    const before = await measureHeader(threshold - 1)
+    const touching = await measureHeader(threshold)
+    const partial = await measureHeader(threshold + 48)
+    const compact = await measureHeader(threshold + 96)
+    assert.equal(before.height, expanded.height)
+    assert.equal(before.logoWidth, expanded.logoWidth)
+    assert.ok(before.divider > before.bottom)
+    assert.equal(touching.height, expanded.height)
+    assert.ok(Math.abs(touching.divider - touching.bottom) < 1)
+    assert.ok(partial.height < expanded.height && partial.height > compact.height)
+    assert.equal(compact.height + compact.border, 48)
+    assert.ok(compact.logoHeight < expanded.logoHeight)
+    assert.equal(compact.logoHeight, 28)
+    assert.equal(expanded.titleOpacity, 1)
+    assert.equal(before.titleOpacity, 1)
+    assert.equal(touching.titleOpacity, 1)
+    assert.equal(partial.titleOpacity, 0.5)
+    assert.equal(compact.titleOpacity, 0)
+    assert.equal(partial.scroll, threshold + 48)
+    assert.equal(compact.scroll, threshold + 96)
+    for (const state of [partial, compact]) {
+      assert.ok(Math.abs(state.top) < 1)
+      assert.ok(Math.abs(state.divider - state.bottom) < 1)
+      assert.ok(Math.abs(state.logoWidth - state.logoHeight) < 0.1)
+      assert.equal(state.conversationTop, expanded.conversationTop)
+      assert.equal(state.extent, expanded.extent)
+    }
+    for (const key of ['height', 'logoWidth', 'titleOpacity', 'paddingTop', 'paddingBottom', 'paddingInline', 'brandGap']) {
+      assert.ok(Math.abs((expanded[key] - partial[key]) / (expanded[key] - compact[key]) - 0.5) < 0.02, `${key} reaches its minimum at the same scroll position`)
+    }
+    const hitAreas = await evaluate('Array.from(document.querySelectorAll(".home-header button"), button => button.getBoundingClientRect().height)')
+    assert.ok(hitAreas.every(height => height >= 44))
+    assert.equal(await evaluate('Boolean(document.elementFromPoint(100, 65)?.closest(".conversation"))'), true)
+    const beyond = await measureHeader(threshold + 130)
+    assert.equal(beyond.height, compact.height)
+    assert.equal(beyond.titleOpacity, 0)
+    assert.ok(Math.abs(beyond.divider - beyond.bottom) < 1)
+    const reversing = await measureHeader(threshold + 48)
+    assert.equal(reversing.height, partial.height)
+    assert.equal(reversing.logoHeight, partial.logoHeight)
+    assert.equal(reversing.titleOpacity, partial.titleOpacity)
+    const restored = await measureHeader(0)
+    assert.equal(restored.height, expanded.height)
+    assert.equal(restored.logoHeight, expanded.logoHeight)
+    assert.equal(restored.titleOpacity, 1)
     for (const width of [320, 718, 1024]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 600, deviceScaleFactor: 1, mobile: true }, session)
       await browser.until(() => evaluate('(() => { const list = document.querySelector(\'.contact-list\'); const step = parseFloat(list.style.getPropertyValue(\'--contact-step\')); return Math.abs(list.clientWidth / step - Math.round(list.clientWidth / step)) < .03 })()'), 'whole contacts after resize')
