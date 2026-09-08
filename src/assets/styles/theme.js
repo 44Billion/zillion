@@ -1,5 +1,5 @@
 // Light/dark pairs follow the nappstore theme approach. Greens are adapted
-// from WhatsApp's palette, with dark badge text for readable small counters.
+// from WhatsApp's palette, with contrasting badge text in each color scheme.
 // https://www.meta.com/design-at-meta/blog/whatsapp-user-interface-update/
 export const colors = {
   canvas: ['#ecefea', '#111715'],
@@ -10,8 +10,8 @@ export const colors = {
   border: ['#e1e6df', '#303a34'],
   control: ['#e9ede7', '#2a332d'],
   pressed: ['#e3e9e1', '#313e35'],
-  primary: ['#1daa61', '#21c063'],
-  onPrimary: ['#082b18', '#082b18'],
+  primary: ['#168447', '#21c063'],
+  onPrimary: ['#f5fff8', '#082b18'],
   accentText: ['#147b45', '#6ad995'],
   logo: ['#e3ede2', '#283d2e'],
   bgAvatarLoading: ['#e0e5df', '#303a34']

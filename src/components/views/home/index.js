@@ -8,7 +8,10 @@ import './conversation.js'
 f('z-home', ({ h }) => {
   const view = useStore(() => ({
     user$: data.user,
-    contacts$: data.contacts.toSorted((a, b) => Number(b.pinned) - Number(a.pinned)),
+    contacts$: data.contacts.toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
+      ...contact,
+      unread: data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0
+    })),
     conversations$: data.conversations.toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)).map(conversation => ({
       ...conversation,
       contact: data.contacts.find(contact => contact.id === conversation.contactId)
@@ -19,14 +22,17 @@ f('z-home', ({ h }) => {
       <style>${`
         z-home .home {
           width: 100%; max-width: 718px; min-height: 100svh; margin-inline: auto;
-          padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);
+          --home-header-height: calc(84px + env(safe-area-inset-top));
+          padding-bottom: env(safe-area-inset-bottom);
           background: var(--z-surface);
+          .contacts-divider { position: sticky; top: var(--home-header-height); z-index: 2; height: 1px; background: var(--z-border); }
           .conversations { margin: 0; padding: 6px 0 18px; }
           @media (min-width: 719px) { border-inline: 1px solid var(--z-border); }
         }
       `}</style>
       <z-home-header props=${{ user$: view.user$ }} />
       <z-home-contacts props=${{ contacts$: view.contacts$ }} />
+      <div class="contacts-divider" aria-hidden="true"></div>
       <ul class="conversations" aria-label="Direct messages">
         ${view.conversations$().map(conversation => h({ key: conversation.id })`
           <f-to-signals props=${{

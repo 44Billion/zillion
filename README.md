@@ -28,10 +28,15 @@ and conversation persistence are still planned.
 ## Home preview
 
 The home follows one mobile layout, capped at 718px and centered on wider screens.
-It includes a temporary Z logo, top-right profile portrait, responsive pinned/recent
-contacts, and a DM list with unread counters. Light and dark themes follow the
-system; backgrounds are off-white and graphite. Preview content is fixed English
-JSON with local portraits, and every control is intentionally inert.
+It includes a temporary Z logo, top-right profile portrait, a horizontal contact
+strip (pinned first, then alphabetical), and a DM list sharing its unread counters
+with contact avatars. Touch scrolling snaps to
+whole contacts; mousewheel and arrow keys move by contact. Only More stays fixed
+in the strip. The header and the strip divider remain visible during vertical
+scrolling. Contact avatars mount as they approach the visible strip.
+Light and dark themes follow the system; backgrounds are off-white and graphite.
+Preview content is fixed English JSON with local portraits, and the buttons
+remain intentionally inert.
 
 ## Development
 

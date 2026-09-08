@@ -1,8 +1,12 @@
 import { f, useStore } from '#f'
 import './avatar.js'
+import '#shared/unread-badge.js'
 
 f('z-home-conversation', ({ h, props }) => {
-  const view = useStore({ person$ () { return props.conversation$().contact } })
+  const view = useStore({
+    person$ () { return props.conversation$().contact },
+    unread$ () { return props.conversation$().unread }
+  })
   const conversation = props.conversation$()
   return h`
     <li class="conversation">
@@ -23,11 +27,6 @@ f('z-home-conversation', ({ h, props }) => {
           .preview { font-size: 13px; line-height: 18px; color: var(--z-muted); }
           .metadata { display: flex; flex-direction: column; align-items: end; gap: 6px; align-self: stretch; padding-top: 2px; }
           time { font-size: 10px; line-height: 15px; color: var(--z-subtle); white-space: nowrap; }
-          .badge {
-            display: grid; place-items: center; min-width: 20px; height: 20px;
-            padding: 0 5px; border-radius: 12px; background: var(--z-primary);
-            color: var(--z-on-primary); font-size: 11px; line-height: 20px; font-weight: 650;
-          }
           .unread .name { font-weight: 650; }
           .unread time { color: var(--z-accent-text); }
         }
@@ -40,7 +39,7 @@ f('z-home-conversation', ({ h, props }) => {
         </span>
         <span class="metadata">
           <time datetime=${conversation.lastMessageAt}>${conversation.timeLabel}</time>
-          ${conversation.unread > 0 ? h`<span class="badge" aria-label=${`${conversation.unread} unread messages`}>${conversation.unread}</span>` : null}
+          <z-unread-badge props=${{ count$: view.unread$ }} />
         </span>
       </button>
     </li>

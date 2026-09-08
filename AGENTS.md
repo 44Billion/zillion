@@ -169,6 +169,18 @@ and build/publishing tooling exist. Do not describe planned features as already 
 - Keep the main column at a maximum of 718px, centered with vertical borders on
   wider screens. Use the same mobile composition at every width. The contact
   strip fits whole items while keeping 44px portraits and a persistent More cell.
+- Sort contacts pinned first, alphabetically within each group. All contacts,
+  including pinned ones, scroll; only More stays outside the scroller. Share
+  unread counts with their conversations through `z-unread-badge`.
+- Use native horizontal scroll snap for touch inertia and whole-contact wheel
+  destinations; respect reduced motion. The header is sticky and a separate
+  sticky divider preserves the contact strip's bottom edge below it.
+- Mount contact avatars only near the horizontal viewport. The installed
+  thenameisf visibility task creates an observer without calling `observe()`;
+  until fixed upstream, use an IntersectionObserver inside a normal `useTask`,
+  rooted at the contact scroller with a short preloading margin and cleanup.
+  Preview portrait bytes remain bundled data URLs; this defers avatar mounting
+  and image decoding, not downloading those fixture bytes.
 - The upper-right profile portrait matches the 26px action icons; the upper-left
   42px Z monogram is a temporary logo placeholder. Inbox rows are DMs only.
 - Authored UI colors belong to `src/assets/styles/theme.js` as light/dark pairs,

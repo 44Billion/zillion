@@ -8,7 +8,8 @@ f('z-home-header', ({ h, props }) => h`
     <style>${`
       z-home-header .home-header {
         display: flex; align-items: center; justify-content: space-between;
-        gap: 10px; padding: 22px 18px 18px;
+        gap: 10px; height: var(--home-header-height); padding: calc(22px + env(safe-area-inset-top)) 18px 18px;
+        position: sticky; top: 0; z-index: 3; background: var(--z-surface);
         .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
         .logo-placeholder {
           display: grid; place-items: center; width: 42px; height: 42px;
