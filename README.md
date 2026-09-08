@@ -27,25 +27,60 @@ and conversation persistence are still planned.
 
 ## Development
 
-Requirements: Node.js 24+ and npm; Python 3 to serve the production build.
+Requirements: Node.js 24+, npm, Python 3, and the sibling `44billion` and
+`ez-vault` repositories with their npm dependencies installed. Chrome is also
+required for browser tests (`CHROME_BIN` overrides `/usr/bin/google-chrome`).
 
 ```sh
 npm install
-npm start        # development with automatic rebuilds; URL printed in the terminal
+npm start                 # local launcher + watch + automatic draft publishing
+npm run start:adb         # same workflow on Android, with forwarded ports and console logs
+npm test                  # fast Node tests; no publishing
+npm run test:browser      # real launcher/vault in disposable Chrome profiles
 npm run lint
-npm run build    # generates dist/zillion/
-npm run serve    # serves the build at http://localhost:4000
+npm run build             # production files in dist/zillion/
+npm run upload:draft      # one-shot development build and draft upload
+npm run serve             # standalone production preview; stop the dev vault first
 ```
 
-`npm test` checks the offline cache and profile foundations.
-The reusable avatar is not yet mounted in the placeholder screen.
+`npm start` uses `http://localhost:10000`, esbuild on port 8080, and the existing
+vault origin at `http://localhost:4000`. It reuses a compatible running launcher;
+Ctrl+C stops only processes it started. Conflicting servers fail explicitly.
+Install and open the printed draft URL once to follow subsequent updates.
 
-The standalone development server does not provide the launcher's injected APIs.
-The shared connectivity monitor currently lives in the sibling libp2r2p change;
-use that local library for validation and update the npm version before shipping.
-After `npm install`, link it without changing the manifest or lockfile:
-`npm install --no-save --package-lock=false ../libp2r2p`.
-Reinstalling from the lockfile restores the published dependency.
+For Android, install Android platform-tools, enable debugging, authorize the
+computer, and check `adb devices`. Run `npm run start:adb`, then open the printed
+draft URL in Chrome/Edge on the phone. The script forwards ports 10000 and 4000
+with `adb reverse`; esbuild's port 8080 stays internal. The phone uses its own
+browser storage and vault accounts. Draft updates still clear app data.
+Use `-- --debug` for verbose console logs or `-- --browser=edge` to prefer Edge.
+Set `ANDROID_SERIAL` to select a device; an already paired/connected wireless ADB
+device works too. The console uses an automatically assigned host port unless
+`CDP_PORT` is set. Ctrl+C releases only mappings created by that session.
+
+Successful builds publish after two seconds without changes. Uploads run one at a
+time from isolated build files; the latest pending build replaces older pending
+work. Build errors cancel pending uploads. Upload errors leave the last published
+version available; save again or run `upload:draft` to retry. Builds and uploads
+use the installed, lockfile-managed tools. Changes to build scripts or dependency
+configuration require restarting `npm start`.
+If an uploader is forcibly killed, a stale `tmp/upload.lock` is reported rather
+than reclaimed while another process may be acquiring it. Remove that lock after
+confirming its uploader has stopped, then retry.
+
+Browser tests install an unpublished build into the real launcher's caches using
+its own storage helpers. They use the actual injected APIs, vault and permission
+UI, with external traffic blocked and controlled network fixtures. No public
+upload, API stubs, in-source runner, or existing browser profile is required.
+Persistence scenarios reload the same app document/version and recover data from
+the event store and IndexedDB. Temporary kind 30078 test state expires after 24
+hours; profiles are removed after each scenario. Failure diagnostics and screenshots
+are saved under `tmp/browser-failures/`.
+
+A **draft version update clears app data before reloading**. An ordinary document
+reload does not. The workflow preserves that launcher behavior. Browser fixtures
+are excluded from published builds; the avatar is still not mounted in the app's
+placeholder screen. `serve` provides no injected launcher APIs.
 
 ## Publishing
 
@@ -53,9 +88,10 @@ Zillion will be a static site published as an **nsite** (also called an app,
 napp, or Nostr app), following [NIP-5A — Named Sites](https://github.com/nostr-protocol/nips/blob/master/5A.md#named-sites).
 The project's runtime environment **does not support service workers**.
 
-`npm run upload` builds the app and runs `nappup@latest ./dist/zillion/`.
-This publishes to the network; publisher identity and upload options follow
-[nappup](../nappup/README.md). The folder name sets the default identifier, `zillion`.
+`npm run upload` compiles and publishes to **main** using the installed nappup.
+`npm start` and `npm run upload:draft` publish only to **draft**, with identifier
+`zillion`. All three publish to the real network, even with a local launcher.
+Publisher identity and upload options follow [nappup](../nappup/README.md).
 
 The build converts [`napp.jsonc`](napp.jsonc) to `.well-known/napp.json`, which
 nappup consumes as metadata and excludes from published files. This format is

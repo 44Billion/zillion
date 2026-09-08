@@ -128,10 +128,9 @@ build/publishing tooling exist. Do not describe planned features as already impl
   Probes cannot guarantee any particular relay/server is reachable, nor can
   background timers guarantee immediate detection. Handle each request failure
   and clean up listeners, timers, and stale async work when consumers unmount.
-- The improved monitor is currently a sibling-library change, pending npm
-  release. The npm manifests still reference the published library; validate
-  with the local library during development and update the dependency/lockfile
-  to a released version containing it before shipping these consumer changes.
+- The installed libp2r2p 0.10.11 includes the shared connectivity monitor.
+  Validate against the lockfile-managed dependency; do not require a sibling link
+  for this capability.
 
 ## Front-end
 
@@ -195,10 +194,17 @@ needed; empty folders mark the initial structure.
   the list of published files. Do not treat it as runtime configuration.
 - Consult `../nappup/README.md` and the uploader code when changing publishing.
   Document ecosystem customizations separately from NIP requirements.
-- The upload script follows nappstore by using `nappup@latest`: it may run a
-  different version from the one installed through the lockfile. Do not use
-  upload as a local test. Never put credentials in assets, public configuration,
-  or bundles.
+- Publishing uses the installed, lockfile-managed nappup. `npm start` publishes
+  successful builds to draft after a two-second debounce; `upload:draft` performs
+  one upload. Both use identifier `zillion` and share a project upload lock.
+  The main channel is published only by an explicit `npm run upload`.
+- Preserve immutable build bytes while nappup reads them. Temporary directories
+  isolate uploads without changing published filenames. Build errors invalidate
+  pending publication; only the latest pending successful build is retained.
+- A stale upload lock fails explicitly instead of being reclaimed concurrently.
+  Check that its uploader has stopped before removing `tmp/upload.lock`.
+- Let nappup manage publisher authentication and its existing environment file.
+  Never put credentials in assets, public configuration, bundles or diagnostics.
 
 ## Conventions and validation
 
@@ -217,3 +223,47 @@ needed; empty folders mark the initial structure.
   an empty run does not demonstrate behavior.
 - Do not edit `dist/` or `node_modules/`. Update `package-lock.json` when changing
   dependencies. Report what was validated and any limitations.
+
+## Runtime development and browser tests
+
+- `npm run start:adb` adds the shared `../44billion/bin/adb-session.js` handle to
+  the same development watcher. It forwards ports 10000/4000 and streams phone
+  Chrome/Edge logs; it must not duplicate the build, upload queue, or supervisor.
+  Validate ADB/device availability before starting automatic draft publication.
+  Honor `ANDROID_SERIAL`, preserve existing mappings, and close owned mappings
+  on shutdown/failure. Phone storage is separate from desktop/test profiles;
+  report when physical-device verification is unavailable.
+- `npm start` starts or reuses the sibling launcher's development supervisor.
+  Ports 10000 (launcher), 8080 (esbuild), and 4000 (existing vault origin) are fixed.
+  Never kill unrelated servers or silently choose another port. Stop only owned
+  processes. The supervisor also serves the vault's `.dev` files through the
+  launcher vault route; production continues to serve `docs`.
+- After an app feature, run the relevant checks and confirm publication of its
+  corresponding draft through the active watcher or `npm run upload:draft`.
+  Report upload failures separately from validation failures. Do not publish main
+  as part of routine development.
+- Keep fast logic tests in `tests/**/*.test.js`. `test:browser` runs separate
+  `tests/browser/*.browser.js` files with Node and Chrome/CDP. No in-source test
+  runner or test API is shipped with the app.
+- Browser tests use the full local launcher, its injected APIs, the real vault,
+  and real permission dialogs. Prepare app files/manifests through the launcher's
+  test installation helper, not a copied database schema in Zillion. Sibling
+  imports are allowed in development/test tooling, never in production bundles.
+- Use disposable Chrome profiles and generated test identities. Block external
+  traffic; control media/probe responses at the network boundary. Import test
+  keys through the vault UI when signing is required; do not replace the signer,
+  event store or permission providers. Fixtures that mount UI follow the
+  thenameisf skill and are compiled only into the local test installation.
+- Keep each persistence scenario on one unpublished app version. Write through
+  real APIs, reload the document, and assert recovery without restoring data.
+  Draft updates still clear runtime data; no snapshot API or preservation policy
+  is introduced. The Node coordinator survives iframe reloads.
+- Optional arbitrary test state uses `CUSTOM_APP_DATA` (kind 30078) from
+  `libp2r2p/kind`, JSON content, and `d = zillion:test:<runId>:<instanceKey>`.
+  Reuse the coordinate within the scenario, use increasing `created_at`, and set
+  NIP-40 expiration to 24 hours. The launcher already purges expired events;
+  remove the browser profile on teardown as the primary cleanup.
+- Save failure diagnostics/screenshots to `tmp/browser-failures/` before teardown.
+  Keep automated browser tests independent from real draft publication. Validate
+  actual publishing and automatic draft updates separately when changing that
+  workflow. Review README and AGENTS together whenever it changes.
