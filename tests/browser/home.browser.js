@@ -44,6 +44,14 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     assert.equal(await evaluate('document.querySelectorAll(".contact-pin").length'), 3)
     assert.equal(await evaluate('document.querySelectorAll(".contact-item img").length < 10'), true)
     assert.equal(await evaluate('Boolean([...document.querySelectorAll(".contact-item")].at(-1).querySelector("img"))'), false)
+    await browser.until(() => evaluate(`(() => {
+      const list = document.querySelector('.contact-list').getBoundingClientRect();
+      const near = [...document.querySelectorAll('.contact-item')].find(item => {
+        const rect = item.getBoundingClientRect();
+        return rect.left >= list.right && rect.left < list.right + 84;
+      });
+      return Boolean(near?.querySelector('img')?.naturalWidth);
+    })()`), 'avatar preloaded beyond the visible scroller edge')
     const counts = await evaluate(`(() => {
       const contacts = [...document.querySelectorAll('.contact-item')].filter(el => el.querySelector('.unread-badge')).map(el => [el.querySelector('.contact-name').textContent, el.querySelector('.unread-badge').innerText.trim()]);
       const conversations = [...document.querySelectorAll('.conversation')].filter(el => el.querySelector('.unread-badge')).map(el => [el.querySelector('.name').textContent.split(' ')[0], el.querySelector('.unread-badge').innerText.trim()]);

@@ -37,7 +37,7 @@ scrolling. Once the divider reaches the header, further scrolling gradually
 compacts the header and logo to 48px including the divider (plus any device
 safe-area inset). The bubble ends at 28px (excluding transparent padding) as the Zillion wordmark fades
 out; both reverse when scrolling back. Contact avatars mount as they approach
-the visible strip.
+the visible strip, using thenameisf's visibility task with an 84px preloading margin.
 Light and dark themes follow the system; backgrounds are off-white and graphite.
 The same logo artwork serves both themes and the launcher icon; its sources and
 safety padding are documented in [design/branding](design/branding/README.md).

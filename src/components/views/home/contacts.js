@@ -99,7 +99,7 @@ f('z-home-contacts', ({ h, props }) => {
         ${props.contacts$().map(person => h({ key: person.id })`
           <f-to-signals props=${{
             from: { person },
-            render: ({ h, props }) => h`<z-home-contact props=${{ person$: props.person$ }} />`
+            render: ({ h, props }) => h`<z-home-contact props=${{ person$: props.person$, scrollRoot$: view.listRef$ }} />`
           }} />
         `)}
       </div>

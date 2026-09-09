@@ -70,7 +70,7 @@
     "@dicebear/core": "^10.7.0",
     "@dicebear/styles": "^10.6.0",
     "libp2r2p": "^0.10.12",
-    "thenameisf": "^1.2.8"
+    "thenameisf": "^1.2.9"
   },
   "devDependencies": {
     "esbuild": "^0.25.1",

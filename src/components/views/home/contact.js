@@ -5,22 +5,14 @@ import './avatar.js'
 
 f('z-home-contact', ({ h, props }) => {
   const view = useStore({
-    avatarRef$: null,
     ready$: false,
     unread$ () { return props.person$().unread }
   })
-  useTask(({ track, cleanup }) => {
-    const avatar = track(() => view.avatarRef$())
-    if (!avatar) return
-    // The installed useTask visibility mode does not yet observe its target.
-    const observer = new IntersectionObserver(entries => {
-      if (!entries.some(entry => entry.isIntersecting)) return
-      view.ready$(true)
-      observer.disconnect()
-    }, { root: avatar.closest('.contact-list'), rootMargin: '0px 84px' })
-    observer.observe(avatar)
-    cleanup(() => observer.disconnect())
-  }, { after: 'rendering' })
+  useTask(() => view.ready$(true), {
+    when: 'visible',
+    root: props.scrollRoot$(),
+    rootMargin: '0px 84px'
+  })
 
   const person = props.person$()
   return h`
@@ -44,7 +36,7 @@ f('z-home-contact', ({ h, props }) => {
         }
       `}</style>
       <span class="contact-portrait" aria-hidden="true">
-        <span class="contact-avatar" ref=${view.avatarRef$}>
+        <span class="contact-avatar">
           ${view.ready$() ? h`<z-home-avatar props=${{ person$: props.person$ }} />` : null}
         </span>
         ${person.pinned ? h`<span class="contact-pin"><icon-pin props=${{ size: '12px', weight: 'regular' }} /></span>` : null}

@@ -189,10 +189,11 @@ and build/publishing tooling exist. Do not describe planned features as already 
   including its tail, is 28px when collapsed. Keep the semantic logo box at 28px.
   `design/branding/README.md` records sources and sizing; design files stay out
   of builds. The HTML icon declaration also supplies the launcher icon via nappup.
-- Mount contact avatars only near the horizontal viewport. The installed
-  thenameisf visibility task creates an observer without calling `observe()`;
-  until fixed upstream, use an IntersectionObserver inside a normal `useTask`,
-  rooted at the contact scroller with a short preloading margin and cleanup.
+- Mount contact avatars only near the horizontal viewport using `useTask` with
+  `when: 'visible'` from thenameisf 1.2.9 or newer. Pass the contact scroller's
+  element ref from the parent as `scrollRoot$` and use `rootMargin: '0px 84px'`.
+  The task observes the contact's visual root automatically and stops observing
+  after enabling the avatar. Do not restore the custom IntersectionObserver.
   Preview portrait bytes remain bundled data URLs; this defers avatar mounting
   and image decoding, not downloading those fixture bytes.
 - The upper-right profile portrait matches the 26px action icons; the upper-left
