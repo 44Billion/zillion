@@ -11,30 +11,33 @@ import { acquireUploadLock } from '../bin/publish.js'
 
 const flush = () => new Promise(resolve => setImmediate(resolve))
 
-test('draft uploads debounce, serialize, and retain only the latest pending build', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] })
-  const calls = []
-  const first = Promise.withResolvers()
-  const queue = createDraftQueue({ publish: files => { calls.push(files); if (calls.length === 1) return first.promise } })
-  queue.enqueue('a')
-  t.mock.timers.tick(1500)
-  queue.enqueue('b')
-  t.mock.timers.tick(1999)
-  await flush()
-  assert.deepEqual(calls, [])
-  t.mock.timers.tick(1)
-  await flush()
-  queue.enqueue('c')
-  t.mock.timers.tick(2000)
-  queue.enqueue('d')
-  first.resolve()
-  await flush()
-  assert.deepEqual(calls, ['b'])
-  t.mock.timers.tick(2000)
-  await flush()
-  assert.deepEqual(calls, ['b', 'd'])
-  await queue.close()
-})
+for (const delayMs of [undefined, 250]) {
+  test(`build queue debounces, serializes and retains the latest pending build (${delayMs ?? 2000} ms)`, async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] })
+    const duration = delayMs ?? 2000
+    const calls = []
+    const first = Promise.withResolvers()
+    const queue = createDraftQueue({ delayMs, publish: files => { calls.push(files); if (calls.length === 1) return first.promise } })
+    queue.enqueue('a')
+    t.mock.timers.tick(duration - 1)
+    queue.enqueue('b')
+    t.mock.timers.tick(duration - 1)
+    await flush()
+    assert.deepEqual(calls, [])
+    t.mock.timers.tick(1)
+    await flush()
+    queue.enqueue('c')
+    t.mock.timers.tick(duration)
+    queue.enqueue('d')
+    first.resolve()
+    await flush()
+    assert.deepEqual(calls, ['b'])
+    t.mock.timers.tick(duration)
+    await flush()
+    assert.deepEqual(calls, ['b', 'd'])
+    await queue.close()
+  })
+}
 
 test('invalid builds cancel queued uploads and upload errors allow later builds', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] })

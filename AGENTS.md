@@ -254,7 +254,7 @@ needed; empty folders mark the initial structure.
   their own temporary dotenv paths. Preserve the
   user's chosen identity and existing files; do not migrate or rotate secrets
   implicitly when changing dependencies. Never log secret values.
-- `npm start` publishes
+- `npm run start:publish` publishes
   successful builds to draft after a two-second debounce; `upload:draft` performs
   one upload. Both use identifier `zillion` and share a project upload lock.
   The main channel is published only by an explicit `npm run upload`.
@@ -292,9 +292,9 @@ needed; empty folders mark the initial structure.
   files: three levels from `bin/`, four from `tests/browser/`.
 
 - `npm run start:adb` adds the shared `../../44billion/bin/adb-session.js` handle to
-  the same development watcher. It forwards ports 10000/4000 and streams phone
+  the local development watcher; `start:publish:adb` uses real publication. It forwards ports 10000/4000 and streams phone
   Chrome/Edge logs; it must not duplicate the build, upload queue, or supervisor.
-  Validate ADB/device availability before starting automatic draft publication.
+  Validate ADB/device availability before starting the watcher.
   Honor `ANDROID_SERIAL`, preserve existing mappings, and close owned mappings
   on shutdown/failure. Phone storage is separate from desktop/test profiles;
   report when physical-device verification is unavailable.
@@ -304,7 +304,8 @@ needed; empty folders mark the initial structure.
   processes. The supervisor also serves the vault's `.dev` files through the
   launcher vault route; production continues to serve `docs`.
 - After an app feature, run the relevant checks and confirm publication of its
-  corresponding draft through the active watcher or `npm run upload:draft`.
+  local build through the watcher and real browser. Validate actual draft
+  publication through `start:publish` or `upload:draft` when changing publishing.
   Report upload failures separately from validation failures. Do not publish main
   as part of routine development.
 - Keep fast logic tests in `tests/**/*.test.js`. `test:browser` runs separate
@@ -319,10 +320,11 @@ needed; empty folders mark the initial structure.
   keys through the vault UI when signing is required; do not replace the signer,
   event store or permission providers. Fixtures that mount UI follow the
   thenameisf skill and are compiled only into the local test installation.
-- Keep each persistence scenario on one unpublished app version. Write through
-  real APIs, reload the document, and assert recovery without restoring data.
-  Draft updates still clear runtime data; no snapshot API or preservation policy
-  is introduced. The Node coordinator survives iframe reloads.
+- Ordinary reload scenarios retain one unpublished app version; local-update
+  scenarios explicitly register the next build. Write through real APIs and
+  assert recovery without restoring data. Published draft updates still clear
+  runtime data. No snapshot API is introduced; the Node coordinator survives
+  iframe reloads.
 - Optional arbitrary test state uses `CUSTOM_APP_DATA` (kind 30078) from
   `libp2r2p/kind`, JSON content, and `d = zillion:test:<runId>:<instanceKey>`.
   Reuse the coordinate within the scenario, use increasing `created_at`, and set
@@ -332,3 +334,20 @@ needed; empty folders mark the initial structure.
   Keep automated browser tests independent from real draft publication. Validate
   actual publishing and automatic draft updates separately when changing that
   workflow. Review README and AGENTS together whenever it changes.
+
+## Local app installation
+
+- `npm start` uses the 44billion local-app publisher with a 250 ms debounce;
+  `start:publish` retains the two-second remote draft watcher. Both reuse the
+  existing supervisor, build options and immutable queue. No uploader credentials
+  are required for the local path. Keep tests/fixtures out of regular builds.
+- Preserve `tmp/local-dev/identity.json` across runs. Never substitute the real
+  publisher's key. Report malformed identity files instead of silently rotating.
+- Local control uses development-only routes on localhost:10000 and the supervisor
+  token file in the launcher checkout. Never log tokens or include them in URLs.
+- Browser installation uses the launcher's writers, installs files before the
+  manifest, and preserves data/routes during reload. The launcher owns local
+  classification, remote-update exclusion, version leases, budgets and cleanup.
+- The explicit menu reset affects only the selected user/app. It must pause other
+  instances, await completion and report partial failures. Remote draft cleanup
+  continues unchanged. Run the local-update browser scenario when changing this.

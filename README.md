@@ -56,8 +56,9 @@ The workspace keeps this app at `repositories/napps/zillion`, alongside
 
 ```sh
 npm install
-npm run link:nappup       # link the sibling uploader; repeat after switching Node or npm ci
-npm start                 # local launcher + watch + automatic draft publishing
+npm run link:nappup       # needed only for real publishing; repeat after switching Node or npm ci
+npm start                 # local launcher + watch + installation without publishing
+npm run start:publish     # watch + real draft publishing after two seconds
 npm run start:adb         # same workflow on Android, with forwarded ports and console logs
 npm test                  # fast Node tests; no publishing
 npm run test:browser      # real launcher/vault in disposable Chrome profiles
@@ -70,27 +71,38 @@ npm run serve             # standalone production preview; stop the dev vault fi
 `npm start` uses `http://localhost:10000`, esbuild on port 8080, and the existing
 vault origin at `http://localhost:4000`. It reuses a compatible running launcher;
 Ctrl+C stops only processes it started. Conflicting servers fail explicitly.
-Install and open the printed draft URL once to follow subsequent updates.
+Open the printed local URL once in each browser to install and follow updates.
 
 For Android, install Android platform-tools, enable debugging, authorize the
 computer, and check `adb devices`. Run `npm run start:adb`, then open the printed
-draft URL in Chrome/Edge on the phone. The script forwards ports 10000 and 4000
+local URL in Chrome/Edge on the phone. The script forwards ports 10000 and 4000
 with `adb reverse`; esbuild's port 8080 stays internal. The phone uses its own
-browser storage and vault accounts. Draft updates still clear app data.
+browser storage and vault accounts. Local updates preserve app data.
+Use `start:publish:adb` for Android with real draft publishing instead.
 Use `-- --debug` for verbose console logs or `-- --browser=edge` to prefer Edge.
 Set `ANDROID_SERIAL` to select a device; an already paired/connected wireless ADB
 device works too. The console uses an automatically assigned host port unless
 `CDP_PORT` is set. Ctrl+C releases only mappings created by that session.
 
-Successful builds publish after two seconds without changes. Uploads run one at a
-time from isolated build files; the latest pending build replaces older pending
-work. Build errors cancel pending uploads. Upload errors leave the last published
-version available; save again or run `upload:draft` to retry. Builds and uploads
-use the installed tools; nappup is linked to the sibling checkout. Changes to build scripts or dependency
-configuration require restarting `npm start`.
-If an uploader is forcibly killed, a stale `tmp/upload.lock` is reported rather
-than reclaimed while another process may be acquiring it. Remove that lock after
-confirming its uploader has stopped, then retry.
+Local builds are installed after a 250 ms debounce, with one installation at a time
+and only the latest pending build retained. No nappup, publisher credentials, CDP,
+or remote upload is required. The regular browser downloads immutable files from
+the local launcher, verifies their hashes, and stores them before activating the
+manifest. Failures keep the previous build working. The app iframe reloads at its
+current route while its IndexedDB, eventStore and permissions survive.
+
+The development publisher identity is kept in `tmp/local-dev/identity.json`.
+Keep this private ignored file to retain the local URL and app data across restarts;
+it is separate from your real publisher. Invalid identity files fail explicitly.
+The local app remains cached when the watcher stops and is excluded from remote
+updates. The app's launcher menu offers **Clear local app data and reload**, with
+confirmation and a scope limited to that app and the selected user. Other open
+instances of that user/app pause during the reset. Failed cleanup is reported.
+
+`start:publish` retains the two-second debounce, isolated upload files and shared
+`tmp/upload.lock` used by `upload:draft`. It publishes to the real network. If an
+uploader is forcibly killed, remove a stale lock only after confirming its process
+has stopped. Changes to build scripts or dependencies require restarting watchers.
 
 Browser tests install an unpublished build into the real launcher's caches using
 its own storage helpers. They use the actual injected APIs, vault and permission
@@ -114,7 +126,7 @@ napp, or Nostr app), following [NIP-5A — Named Sites](https://github.com/nostr
 The project's runtime environment **does not support service workers**.
 
 `npm run upload` compiles and publishes to **main** using the installed nappup.
-`npm start` and `npm run upload:draft` publish only to **draft**, with identifier
+`npm run start:publish` and `npm run upload:draft` publish only to **draft**, with identifier
 `zillion`. All three publish to the real network, even with a local launcher.
 Publisher identity and upload options follow [nappup](../../nappup/README.md).
 
@@ -127,7 +139,7 @@ Restart an active watcher after changing the link.
 
 Linking shares uploader code, not credentials. Local development uses the shared
 encrypted file `~/repositories/napps/.env` for Zillion and other nsites/apps. Configure the
-shell running `npm start` or `upload:draft` (and restart existing watchers):
+shell running `start:publish` or `upload:draft` (and restart existing watchers):
 
 ```sh
 export DOTENV_CONFIG_PATH="$HOME/repositories/napps/.env"
