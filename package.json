@@ -20,6 +20,8 @@
   "author": "arthurfranca",
   "type": "module",
   "scripts": {
+    "// link:nappup": "Register the nappup checkout with the current Node/npm installation and restore the local link.",
+    "link:nappup": "(cd ../../nappup && npm link) && npm link nappup --no-save --package-lock=false",
     "// start": "Start/reuse the local launcher, watch files, and publish drafts after a 2s debounce.",
     "start": "node bin/dev.js",
     "// start:adb": "Run the draft watcher with Android port forwarding and Chrome/Edge console logs.",
@@ -64,7 +66,7 @@
     "@dicebear/core": "^10.7.0",
     "@dicebear/styles": "^10.6.0",
     "libp2r2p": "^0.10.12",
-    "thenameisf": "^1.2.7"
+    "thenameisf": "^1.2.8"
   },
   "devDependencies": {
     "esbuild": "^0.25.1",
@@ -73,7 +75,6 @@
     "fake-indexeddb": "^6.2.5",
     "globals": "^15.12.0",
     "jsonc-parser": "^3.3.1",
-    "nappup": "^2.3.10",
     "neostandard": "^0.12.1"
   }
 }

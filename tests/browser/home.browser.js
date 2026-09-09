@@ -2,9 +2,9 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import { compile, root } from '../../bin/build-options.js'
-import { ensureRuntime } from '../../../44billion/bin/dev-runtime.js'
-import { launchChrome } from '../../../44billion/tests/browser/runtime/chrome.js'
-import { prepareTestApp } from '../../../44billion/tests/browser/runtime/prepare-app.js'
+import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
+import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
+import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 
 test('home contacts snap, load nearby avatars, share unread counts, and scroll under the header', { timeout: 120000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })

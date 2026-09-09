@@ -22,7 +22,7 @@ and build/publishing tooling exist. Do not describe planned features as already 
 
 - Before implementing any Nostr behavior, check the public exports and
   implementation of the installed `libp2r2p` and, when needed, the sibling
-  repository `../libp2r2p`.
+  repository `../../libp2r2p`.
 - In order of preference: reuse a public API; consider exposing an internal
   implementation through a public API; or add a capability to libp2r2p that
   other projects can reuse. Keep only app-specific helpers/services in Zillion.
@@ -43,7 +43,7 @@ and build/publishing tooling exist. Do not describe planned features as already 
   [`APP_API.md` on `main`](https://github.com/44Billion/44billion/blob/main/APP_API.md)
   as the source of truth for injected APIs; check it when introducing or changing
   an integration. New injected APIs must be documented there. The sibling
-  `../44billion/APP_API.md` and implementation are useful for development, but
+  `../../44billion/APP_API.md` and implementation are useful for development, but
   local changes do not prove availability in the deployed runtime.
 - `window.napp` and `window.nostr` are injected before app JavaScript runs;
   asynchronous bridge methods wait for the handshake. Use these APIs directly
@@ -238,9 +238,23 @@ needed; empty folders mark the initial structure.
 - `napp.jsonc` is the metadata source. The build generates
   `dist/zillion/.well-known/napp.json`; nappup consumes it and removes it from
   the list of published files. Do not treat it as runtime configuration.
-- Consult `../nappup/README.md` and the uploader code when changing publishing.
+- Consult `../../nappup/README.md` and the uploader code when changing publishing.
   Document ecosystem customizations separately from NIP requirements.
-- Publishing uses the installed, lockfile-managed nappup. `npm start` publishes
+- Publishing uses the sibling nappup checkout through npm link. Zillion has no
+  registry nappup dependency. Run `npm run link:nappup` after initial installation,
+  switching Node/npm, or `npm ci`; it registers `../../nappup` globally for the active
+  installation and restores the local link with `--no-save --package-lock=false`.
+  Install the sibling's dependencies first. Keep links out of the lockfile.
+  Restart active watchers after linking. Do not manually edit node_modules.
+- The link shares code, not publisher credentials. `DOTENV_CONFIG_PATH` selects a
+  shared encrypted dotenv file independently of the app directory. This workspace
+  uses `$HOME/repositories/napps/.env` through the Bash startup configuration.
+  Ensure publishers inherit that path and restart existing watchers after
+  changing it. Isolated tests must explicitly use
+  their own temporary dotenv paths. Preserve the
+  user's chosen identity and existing files; do not migrate or rotate secrets
+  implicitly when changing dependencies. Never log secret values.
+- `npm start` publishes
   successful builds to draft after a two-second debounce; `upload:draft` performs
   one upload. Both use identifier `zillion` and share a project upload lock.
   The main channel is published only by an explicit `npm run upload`.
@@ -272,7 +286,12 @@ needed; empty folders mark the initial structure.
 
 ## Runtime development and browser tests
 
-- `npm run start:adb` adds the shared `../44billion/bin/adb-session.js` handle to
+- The workspace root is `repositories/`; Zillion lives at `napps/zillion`.
+  Related repositories (`44billion`, `ez-vault`, `nappup`, `libp2r2p`) are two
+  levels above the app root. Resolve tooling imports relative to their source
+  files: three levels from `bin/`, four from `tests/browser/`.
+
+- `npm run start:adb` adds the shared `../../44billion/bin/adb-session.js` handle to
   the same development watcher. It forwards ports 10000/4000 and streams phone
   Chrome/Edge logs; it must not duplicate the build, upload queue, or supervisor.
   Validate ADB/device availability before starting automatic draft publication.

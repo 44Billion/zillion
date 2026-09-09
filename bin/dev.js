@@ -1,6 +1,6 @@
 import esbuild from 'esbuild'
-import { ensureRuntime } from '../../44billion/bin/dev-runtime.js'
-import { startAdbSession } from '../../44billion/bin/adb-session.js'
+import { ensureRuntime } from '../../../44billion/bin/dev-runtime.js'
+import { startAdbSession } from '../../../44billion/bin/adb-session.js'
 import { buildOptions } from './build-options.js'
 import { createDraftQueue } from './draft-queue.js'
 import { publishBuild } from './publish.js'

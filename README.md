@@ -1,7 +1,7 @@
 # Zillion
 
 A private chat inspired by WhatsApp and Signal, built as a Nostr client.
-Messaging will use [`libp2r2p/private-messenger`](../libp2r2p/private-messenger/index.js),
+Messaging will use [`libp2r2p/private-messenger`](../../libp2r2p/private-messenger/index.js),
 which combines private messages (`private-message`) with transport over private
 channels (`private-channel`). The entire front-end uses **thenameisf**.
 
@@ -46,12 +46,17 @@ remain intentionally inert.
 
 ## Development
 
-Requirements: Node.js 24+, npm, Python 3, and the sibling `44billion` and
+Requirements: Node.js 24+, npm, Python 3, and the `44billion` and
 `ez-vault` repositories with their npm dependencies installed. Chrome is also
 required for browser tests (`CHROME_BIN` overrides `/usr/bin/google-chrome`).
 
+The workspace keeps this app at `repositories/napps/zillion`, alongside
+`napps/nappstore`. Tooling resolves `44billion`, `ez-vault`, and `nappup` from
+`repositories/` (two levels above the Zillion root).
+
 ```sh
 npm install
+npm run link:nappup       # link the sibling uploader; repeat after switching Node or npm ci
 npm start                 # local launcher + watch + automatic draft publishing
 npm run start:adb         # same workflow on Android, with forwarded ports and console logs
 npm test                  # fast Node tests; no publishing
@@ -81,7 +86,7 @@ Successful builds publish after two seconds without changes. Uploads run one at 
 time from isolated build files; the latest pending build replaces older pending
 work. Build errors cancel pending uploads. Upload errors leave the last published
 version available; save again or run `upload:draft` to retry. Builds and uploads
-use the installed, lockfile-managed tools. Changes to build scripts or dependency
+use the installed tools; nappup is linked to the sibling checkout. Changes to build scripts or dependency
 configuration require restarting `npm start`.
 If an uploader is forcibly killed, a stale `tmp/upload.lock` is reported rather
 than reclaimed while another process may be acquiring it. Remove that lock after
@@ -111,7 +116,28 @@ The project's runtime environment **does not support service workers**.
 `npm run upload` compiles and publishes to **main** using the installed nappup.
 `npm start` and `npm run upload:draft` publish only to **draft**, with identifier
 `zillion`. All three publish to the real network, even with a local launcher.
-Publisher identity and upload options follow [nappup](../nappup/README.md).
+Publisher identity and upload options follow [nappup](../../nappup/README.md).
+
+Publishing uses the sibling `../../nappup` checkout, whose dependencies must be
+installed. Run `npm run link:nappup` here after initial setup, switching Node/npm,
+or `npm ci`. The script registers the checkout globally for the active Node
+installation, then restores this project's local package/CLI link without saving
+it in the lockfile. Zillion intentionally has no registry dependency on nappup.
+Restart an active watcher after changing the link.
+
+Linking shares uploader code, not credentials. Local development uses the shared
+encrypted file `~/repositories/napps/.env` for Zillion and other nsites/apps. Configure the
+shell running `npm start` or `upload:draft` (and restart existing watchers):
+
+```sh
+export DOTENV_CONFIG_PATH="$HOME/repositories/napps/.env"
+```
+
+Supply its matching `DOTENV_PRIVATE_KEY_NAPPUP` when required. The Zillion-local
+`.env` has been migrated to that shared file; do not create a new publisher identity
+by running without this configuration. Other environments may choose another
+absolute path. This is private local configuration, never app metadata or build
+input. Changes to the shared credential affect every project using it.
 
 The build converts [`napp.jsonc`](napp.jsonc) to `.well-known/napp.json`, which
 nappup consumes as metadata and excludes from published files. This format is
