@@ -28,17 +28,19 @@ and conversation persistence are still planned.
 ## Home preview
 
 The home follows one mobile layout, capped at 718px and centered on wider screens.
-It includes a temporary Z logo, top-right profile portrait, a horizontal contact
+It includes the green chat-bubble Z logo, top-right profile portrait, a horizontal contact
 strip (pinned first, then alphabetical), and a DM list sharing its unread counters
 with contact avatars. Touch scrolling snaps to
 whole contacts; mousewheel and arrow keys move by contact. Only More stays fixed
 in the strip. The header and the strip divider remain visible during vertical
 scrolling. Once the divider reaches the header, further scrolling gradually
 compacts the header and logo to 48px including the divider (plus any device
-safe-area inset). The placeholder ends at 28x28px as the Zillion wordmark fades
+safe-area inset). The bubble ends at 28px (excluding transparent padding) as the Zillion wordmark fades
 out; both reverse when scrolling back. Contact avatars mount as they approach
 the visible strip.
 Light and dark themes follow the system; backgrounds are off-white and graphite.
+The same logo artwork serves both themes and the launcher icon; its sources and
+safety padding are documented in [design/branding](design/branding/README.md).
 Preview content is fixed English JSON with local portraits, and the buttons
 remain intentionally inert.
 

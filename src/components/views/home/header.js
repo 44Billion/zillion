@@ -17,13 +17,13 @@ f('z-home-header', ({ h, props }) => h`
           display: flex; align-items: center; min-width: 0; font-size: 25px;
           gap: calc(11px - 3px * var(--home-header-collapse));
         }
-        .logo-placeholder {
+        .brand-logo {
           --logo-size: calc(42px - 14px * var(--home-header-collapse));
-          display: grid; place-items: center; width: var(--logo-size); height: var(--logo-size);
-          flex: none; border-radius: calc(var(--logo-size) * 13 / 42); background: var(--z-logo);
-          color: var(--z-accent-text); font-weight: 650;
-          .logo-letter { font-size: calc(var(--logo-size) * 27 / 42); line-height: 1; }
-          img, svg { width: 100%; height: 100%; object-fit: contain; }
+          position: relative; width: var(--logo-size); height: var(--logo-size); flex: none;
+          img {
+            position: absolute; left: 50%; top: 50%; width: 125%; height: 125%;
+            max-width: none; transform: translate(-50%, -50%); object-fit: contain;
+          }
         }
         h1 { opacity: calc(1 - var(--home-header-collapse)); margin: 0; font-size: inherit; line-height: 1; font-weight: 650; letter-spacing: -.8px; }
         .actions { display: flex; align-items: center; gap: 2px; }
@@ -37,7 +37,7 @@ f('z-home-header', ({ h, props }) => h`
       }
     `}</style>
     <div class="brand">
-      <span class="logo-placeholder" aria-hidden="true"><span class="logo-letter">Z</span></span>
+      <span class="brand-logo" aria-hidden="true"><img src="/zillion.icon.svg" alt="" width="256" height="256" draggable="false"></span>
       <h1>Zillion</h1>
     </div>
     <div class="actions">

@@ -22,6 +22,23 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     const origin = new URL(appUrl).origin
     const evaluate = expression => browser.evaluate(expression, origin)
     await browser.until(() => evaluate('document.querySelectorAll(".contact-item").length === 10 && document.querySelectorAll(".contact-item img").length > 0'), 'home contacts')
+    await browser.until(() => evaluate('Boolean(document.querySelector(".brand-logo img")?.naturalWidth)'), 'local logo image')
+    const logoPixels = await evaluate(`(() => {
+      const img = document.querySelector('.brand-logo img');
+      const canvas = document.createElement('canvas');
+      canvas.width = canvas.height = 256;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, 256, 256);
+      const { data } = ctx.getImageData(0, 0, 256, 256);
+      let left = 256, right = 0;
+      for (let y = 0; y < 256; y++) for (let x = 0; x < 256; x++) {
+        if (data[(y * 256 + x) * 4 + 3] >= 16) { left = Math.min(left, x); right = Math.max(right, x); }
+      }
+      return { cornerAlpha: data[3], fraction: (right - left + 1) / 256, icon: document.querySelector('link[rel=icon]').href, source: img.src };
+    })()`)
+    assert.equal(logoPixels.cornerAlpha, 0)
+    assert.ok(Math.abs(logoPixels.fraction - 0.8) < 0.01)
+    assert.equal(logoPixels.icon, logoPixels.source)
     const names = await evaluate('[...document.querySelectorAll(".contact-item .contact-name")].map(el => el.textContent)')
     assert.deepEqual(names, ['Daniel', 'Ellie', 'Maya', 'Alex', 'James', 'Juliette', 'Matteo', 'Nina', 'Sam', 'Sofia'])
     assert.equal(await evaluate('document.querySelectorAll(".contact-pin").length'), 3)
@@ -78,7 +95,7 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
       const header = document.querySelector('.home-header');
       const rect = header.getBoundingClientRect();
       const style = getComputedStyle(header);
-      const logo = document.querySelector('.logo-placeholder').getBoundingClientRect();
+      const logo = document.querySelector('.brand-logo').getBoundingClientRect();
       const contacts = document.querySelector('.home-contacts-space').getBoundingClientRect();
       const divider = document.querySelector('.contacts-divider').getBoundingClientRect();
       const conversation = document.querySelector('.conversation').getBoundingClientRect();
@@ -108,6 +125,8 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     assert.equal(compact.height + compact.border, 48)
     assert.ok(compact.logoHeight < expanded.logoHeight)
     assert.equal(compact.logoHeight, 28)
+    const imageWidth = await evaluate('document.querySelector(".brand-logo img").getBoundingClientRect().width')
+    assert.ok(Math.abs(imageWidth * logoPixels.fraction - 28) < 0.5)
     assert.equal(expanded.titleOpacity, 1)
     assert.equal(before.titleOpacity, 1)
     assert.equal(touching.titleOpacity, 1)

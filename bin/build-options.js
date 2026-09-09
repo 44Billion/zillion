@@ -26,6 +26,9 @@ export function buildOptions ({ development = false, projectRoot = root, onStart
           metadata = new TextEncoder().encode(JSON.stringify(value, null, 2) + '\n')
           return { contents: '', loader: 'js', watchFiles: [filename] }
         })
+        build.onLoad({ filter: /\.icon\.svg$/ }, async args => ({
+          contents: await readFile(args.path), loader: 'copy', watchFiles: [args.path]
+        }))
         build.onLoad({ filter: /\.css$/ }, async args => {
           const css = await esbuild.transform(await readFile(args.path, 'utf8'), { loader: 'css', minify: true })
           return { loader: 'text', contents: css.code, watchFiles: [args.path] }
@@ -41,7 +44,7 @@ export function buildOptions ({ development = false, projectRoot = root, onStart
     inject: ['zillion:metadata'],
     loader: { '.html': 'copy', '.ico': 'copy', '.svg': 'text', '.webp': 'dataurl', '.jpg': 'dataurl', '.png': 'copy' },
     define: { IS_DEVELOPMENT: JSON.stringify(development), IS_PRODUCTION: JSON.stringify(!development) },
-    entryPoints: ['src/components/app.js', 'src/assets/html/index.html'],
+    entryPoints: ['src/components/app.js', 'src/assets/html/index.html', 'src/assets/media/branding/zillion.icon.svg'],
     outdir, entryNames: '[name]', bundle: true, platform: 'browser', format: 'esm',
     target: ['edge91', 'firefox89', 'chrome91', 'safari15'],
     minify: !development, sourcemap: development, write: false

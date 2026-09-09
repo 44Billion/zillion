@@ -2,7 +2,7 @@
 // The build generates .well-known/napp.json; the uploader consumes but does not publish it.
 {
   "self": [], // App identity pubkey, once defined; not the publisher pubkey.
-  "icon": [],
+  "icon": [], // nappup uses the icon declared in index.html.
   "name": [["Zillion"]],
   "summary": [["Chat privado sobre Nostr", "pt"], ["Private chat over Nostr", "en"]],
   "country": [],

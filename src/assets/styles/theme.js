@@ -13,7 +13,6 @@ export const colors = {
   primary: ['#168447', '#21c063'],
   onPrimary: ['#f5fff8', '#082b18'],
   accentText: ['#147b45', '#6ad995'],
-  logo: ['#e3ede2', '#283d2e'],
   bgAvatarLoading: ['#e0e5df', '#303a34']
 }
 

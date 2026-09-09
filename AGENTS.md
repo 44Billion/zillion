@@ -177,15 +177,18 @@ and build/publishing tooling exist. Do not describe planned features as already 
   sticky divider preserves the contact strip's bottom edge below it. After the
   divider reaches the header, the next 96px of scroll synchronously shrink its
   padding and square logo. The minimum is 48px including the divider, plus the
-  device's top safe-area inset; action hit areas stay 44px high. The placeholder
+  device's top safe-area inset; action hit areas stay 44px high. The logo box
   ends at 28x28px while the Zillion wordmark fades to zero opacity using the same
   progress. Keep its semantic heading and layout space while faded. Keep an
   expanded flow slot so this visual change cannot alter the collapse threshold
   or trigger scroll-anchoring jumps.
-- The final logo is still being explored. Use a single artwork for both themes.
-  Its transparent safety margin must remain outside the 28px measurement: the
-  longest visible bubble dimension, including its tail, should be 28px when
-  collapsed. Do not install an unselected logo concept as the app's identity.
+- The approved logo is the green organic chat bubble with a Z. Use the same
+  `src/assets/media/branding/zillion.icon.svg` in both themes without tinting. It embeds
+  the transparent raster unchanged with 10% safety padding on each side. The
+  header compensates with a 125% image size: the longest visible bubble dimension,
+  including its tail, is 28px when collapsed. Keep the semantic logo box at 28px.
+  `design/branding/README.md` records sources and sizing; design files stay out
+  of builds. The HTML icon declaration also supplies the launcher icon via nappup.
 - Mount contact avatars only near the horizontal viewport. The installed
   thenameisf visibility task creates an observer without calling `observe()`;
   until fixed upstream, use an IntersectionObserver inside a normal `useTask`,
@@ -193,7 +196,7 @@ and build/publishing tooling exist. Do not describe planned features as already 
   Preview portrait bytes remain bundled data URLs; this defers avatar mounting
   and image decoding, not downloading those fixture bytes.
 - The upper-right profile portrait matches the 26px action icons; the upper-left
-  42px Z monogram is a temporary logo placeholder. Inbox rows are DMs only.
+  logo bubble starts at 42px. Inbox rows are DMs only.
 - Authored UI colors belong to `src/assets/styles/theme.js` as light/dark pairs,
   consumed as CSS variables. Follow the system color scheme, preserve portrait
   colors, and use `:active` plus `:focus-visible` instead of hover-specific styles.
