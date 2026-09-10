@@ -10,7 +10,7 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   try {
-    const app = await prepareTestApp(await compile(), { identifier: 'home-test', name: 'Home layout test' })
+    const app = await prepareTestApp(await compile({ development: true, futureFeatures: true }), { identifier: 'home-test', name: 'Home layout test' })
     browser = await launchChrome()
     await browser.navigate('http://localhost:10000')
     await browser.until(() => browser.evaluate('Boolean(localStorage.getItem("session_workspaceKeys"))'), 'launcher initialization')

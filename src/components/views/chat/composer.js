@@ -23,6 +23,7 @@ f('z-chat-composer', ({ h }) => {
     cleanup(() => observer.disconnect())
   }, { after: 'rendering' })
   const hasText = view.text$().length > 0
+  const showMediaControls = FUTURE_FEATURES_ENABLED && !hasText
   return h`
     <footer class="chat-composer">
       <style>${`
@@ -48,10 +49,10 @@ f('z-chat-composer', ({ h }) => {
       <div class="composer-field" ref=${view.fieldRef$}>
         <textarea ref=${view.inputRef$} rows="1" placeholder=${t('Message')} aria-label=${t('Message')}
           enterkeyhint="enter" .value=${view.text$()} oninput=${event => view.text$(event.target.value)}></textarea>
-        ${hasText ? null : h`<button class="attach" type="button" aria-label=${t('Attach file')} aria-disabled="true"><icon-paperclip props=${{ size: '24px', weight: 'light' }} /></button>`}
+        ${showMediaControls ? h`<button class="attach" type="button" aria-label=${t('Attach file')} aria-disabled="true"><icon-paperclip props=${{ size: '24px', weight: 'light' }} /></button>` : null}
       </div>
-      <button class="compose-action" type="button" aria-label=${t(hasText ? 'Send message' : 'Camera')} aria-disabled="true">
-        ${hasText ? h`<icon-send-2 props=${{ size: '24px', weight: 'regular' }} />` : h`<icon-camera props=${{ size: '24px', weight: 'regular' }} />`}
+      <button class="compose-action" type="button" aria-label=${t(showMediaControls ? 'Camera' : 'Send message')} aria-disabled="true">
+        ${showMediaControls ? h`<icon-camera props=${{ size: '24px', weight: 'regular' }} />` : h`<icon-send-2 props=${{ size: '24px', weight: 'regular' }} />`}
       </button>
     </footer>
   `

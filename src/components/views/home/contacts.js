@@ -104,10 +104,12 @@ f('z-home-contacts', ({ h, props }) => {
           }} />
         `)}
       </div>
-      <button class="more" type="button" aria-label=${t('More contacts')} aria-disabled="true">
+      ${FUTURE_FEATURES_ENABLED
+? h`<button class="more" type="button" aria-label=${t('More contacts')} aria-disabled="true">
         <span class="more-icon" aria-hidden="true"><icon-chevron-down props=${{ size: '20px', weight: 'regular' }} /></span>
         <span>${t('More')}</span>
-      </button>
+      </button>`
+: null}
     </section>
   `
 })

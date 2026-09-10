@@ -188,7 +188,8 @@ and build/publishing tooling exist. Do not describe planned features as already 
   compose, profile and More remain inert.
 - Keep the main column at a maximum of 718px, centered with vertical borders on
   wider screens. Use the same mobile composition at every width. The contact
-  strip fits whole items while keeping 44px portraits and a persistent More cell.
+  strip fits whole items while keeping 44px portraits. More occupies a fixed
+  cell only when future-feature previews are enabled; otherwise the list expands.
 - Sort contacts pinned first, alphabetically within each group. All contacts,
   including pinned ones, scroll; only More stays outside the scroller. Share
   unread counts with their conversations through `z-unread-badge`.
@@ -229,12 +230,15 @@ and build/publishing tooling exist. Do not describe planned features as already 
 
 ## Conversation preview and routing
 
-- `ZILLION_CHAT_ATTENTION=1` enables the inert paid-attention header button and
-  menu option in development builds only; unset or `0` disables them. Restart
-  the watcher to change this build-time flag. `bin/build-options.js` defines
-  `CHAT_ATTENTION_ENABLED` and forces it off in production regardless of the
-  requested flag. Conditionally omit both controls from the DOM when disabled;
-  the remaining three-dot control must occupy a single 44px circle.
+- `ZILLION_FUTURE_FEATURES` controls the inert previews for home Search/New
+  message, contact-strip More, paid attention (header and menu), Attach, and
+  Camera. Development enables them by default; `0` disables and `1` enables
+  them. Restart the watcher after changing the flag. `bin/build-options.js`
+  defines `FUTURE_FEATURES_ENABLED` and always forces it off in production.
+  Conditionally omit disabled controls from the DOM. The contact strip must
+  reclaim More's width and gap, and the chat three-dot button occupies a single
+  44px circle. Without the previews, the composer always displays Send, even
+  when empty. Keep the profile button visible. Sending remains unimplemented.
 
 - `src/components/router.js` owns `url-router`, `useLocation`, and `f-route`.
   `/` is home, `/chat/:contactId` is a fixture DM, and unknown routes/contacts
@@ -295,7 +299,8 @@ and build/publishing tooling exist. Do not describe planned features as already 
   and restores focus/selection. Show an icon-only green check for 1600ms after
   successful copy; failures use the reactive toast. Clean up pending UI work.
 - The header menu, Reply/Delete actions, attention, attachments, camera and Send
-  are presentation only. Typing hides Attach and swaps Camera for Send. Preserve
+  are presentation only. With future-feature previews enabled, typing hides
+  Attach and swaps Camera for Send. Preserve
   Enter/newlines, grow to five text lines, then scroll inside the textarea; align
   icons to the bottom line. Drafts are local component state and are not sent or
   persisted. Keep all added labels and fixture texts translated in 11 locales.

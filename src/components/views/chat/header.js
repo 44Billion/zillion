@@ -92,7 +92,7 @@ f('z-chat-header', ({ h, props }) => {
         <div class="chat-name"><h1>${person.self ? t('You') : person.name}</h1><div class="chat-subtitle">${t(person.self ? 'Notes to yourself' : 'last seen recently')}</div></div>
       </div>
       <div class="chat-header-actions header-pill">
-        ${CHAT_ATTENTION_ENABLED ? h`<button class="chat-attention" type="button" aria-label=${t('Get attention')} aria-disabled="true"><icon-bolt props=${{ size: '22px', weight: 'regular' }} /></button>` : null}
+        ${FUTURE_FEATURES_ENABLED ? h`<button class="chat-attention" type="button" aria-label=${t('Get attention')} aria-disabled="true"><icon-bolt props=${{ size: '22px', weight: 'regular' }} /></button>` : null}
         <button class="chat-more" type="button" ref=${menu.anchorRef$} aria-label=${t('Chat options')} aria-haspopup="menu"
           aria-expanded=${String(menu.isOpen$())} aria-controls=${view.menuId} onclick=${() => menu.setIsOpen(open => !open)}>
           <icon-dots-vertical props=${{ size: '22px', weight: 'regular' }} />
@@ -101,7 +101,7 @@ f('z-chat-header', ({ h, props }) => {
       ${menu.isVisible$()
 ? h`
         <div class="chat-menu" id=${view.menuId} role="menu" aria-label=${t('Chat options')} ref=${menu.floatingRef$} style=${menu.floatingStyle$()} onkeydown=${view.key}>
-          ${CHAT_ATTENTION_ENABLED ? h`<button class="chat-attention-option" type="button" role="menuitem" aria-disabled="true"><icon-bolt props=${{ size: '20px', weight: 'regular' }} /><span>${t('Get attention')}</span></button>` : null}
+          ${FUTURE_FEATURES_ENABLED ? h`<button class="chat-attention-option" type="button" role="menuitem" aria-disabled="true"><icon-bolt props=${{ size: '20px', weight: 'regular' }} /><span>${t('Get attention')}</span></button>` : null}
           <button class="delete-chat" type="button" role="menuitem" aria-disabled="true"><icon-trash props=${{ size: '20px', weight: 'regular' }} /><span>${t('Delete chat content')}</span></button>
         </div>
       `

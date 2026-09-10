@@ -14,7 +14,7 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
   let browser
   try {
     const files = await compile()
-    const options = buildOptions({ development: true, onEnd: extra => files.push(...extra.filter(file => file.name !== '.well-known/napp.json')) })
+    const options = buildOptions({ development: true, futureFeatures: true, onEnd: extra => files.push(...extra.filter(file => file.name !== '.well-known/napp.json')) })
     options.entryPoints = [{ in: 'tests/browser/toast-fixture.js', out: '__tests__/toast-fixture' }]
     options.entryNames = '[dir]/[name]'
     await esbuild.build(options)

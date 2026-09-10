@@ -42,12 +42,16 @@ f('z-home-header', ({ h, props }) => h`
       <h1>Zillion</h1>
     </div>
     <div class="actions">
+      ${FUTURE_FEATURES_ENABLED
+? h`
       <button type="button" aria-label=${t('Search messages')} aria-disabled="true">
         <span aria-hidden="true"><icon-search props=${{ size: '26px', weight: 'light' }} /></span>
       </button>
       <button type="button" aria-label=${t('New message')} aria-disabled="true">
         <span aria-hidden="true"><icon-circle-plus props=${{ size: '26px', weight: 'light' }} /></span>
       </button>
+      `
+: null}
       <button type="button" aria-label=${t('Your profile')} aria-disabled="true">
         <span class="user-avatar" aria-hidden="true"><z-home-avatar props=${{ person$: props.user$ }} /></span>
       </button>

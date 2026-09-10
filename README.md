@@ -32,8 +32,9 @@ The home follows one mobile layout, capped at 718px and centered on wider screen
 It includes the green chat-bubble Z logo, top-right profile portrait, a horizontal contact
 strip (pinned first, then alphabetical), and a DM list sharing its unread counters
 with contact avatars. Touch scrolling snaps to
-whole contacts; mousewheel and arrow keys move by contact. Only More stays fixed
-in the strip. The header and the strip divider remain visible during vertical
+whole contacts; mousewheel and arrow keys move by contact. When future-feature
+previews are enabled, More stays fixed in the strip; otherwise contacts occupy
+the freed space. The header and the strip divider remain visible during vertical
 scrolling. Once the divider reaches the header, further scrolling gradually
 compacts the header and logo to 48px including the divider (plus any device
 safe-area inset). The bubble ends at 28px (excluding transparent padding) as the Zillion wordmark fades
@@ -67,7 +68,9 @@ copies text and briefly displays a checkmark on green. Cancelling native sharing
 does not copy; other failures can fall back to the clipboard.
 
 The text area grows up to five lines, then scrolls internally. Enter inserts a
-newline. Typing hides Attach and replaces Camera with Send. Sending, replying,
+newline. With future-feature previews enabled, typing hides Attach and replaces
+Camera with Send. Otherwise Attach and Camera are absent and Send is always
+shown, including with an empty draft. Sending, replying,
 deleting, attachments, camera capture and paid attention are still unimplemented;
 drafts are temporary component state. The three-dot menu displays the future
 content-deletion action without performing it. Paid attention (the bolt button
@@ -97,12 +100,18 @@ Route retention requires **thenameisf 1.2.10** or newer.
 
 ## Development
 
-Paid attention is hidden by default. Run `ZILLION_CHAT_ATTENTION=1 npm start`
-to preview its header button and menu option, or `ZILLION_CHAT_ATTENTION=0 npm start`
-to hide them. Restart the watcher when changing this build-time flag; it also
-applies to other development commands. Production builds always omit both
-controls, even with the flag set to `1`. Without them, the three-dot button
-occupies a single 44px circle with no reserved space for the bolt.
+Future-feature previews are enabled by default in development (`npm start`).
+Run `ZILLION_FUTURE_FEATURES=0 npm start` to hide them, or
+`ZILLION_FUTURE_FEATURES=1 npm start` to enable them explicitly. Restart the
+watcher when changing this build-time flag; it also applies to other development
+commands. The flag controls Search and New message beside the home avatar,
+More in the contact strip, the paid-attention header button and menu option,
+Attach, and Camera. These controls are still inert previews.
+
+Production always omits these controls, even with the flag set to `1`.
+The contact list expands into More's space, the three-dot chat button occupies
+a single 44px circle, and the composer always shows Send instead of Camera.
+Sending remains unimplemented. The profile button remains visible.
 
 Requirements: Node.js 24+, npm, Python 3, and the `44billion` and
 `ez-vault` repositories with their npm dependencies installed. Chrome is also

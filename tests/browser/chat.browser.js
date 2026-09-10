@@ -9,35 +9,53 @@ import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prep
 
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-test('development attention flag controls both header and menu without leaving empty space', { timeout: 120000 }, async () => {
+test('future feature flag controls home and chat previews without leaving empty space', { timeout: 120000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   try {
-    for (const chatAttention of [false, true]) {
+    const widths = []
+    for (const [development, futureFeatures, enabled] of [[true, false, false], [true, true, true], [false, true, false]]) {
       browser = await launchChrome()
-      const app = await prepareTestApp(await compile({ development: true, chatAttention }), { identifier: `attention-${chatAttention}`, name: 'Attention flag test' })
+      const app = await prepareTestApp(await compile({ development, futureFeatures }), { identifier: 'features-test', name: 'Future features test' })
       await browser.navigate('http://localhost:10000')
       await browser.until(() => browser.evaluate('Boolean(localStorage.getItem("session_workspaceKeys"))'), 'launcher initialization')
+      const session = [...browser.contexts.values()].find(context => context.origin === 'http://localhost:10000' && context.auxData?.isDefault).sessionId
+      await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 780, deviceScaleFactor: 1, mobile: true }, session)
       await browser.evaluate(app.installExpression)
       await browser.navigate(`http://localhost:10000/${app.app}`)
       const appUrl = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app iframe')
       const origin = new URL(appUrl).origin
       const evaluate = expression => browser.evaluate(expression, origin)
       await browser.until(() => evaluate('Boolean(document.querySelector(".contact-item[data-contact-id=maya]"))'), 'home')
+      assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-header .actions button")].map(button => button.getAttribute("aria-label"))'), enabled ? ['Search messages', 'New message', 'Your profile'] : ['Your profile'])
+      assert.equal(await evaluate('Boolean(document.querySelector(".contact-strip .more"))'), enabled)
+      widths.push(await evaluate('document.querySelector(".contact-list").getBoundingClientRect().width'))
       await evaluate('document.querySelector(".contact-item[data-contact-id=maya]").click()')
       await browser.until(() => evaluate('Boolean(document.querySelector(".chat-more"))'), 'chat header')
-      assert.equal(await evaluate('Boolean(document.querySelector(".chat-attention"))'), chatAttention)
-      assert.deepEqual(await evaluate('(() => { const rect = document.querySelector(".chat-header-actions").getBoundingClientRect(); return [rect.width, rect.height] })()'), [chatAttention ? 88 : 44, 44])
+      await browser.until(() => evaluate('!document.querySelector("[data-transitioning]")'), 'chat transition finished')
+      assert.equal(await evaluate('Boolean(document.querySelector(".chat-attention"))'), enabled)
+      assert.deepEqual(await evaluate('(() => { const rect = document.querySelector(".chat-header-actions").getBoundingClientRect(); return [rect.width, rect.height] })()'), [enabled ? 88 : 44, 44])
       await evaluate('document.querySelector(".chat-more").click()')
       await browser.until(() => evaluate('Boolean(document.querySelector(".chat-menu .delete-chat"))'), 'chat menu')
-      assert.equal(await evaluate('Boolean(document.querySelector(".chat-attention-option"))'), chatAttention)
+      assert.equal(await evaluate('Boolean(document.querySelector(".chat-attention-option"))'), enabled)
       await browser.until(() => evaluate('document.activeElement?.getAttribute("role") === "menuitem"'), 'menu focus')
-      assert.equal(await evaluate('document.activeElement.innerText.trim()'), chatAttention ? 'Get attention' : 'Delete chat content')
+      assert.equal(await evaluate('document.activeElement.innerText.trim()'), enabled ? 'Get attention' : 'Delete chat content')
+      for (const text of ['', 'Draft', '']) {
+        await evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.focus(); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event('input', { bubbles: true })); })()`)
+        const showMedia = enabled && !text
+        await browser.until(() => evaluate(`document.querySelector('.compose-action').getAttribute('aria-label') === '${showMedia ? 'Camera' : 'Send message'}'`), 'composer action matches feature flag and draft')
+        assert.equal(await evaluate('Boolean(document.querySelector(".attach"))'), showMedia)
+        assert.equal(await evaluate('Boolean(document.querySelector(".compose-action icon-camera"))'), showMedia)
+        assert.equal(await evaluate('Boolean(document.querySelector(".compose-action icon-send-2"))'), !showMedia)
+        assert.equal(await evaluate('getComputedStyle(document.querySelector(".composer-field")).outlineStyle'), 'solid')
+      }
       await browser.close()
       browser = null
     }
+    assert.equal(widths[0] - widths[1], 56, 'contacts reclaim the More button width and gap')
+    assert.equal(widths[0], widths[2], 'production uses the full contact strip')
   } catch (error) {
-    await browser?.diagnose(path.join(root, 'tmp/browser-failures/attention'))
+    await browser?.diagnose(path.join(root, 'tmp/browser-failures/future-features'))
     throw error
   } finally {
     await browser?.close()
@@ -49,7 +67,7 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   try {
-    const app = await prepareTestApp(await compile({ chatAttention: true }), { identifier: 'chat-test', name: 'Chat preview test' })
+    const app = await prepareTestApp(await compile({ futureFeatures: true }), { identifier: 'chat-test', name: 'Chat preview test' })
     browser = await launchChrome()
     await browser.navigate('http://localhost:10000')
     await browser.until(() => browser.evaluate('Boolean(localStorage.getItem("session_workspaceKeys"))'), 'launcher initialization')
@@ -70,7 +88,7 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
     await browser.until(() => evaluate('(() => {const el=document.querySelector(".chat-timeline");return el.scrollHeight-el.scrollTop-el.clientHeight < 2})()'), 'initial scroll to latest')
     assert.equal(await evaluate('document.querySelector(".message-actions")'), null)
     await evaluate('document.querySelector(".chat-more").click()')
-    await browser.until(() => evaluate('document.querySelectorAll(".chat-menu [role=menuitem]").length === 1'), 'production chat options ignore the enabled attention flag')
+    await browser.until(() => evaluate('document.querySelectorAll(".chat-menu [role=menuitem]").length === 1'), 'production chat options ignore the enabled feature flag')
     assert.deepEqual(await evaluate('[...document.querySelectorAll(".chat-menu button")].map(button => button.innerText.trim())'), ['Delete chat content'])
     assert.equal(await evaluate('document.querySelector(".chat-attention, .chat-attention-option")'), null)
     assert.deepEqual(await evaluate('(() => { const rect = document.querySelector(".chat-header-actions").getBoundingClientRect(); return [rect.width, rect.height] })()'), [44, 44])
@@ -118,7 +136,7 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
     assert.equal(await evaluate(`(() => {
       const field = document.querySelector('.composer-field');
       const input = field.querySelector('textarea');
-      return !input.value && Boolean(field.querySelector('.attach')) && getComputedStyle(field).outlineStyle === 'solid' && getComputedStyle(input).outlineStyle === 'none';
+      return !input.value && !field.querySelector('.attach') && getComputedStyle(field).outlineStyle === 'solid' && getComputedStyle(input).outlineStyle === 'none';
     })()`), true)
 
     const setText = text => evaluate(`(() => {const el=document.querySelector('.chat-composer textarea');el.value=${JSON.stringify(text)};el.dispatchEvent(new Event('input',{bubbles:true}));})()`)
@@ -138,7 +156,7 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
     const bottoms = await evaluate('Array.from(document.querySelectorAll(".composer-field, .compose-action"),el=>el.getBoundingClientRect().bottom)')
     assert.ok(Math.abs(bottoms[0] - bottoms[1]) < 1)
     await setText('')
-    await browser.until(() => evaluate('Boolean(document.querySelector(".attach") && document.querySelector(".compose-action icon-camera"))'), 'empty controls restored')
+    await browser.until(() => evaluate('!document.querySelector(".attach") && Boolean(document.querySelector(".compose-action icon-send-2"))'), 'empty production composer keeps Send')
     assert.equal(await evaluate('document.querySelectorAll(".chat-bubble").length'), 9)
 
     for (const width of [320, 718, 1024]) {
