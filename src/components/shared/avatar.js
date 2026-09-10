@@ -247,7 +247,7 @@ f('a-avatar', ({ h, props }) => {
             position: absolute;
             inset: 0;
             background-color: ${cssVars.colors.bgAvatarLoading};
-            visibility: ${isPictureLoaded ? 'hidden' : 'visible'};
+            visibility: ${isPictureLoaded ? 'hidden' : 'inherit'};
             animation: ${isPictureLoaded ? 'none' : 'zAvatarImagePulse 2s cubic-bezier(.4,0,.6,1) infinite'};
           `}
         />
@@ -264,7 +264,7 @@ f('a-avatar', ({ h, props }) => {
             width: 100%;
             height: 100%;
             object-fit: cover;
-            visibility: ${isPictureLoaded ? 'visible' : 'hidden'};
+            visibility: ${isPictureLoaded ? 'inherit' : 'hidden'};
           `}
         />
       </span>

@@ -76,7 +76,7 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
         const home = document.querySelector('.home').getBoundingClientRect();
         return { width: toast.width, center: toast.left + toast.width / 2, homeCenter: home.left + home.width / 2, left: toast.left - home.left, right: home.right - toast.right, font: getComputedStyle(document.querySelector('.toast-message')).fontSize };
       })()`)
-      assert.ok(rect.width <= 694 && rect.left >= 11 && rect.right >= 11)
+      assert.ok(rect.width <= 694 && rect.left >= 11 && rect.right >= 11, JSON.stringify({ viewport: width, ...rect }))
       assert.ok(Math.abs(rect.center - rect.homeCenter) < 1)
       assert.equal(rect.font, '16px')
     }

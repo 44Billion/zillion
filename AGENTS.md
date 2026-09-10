@@ -239,6 +239,30 @@ and build/publishing tooling exist. Do not describe planned features as already 
 - `src/components/router.js` owns `url-router`, `useLocation`, and `f-route`.
   `/` is home, `/chat/:contactId` is a fixture DM, and unknown routes/contacts
   render a localized unavailable state. No real contact lookup occurs.
+- `z-route-page` scopes one `f-route` to its history entry using reactive
+  `paths$`, so different contacts do not share a mounted chat instance. Keep
+  `maxVisibleDistance` and the wrapper retention window at `MAX_ROUTE_DISTANCE`
+  (4, matching Flame). Evict replaced entries, discarded forward history, older
+  duplicates of the current pathname/query, and entries beyond four positions
+  in either direction. Hash-only changes keep the same view. Eviction/reload
+  discards local drafts and scroll; ordinary Back/Forward preserves them.
+- Each page owns a `.route-scroll` container. Home's collapse hook reads that
+  element, not window scroll. Cached pages keep their layout boxes and DOM
+  state through `visibility: hidden`, `inert`, and `aria-hidden`; only the active
+  page accepts interaction. Close chat menus and cancel pending long presses
+  when a page becomes inactive. Do not use `display: none` for cached views,
+  because their size observers and scroll state must remain stable.
+  Descendants such as avatar images/loading placeholders must inherit visibility
+  when shown; explicit `visibility: visible` can escape a hidden page ancestor.
+- Mobile transitions (up to 718px) follow Flame's 150ms timing: incoming views
+  move from +30% with opacity .55 when advancing, and outgoing views move to
+  -100% when going back. Use Web Animations with `transform`, wait for lazy
+  route content before starting, and cancel observers/animations on further
+  navigation or breakpoint/motion-preference changes. Skip initial loads,
+  replacements, hash-only changes, desktop and reduced motion. Keep toast
+  outside the route deck. Do not import Flame's styling or old router code.
+- Route retention requires thenameisf 1.2.10 or newer. Validate against the
+  lockfile-managed dependency; do not ship sibling source imports.
 - Home's fixture user participates in the horizontal strip and active chat list
   as `You`, sorted by their fixture name. `/chat/user` is self chat; group chats
   remain out of scope. Reuse the home portraits without public keys.
@@ -247,7 +271,8 @@ and build/publishing tooling exist. Do not describe planned features as already 
   This is a navigation presentation mode, not an identity/authorization contract.
   Ordinary home navigation marks `fromHome` in History state; Back uses the
   location store's `back`, or `replaceState` to home on an ordinary direct load.
-  Key the chat by contact and entry mode to discard drafts and timers on change.
+  Key the chat by contact and entry mode within its retained history page;
+  replacing that page discards its drafts and timers.
 - Chat fixtures live in `src/components/views/chat/fixtures`. Sample DMs share an
   exchange and end with their home preview; self messages have a separate fixture.
   Quotes, reactions, timestamps, presence and link cards are static sample data.

@@ -1,6 +1,7 @@
 import { f, useLocation, useStore, useTask } from '#f'
 import { useAnchoredMenu } from '#hooks/use-anchored-menu.js'
 import { t } from '#i18n/messages.js'
+import { useRoutePage } from '#shared/route-page.js'
 import '#views/home/avatar.js'
 import '#shared/icons/icon-chevron-down.js'
 import '#shared/icons/icon-dots-vertical.js'
@@ -10,6 +11,8 @@ import '#shared/icons/icon-trash.js'
 f('z-chat-header', ({ h, props }) => {
   const location = useLocation()
   const menu = useAnchoredMenu({ placement: 'bottom-end', gap: 6 })
+  const page = useRoutePage()
+  useTask(({ track }) => { if (!track(() => page.isActive$())) menu.setIsOpen(false) })
   const view = useStore(() => ({
     menuId: `chat-menu-${Math.random().toString(36).slice(2)}`,
     back () {

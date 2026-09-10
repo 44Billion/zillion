@@ -1,6 +1,7 @@
 import { f, useLocation, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import { t } from '#i18n/messages.js'
+import { useRoutePage } from '#shared/route-page.js'
 import home from '#views/home/fixtures/home.json'
 import { getMessages } from './fixtures/index.js'
 import './header.js'
@@ -30,12 +31,14 @@ f('z-chat-route', ({ h, props }) => {
 })
 
 f('z-chat', ({ h, props }) => {
+  const page = useRoutePage()
   const view = useStore(() => ({
     timelineRef$: null,
     screenRef$: null,
     activeId$: null,
     messages$: getMessages(props.person$())
   }))
+  useTask(({ track }) => { if (!track(() => page.isActive$())) view.activeId$(null) })
   useTask(({ track, cleanup }) => {
     const timeline = track(() => view.timelineRef$())
     if (!timeline) return
@@ -50,6 +53,7 @@ f('z-chat', ({ h, props }) => {
       if (!event.target.closest?.('.message-actions') && message?.dataset.messageId !== view.activeId$()) view.activeId$(null)
     }
     const key = event => {
+      if (!page.isActive$()) return
       if (event.key === 'Escape' && view.activeId$()) {
         const selected = timeline.querySelector('.chat-bubble.selected')
         view.activeId$(null)
@@ -93,7 +97,7 @@ f('z-chat', ({ h, props }) => {
     <main class="chat-screen" ref=${view.screenRef$} data-contact-id=${props.person$().id}>
       <style>${`
         z-chat .chat-screen {
-          position: fixed; top: 0; left: 0; right: 0; margin-inline: auto;
+          position: absolute; top: 0; left: 0; right: 0; margin-inline: auto;
           width: 100%; max-width: var(--z-mobile-width); height: 100dvh;
           display: flex; flex-direction: column; background: var(--z-chat-canvas);
           border-inline: 1px solid var(--z-border);

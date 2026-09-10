@@ -1,6 +1,7 @@
 import { f, useStore, useTask } from '#f'
 import { useAnchoredMenu } from '#hooks/use-anchored-menu.js'
 import { t } from '#i18n/messages.js'
+import { useRoutePage } from '#shared/route-page.js'
 import { canShareText, shareText } from '#helpers/share-text.js'
 import { error } from '#shared/toast.js'
 import { useMessagePress } from './hooks/use-message-press.js'
@@ -11,6 +12,7 @@ import '#shared/icons/icon-check.js'
 import '#shared/icons/icon-trash.js'
 
 f('z-chat-message', ({ h, props }) => {
+  const page = useRoutePage()
   const view = useStore(() => ({
     copied$: false,
     busy$: false,
@@ -23,6 +25,7 @@ f('z-chat-message', ({ h, props }) => {
       return [t(message.text), message.url].filter(Boolean).join('\n')
     },
     open (keyboard) {
+      if (!page.isActive$()) return
       this.keyboard$(keyboard)
       props.activeId$(props.message$().id)
     },
@@ -51,6 +54,7 @@ f('z-chat-message', ({ h, props }) => {
   }))
   const floating = useAnchoredMenu({ placement: view.placement$ })
   const press = useMessagePress(view.open)
+  useTask(({ track }) => { if (!track(() => page.isActive$())) press.cancel() })
   useTask(({ track }) => floating.setIsOpen(track(() => view.selected$())))
   useTask(({ cleanup }) => cleanup(() => { view.alive = false }))
   useTask(({ track, cleanup }) => {

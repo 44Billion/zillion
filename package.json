@@ -71,7 +71,7 @@
     "@dicebear/styles": "^10.6.0",
     "@floating-ui/dom": "^1.8.0",
     "libp2r2p": "^0.10.12",
-    "thenameisf": "^1.2.9",
+    "thenameisf": "^1.2.10",
     "url-router": "^13.0.0"
   },
   "devDependencies": {

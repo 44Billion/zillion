@@ -80,6 +80,21 @@ history, with a home fallback for direct entry. Routes survive reloads. The quer
 parameter controls navigation UI; opening Zillion through another app remains
 future integration work. See [chat fixtures](src/components/views/chat/fixtures/README.md).
 
+Navigation retains views within four history positions in either direction,
+matching Flame's limit. Returning restores the same view, including home scroll,
+the collapsed header, contact-strip position, chat scroll and unsent drafts.
+Views beyond that distance, replaced entries and discarded forward history are
+unmounted; reloads start fresh. Revisiting a URL at another history position
+replaces its older cached instance.
+
+At widths up to 718px, forward navigation slides the incoming page from the
+right with a light fade; Back slides the outgoing page to the left. These 150ms
+transitions use the native Web Animations API with transforms. Initial loads,
+replacements, desktop widths and reduced-motion preferences skip the animation.
+Inactive views remain mounted but cannot receive focus or pointer interaction.
+
+Route retention requires **thenameisf 1.2.10** or newer.
+
 ## Development
 
 Paid attention is hidden by default. Run `ZILLION_CHAT_ATTENTION=1 npm start`

@@ -97,7 +97,8 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     await browser.until(() => evaluate('Boolean([...document.querySelectorAll(".contact-item")].at(-1).querySelector("img")?.naturalWidth)'), 'newly revealed avatar')
 
     const measureHeader = async scroll => evaluate(`(async () => {
-      window.scrollTo(0, ${scroll});
+      const scroller = document.querySelector('.route-scroll');
+      scroller.scrollTo(0, ${scroll});
       await new Promise(requestAnimationFrame);
       await new Promise(requestAnimationFrame);
       const header = document.querySelector('.home-header');
@@ -108,14 +109,14 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
       const divider = document.querySelector('.contacts-divider').getBoundingClientRect();
       const conversation = document.querySelector('.conversation').getBoundingClientRect();
       return {
-        top: rect.top, height: rect.height, bottom: rect.bottom, scroll: scrollY,
+        top: rect.top, height: rect.height, bottom: rect.bottom, scroll: scroller.scrollTop,
         logoWidth: logo.width, logoHeight: logo.height,
         titleOpacity: Number(getComputedStyle(document.querySelector(".home-header h1")).opacity),
         paddingTop: parseFloat(style.paddingTop), paddingBottom: parseFloat(style.paddingBottom),
         paddingInline: parseFloat(style.paddingLeft),
         brandGap: parseFloat(getComputedStyle(document.querySelector('.brand')).gap),
         divider: divider.top, border: divider.height, contactsBottom: contacts.bottom,
-        conversationTop: conversation.top + scrollY, extent: document.documentElement.scrollHeight
+        conversationTop: conversation.top + scroller.scrollTop, extent: scroller.scrollHeight
       };
     })()`)
     const expanded = await measureHeader(0)
