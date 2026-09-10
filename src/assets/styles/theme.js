@@ -18,7 +18,12 @@ export const colors = {
   error: ['#b42318', '#ff9189'],
   warning: ['#875500', '#efc466'],
   info: ['#1765a6', '#86c4ff'],
-  shadow: ['#00000033', '#00000066']
+  shadow: ['#00000033', '#00000066'],
+  chatCanvas: ['#eaf0e8', '#111b16'],
+  bubbleIncoming: ['#ffffff', '#26332d'],
+  bubbleOutgoing: ['#d6edcf', '#235139'],
+  bubbleQuote: ['#00000008', '#ffffff0d'],
+  chatOverlay: ['#f7f8f5ed', '#1a201eed']
 }
 
 const variableName = name => `--z-${name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`

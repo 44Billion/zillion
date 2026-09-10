@@ -6,7 +6,8 @@ English messages and relative day labels are translation keys for the preview
 catalog in `src/i18n/locales.json`. Names and clock labels remain fixed data.
 This translation applies only to fictional preview content, not real messages.
 No identity, contacts, messages, or presence come from the runtime or relays.
-Buttons have no actions or navigation; the contact strip supports scrolling. Remove this preview data when wiring
+Contacts and last-message rows open `/chat/:contactId`; the fixture user is also
+listed for self chat. The remaining home controls are inert. Remove this preview data when wiring
 the real inbox; it is deliberately included in the current layout build.
 
 Sample portraits come from [Random User](https://randomuser.me/photos), which

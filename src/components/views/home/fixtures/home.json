@@ -1,5 +1,5 @@
 {
-  "user": { "id": "user", "name": "Alex Morgan", "avatar": "user" },
+  "user": { "id": "user", "name": "Alex Morgan", "avatar": "user", "shortName": "Alex", "self": true, "pinned": false },
   "contacts": [
     { "id": "maya", "name": "Maya Chen", "shortName": "Maya", "avatar": "maya", "pinned": true },
     { "id": "daniel", "name": "Daniel Costa", "shortName": "Daniel", "avatar": "daniel", "pinned": true },
@@ -22,6 +22,7 @@
     { "id": "matteo", "contactId": "matteo", "message": "You: On my way", "lastMessageAt": "2026-09-07T21:15:00Z", "timeLabel": "Yesterday", "unread": 0 },
     { "id": "sofia", "contactId": "sofia", "message": "A little inspiration for the weekend 🌿", "lastMessageAt": "2026-09-07T19:40:00Z", "timeLabel": "Yesterday", "unread": 0 },
     { "id": "alex", "contactId": "alex", "message": "Let's catch up soon", "lastMessageAt": "2026-09-07T16:05:00Z", "timeLabel": "Yesterday", "unread": 0 },
-    { "id": "sam", "contactId": "sam", "message": "You: Thanks for the recommendation!", "lastMessageAt": "2026-09-06T18:30:00Z", "timeLabel": "Sunday", "unread": 0 }
+    { "id": "sam", "contactId": "sam", "message": "You: Thanks for the recommendation!", "lastMessageAt": "2026-09-06T18:30:00Z", "timeLabel": "Sunday", "unread": 0 },
+    { "id": "user", "contactId": "user", "message": "Remember to bring the camera.", "lastMessageAt": "2026-09-06T17:30:00Z", "timeLabel": "Sunday", "unread": 0 }
   ]
 }

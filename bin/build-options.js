@@ -6,7 +6,7 @@ import { parse } from 'jsonc-parser'
 export const root = path.resolve(import.meta.dirname, '..')
 
 // Metadata participates in esbuild's dependency graph without entering app.js.
-export function buildOptions ({ development = false, projectRoot = root, onStart = () => {}, onEnd = () => {} } = {}) {
+export function buildOptions ({ development = false, chatAttention = process.env.ZILLION_CHAT_ATTENTION === '1', projectRoot = root, onStart = () => {}, onEnd = () => {} } = {}) {
   const outdir = path.join(projectRoot, 'dist/zillion')
   let metadata
   return {
@@ -43,7 +43,11 @@ export function buildOptions ({ development = false, projectRoot = root, onStart
     }],
     inject: ['zillion:metadata'],
     loader: { '.html': 'copy', '.ico': 'copy', '.svg': 'text', '.webp': 'dataurl', '.jpg': 'dataurl', '.png': 'copy' },
-    define: { IS_DEVELOPMENT: JSON.stringify(development), IS_PRODUCTION: JSON.stringify(!development) },
+    define: {
+      IS_DEVELOPMENT: JSON.stringify(development),
+      IS_PRODUCTION: JSON.stringify(!development),
+      CHAT_ATTENTION_ENABLED: JSON.stringify(development && chatAttention)
+    },
     entryPoints: ['src/components/app.js', 'src/assets/html/index.html', 'src/assets/media/branding/zillion.icon.svg'],
     outdir, entryNames: '[name]', bundle: true, platform: 'browser', format: 'esm',
     target: ['edge91', 'firefox89', 'chrome91', 'safari15'],

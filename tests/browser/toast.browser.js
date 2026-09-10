@@ -18,7 +18,7 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
     options.entryPoints = [{ in: 'tests/browser/toast-fixture.js', out: '__tests__/toast-fixture' }]
     options.entryNames = '[dir]/[name]'
     await esbuild.build(options)
-    files.push({ name: '__tests__/index.html', bytes: new TextEncoder().encode('<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><script type="module" src="/__tests__/toast-fixture.js"></script></head><body><z-toast-fixture></z-toast-fixture></body></html>') })
+    files.splice(files.findIndex(file => file.name === 'index.html'), 1, { name: 'index.html', bytes: new TextEncoder().encode('<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1"><script type="module" src="/__tests__/toast-fixture.js"></script></head><body><z-toast-fixture></z-toast-fixture></body></html>') })
     const app = await prepareTestApp(files, { identifier: 'toast-test', name: 'Toast test' })
     browser = await launchChrome()
     await browser.navigate('http://localhost:10000')
@@ -34,11 +34,11 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
     const appUrl = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app iframe')
     const origin = new URL(appUrl).origin
     const evaluate = expression => browser.evaluate(expression, origin)
-    await evaluate('location.href = "/__tests__/index.html"')
     await browser.until(() => evaluate('Boolean(window.__toastTest && document.querySelector(".more")?.textContent.includes("Mais"))'), 'initial launcher locale')
     assert.equal(await evaluate('document.documentElement.lang'), 'pt-BR')
+    await browser.until(() => evaluate('document.querySelectorAll(".preview").length === 11 && Boolean(document.querySelector(".contact-item[data-contact-id=daniel] .unread-badge"))'), 'home rows after route loading')
     assert.equal(await evaluate('document.querySelector(".preview").textContent'), 'Parece um plano perfeito ☀️')
-    assert.equal(await evaluate('document.querySelector(".unread-badge").getAttribute("aria-label")'), '1 mensagem não lida')
+    assert.equal(await evaluate('document.querySelector(".contact-item[data-contact-id=daniel] .unread-badge").getAttribute("aria-label")'), '1 mensagem não lida')
     await evaluate('__toastTest.success(__toastTest.translated, "<b>Details</b>")')
     await browser.until(() => evaluate('document.querySelector(".toast-card.is-open .toast-message")?.textContent === "Mais"'), 'reactive toast')
     assert.equal(await evaluate('document.querySelector(".toast-close").getAttribute("aria-label")'), 'Fechar')

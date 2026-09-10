@@ -1,10 +1,11 @@
 import { t } from '#i18n/messages.js'
-import { f, useStore, useTask } from '#f'
+import { f, useLocation, useStore, useTask } from '#f'
 import '#shared/icons/icon-pin.js'
 import '#shared/unread-badge.js'
 import './avatar.js'
 
 f('z-home-contact', ({ h, props }) => {
+  const location = useLocation()
   const view = useStore({
     ready$: false,
     unread$ () { return props.person$().unread }
@@ -17,7 +18,9 @@ f('z-home-contact', ({ h, props }) => {
 
   const person = props.person$()
   return h`
-    <button class="contact-item" type="button" aria-label=${`${person.name}${person.pinned ? `, ${t('pinned')}` : ''}${person.unread ? `, ${t('{{count}} unread messages', { count: person.unread })}` : ''}`} aria-disabled="true">
+    <button class="contact-item" type="button" data-contact-id=${person.id}
+      onclick=${() => location.pushState({ fromHome: true }, '', `/chat/${encodeURIComponent(person.id)}`)}
+      aria-label=${`${person.self ? t('You') : person.name}${person.pinned ? `, ${t('pinned')}` : ''}${person.unread ? `, ${t('{{count}} unread messages', { count: person.unread })}` : ''}`}>
       <style>${`
         z-home-contact .contact-item {
           scroll-snap-align: start;
@@ -43,7 +46,7 @@ f('z-home-contact', ({ h, props }) => {
         ${person.pinned ? h`<span class="contact-pin"><icon-pin props=${{ size: '12px', weight: 'regular' }} /></span>` : null}
         <span class="contact-unread"><z-unread-badge props=${{ count$: view.unread$ }} /></span>
       </span>
-      <span class="contact-name">${person.shortName}</span>
+      <span class="contact-name">${person.self ? t('You') : person.shortName}</span>
     </button>
   `
 })

@@ -1,7 +1,7 @@
 # Zillion
 
 A Nostr client for private chat inspired by WhatsApp and Signal. The project
-is in its initial phase: a fixture-backed home layout, avatar/cache foundations,
+is in its initial phase: fixture-backed home and DM layouts, avatar/cache foundations,
 and build/publishing tooling exist. Do not describe planned features as already implemented.
 
 ## Living documentation
@@ -184,8 +184,8 @@ and build/publishing tooling exist. Do not describe planned features as already 
   separate from browser-test fixtures, which remain excluded from publication.
 - Do not fetch real identity, contacts, or messages for this preview. `a-avatar`
   receives provided data-URL profiles without public keys, so no Nostr lookup is
-  triggered. Search, compose, profile, contact, More, and conversation controls
-  are intentionally inert until interaction work is requested.
+  triggered. Contact and conversation controls navigate to fixture DMs. Search,
+  compose, profile and More remain inert.
 - Keep the main column at a maximum of 718px, centered with vertical borders on
   wider screens. Use the same mobile composition at every width. The contact
   strip fits whole items while keeping 44px portraits and a persistent More cell.
@@ -224,8 +224,56 @@ and build/publishing tooling exist. Do not describe planned features as already 
 - Preview fixtures retain English source keys; UI labels, accessibility text,
   sample messages and relative day labels render in the launcher's locale.
   Names and fixed clock labels remain fixture data. Do not apply sample-message
-  translation to future real user messages. Identity and router integration
+  translation to future real user messages. Identity and messaging integration
   remain separate implementation work; keep app.js lean.
+
+## Conversation preview and routing
+
+- `ZILLION_CHAT_ATTENTION=1` enables the inert paid-attention header button and
+  menu option in development builds only; unset or `0` disables them. Restart
+  the watcher to change this build-time flag. `bin/build-options.js` defines
+  `CHAT_ATTENTION_ENABLED` and forces it off in production regardless of the
+  requested flag. Conditionally omit both controls from the DOM when disabled;
+  the remaining three-dot control must occupy a single 44px circle.
+
+- `src/components/router.js` owns `url-router`, `useLocation`, and `f-route`.
+  `/` is home, `/chat/:contactId` is a fixture DM, and unknown routes/contacts
+  render a localized unavailable state. No real contact lookup occurs.
+- Home's fixture user participates in the horizontal strip and active chat list
+  as `You`, sorted by their fixture name. `/chat/user` is self chat; group chats
+  remain out of scope. Reuse the home portraits without public keys.
+- `?entry=1` makes a conversation the entry screen: show the inert Zillion logo
+  instead of Back and expose no home link, including on unknown-contact states.
+  This is a navigation presentation mode, not an identity/authorization contract.
+  Ordinary home navigation marks `fromHome` in History state; Back uses the
+  location store's `back`, or `replaceState` to home on an ordinary direct load.
+  Key the chat by contact and entry mode to discard drafts and timers on change.
+- Chat fixtures live in `src/components/views/chat/fixtures`. Sample DMs share an
+  exchange and end with their home preview; self messages have a separate fixture.
+  Quotes, reactions, timestamps, presence and link cards are static sample data.
+  Do not fetch link previews or read runtime messages for these screens.
+- The floating header is 48px plus top safe area, with 44px controls and equal
+  2px vertical padding. Keep the chat column centered at `--z-mobile-width`.
+  The composer follows the visual viewport when the mobile keyboard opens.
+- Message actions appear on a 500ms touch hold, right-click, or Shift+F10.
+  Cancel the hold on movement over 10px, cancellation, scrolling or unmount.
+  Incoming actions sit to the right, outgoing to the left; Floating UI flips
+  and shifts them near viewport edges. Keep Reply/Share-or-Copy/Delete vertically
+  ordered above neighboring bubbles with a subtle surface and shadow.
+- `useAnchoredMenu` owns Floating UI's public positioning API and observers.
+  The installed thenameisf does not export its internal floating hook; do not
+  bypass package exports. `url-router` and `@floating-ui/dom` are direct runtime
+  dependencies for route matching and the two anchored menus respectively.
+- `share-text.js` shares only the selected rendered message (including its URL).
+  A native AbortError is cancellation, never implicit copying. Other native
+  failures fall back to `copy-text.js`, which tries Clipboard then legacy copy
+  and restores focus/selection. Show an icon-only green check for 1600ms after
+  successful copy; failures use the reactive toast. Clean up pending UI work.
+- The header menu, Reply/Delete actions, attention, attachments, camera and Send
+  are presentation only. Typing hides Attach and swaps Camera for Send. Preserve
+  Enter/newlines, grow to five text lines, then scroll inside the textarea; align
+  icons to the bottom line. Drafts are local component state and are not sent or
+  persisted. Keep all added labels and fixture texts translated in 11 locales.
 
 ## Structure and imports
 

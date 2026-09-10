@@ -6,7 +6,7 @@ which combines private messages (`private-message`) with transport over private
 channels (`private-channel`). The entire front-end uses **thenameisf**.
 
 The project is just getting started: this repository contains documentation,
-tooling, a localized home preview with fixed sample DMs, a reactive toast, and
+tooling, localized home and conversation previews with fixed sample DMs, a reactive toast, and
 reusable avatar/cache foundations.
 Real conversations, identity, and messaging integration have yet to be implemented.
 
@@ -14,7 +14,7 @@ Zillion will run as a SPA inside the **44billion launcher**, using its
 [committed injected API contract](https://github.com/44Billion/44billion/blob/main/APP_API.md).
 Startup will identify the instance's fixed user through `window.nostr.peekPublicKey()`.
 Personas will expand known-contact discovery, while the inbox remains limited to
-that user. Routing will use the browser History API through thenameisf's
+that user. Routing uses the browser History API through thenameisf's
 `useLocation` and `f-route`. Reactive i18n follows the launcher's initial locale
 and subsequent changes in all 11 supported languages. Widget integration is out of scope.
 
@@ -43,7 +43,8 @@ Light and dark themes follow the system; backgrounds are off-white and graphite.
 The same logo artwork serves both themes and the launcher icon; its sources and
 safety padding are documented in [design/branding](design/branding/README.md).
 Preview content uses fixed English source keys translated at render time, with
-local portraits; the buttons remain intentionally inert. Real user messages will
+local portraits. Contacts and conversation rows open a fixture DM, including a
+conversation with yourself. Search, compose, profile and More are still inert. Real user messages will
 not pass through the preview translation catalog.
 
 The shared [toast](src/components/shared/toast.md) supports success, error,
@@ -55,7 +56,38 @@ Typography follows 44billion: the root font is `0.0625em` and body text is
 `16rem`. Author font sizes in `rem` (`16rem` is normally 16px) and fixed layout
 dimensions in `px`, allowing the browser's preferred font size to scale text.
 
+## Conversation preview
+
+`/chat/:contactId` opens a sample conversation (`maya`, `daniel`, or `user` for
+self chat, for example). The floating header, incoming/outgoing bubbles,
+quotes, reactions, link cards and composer use the same 718px column and theme.
+Message long-press, right-click or Shift+F10 reveals Reply, Share/Copy and Delete
+above the messages. Sharing uses the browser API when available, otherwise it
+copies text and briefly displays a checkmark on green. Cancelling native sharing
+does not copy; other failures can fall back to the clipboard.
+
+The text area grows up to five lines, then scrolls internally. Enter inserts a
+newline. Typing hides Attach and replaces Camera with Send. Sending, replying,
+deleting, attachments, camera capture and paid attention are still unimplemented;
+drafts are temporary component state. The three-dot menu displays the future
+content-deletion action without performing it. Paid attention (the bolt button
+and menu option) is available only with the development flag described below.
+
+Use `/chat/maya?entry=1` to make a specific conversation the initial screen for
+an embedded app. Its logo replaces Back and has no action yet; this UI offers no
+link to the home screen. Ordinary conversations return to home through browser
+history, with a home fallback for direct entry. Routes survive reloads. The query
+parameter controls navigation UI; opening Zillion through another app remains
+future integration work. See [chat fixtures](src/components/views/chat/fixtures/README.md).
+
 ## Development
+
+Paid attention is hidden by default. Run `ZILLION_CHAT_ATTENTION=1 npm start`
+to preview its header button and menu option, or `ZILLION_CHAT_ATTENTION=0 npm start`
+to hide them. Restart the watcher when changing this build-time flag; it also
+applies to other development commands. Production builds always omit both
+controls, even with the flag set to `1`. Without them, the three-dot button
+occupies a single 44px circle with no reserved space for the bolt.
 
 Requirements: Node.js 24+, npm, Python 3, and the `44billion` and
 `ez-vault` repositories with their npm dependencies installed. Chrome is also
@@ -127,8 +159,9 @@ are saved under `tmp/browser-failures/`.
 A **draft version update clears app data before reloading**. An ordinary document
 reload does not. The workflow preserves that launcher behavior. Browser fixtures
 are excluded from published builds. The home preview's fixed JSON and bundled
-portraits are intentionally included for visual review; no controls perform
-actions and no real identity, contacts, or messages are read. `serve` provides no injected launcher APIs.
+portraits are intentionally included for visual review; navigation and message
+sharing use those fixtures, and no real identity, contacts, or messages are read.
+`serve` supports SPA routes but provides no injected launcher APIs.
 
 ## Publishing
 

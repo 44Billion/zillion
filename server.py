@@ -4,6 +4,7 @@ import socketserver
 import os
 import signal
 import sys
+from urllib.parse import urlsplit
 from pathlib import Path
 
 class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
@@ -29,8 +30,9 @@ class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         super().end_headers()
 
     def do_GET(self):
-        # If the request is for the root directory, serve index.html
-        if self.path == '/':
+        # History routes use the app shell; missing assets still return 404.
+        route = urlsplit(self.path).path
+        if route == '/' or (not Path(route).suffix and not Path(self.translate_path(route)).is_file()):
             self.path = '/index.html'
         return super().do_GET()
 

@@ -21,7 +21,7 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     const appUrl = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'home iframe')
     const origin = new URL(appUrl).origin
     const evaluate = expression => browser.evaluate(expression, origin)
-    await browser.until(() => evaluate('document.querySelectorAll(".contact-item").length === 10 && document.querySelectorAll(".contact-item img").length > 0'), 'home contacts')
+    await browser.until(() => evaluate('document.querySelectorAll(".contact-item").length === 11 && document.querySelectorAll(".contact-item img").length > 0'), 'home contacts')
     await browser.until(() => evaluate('Boolean(document.querySelector(".brand-logo img")?.naturalWidth)'), 'local logo image')
     const logoPixels = await evaluate(`(() => {
       const img = document.querySelector('.brand-logo img');
@@ -40,9 +40,9 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     assert.ok(Math.abs(logoPixels.fraction - 0.8) < 0.01)
     assert.equal(logoPixels.icon, logoPixels.source)
     const names = await evaluate('[...document.querySelectorAll(".contact-item .contact-name")].map(el => el.textContent)')
-    assert.deepEqual(names, ['Daniel', 'Ellie', 'Maya', 'Alex', 'James', 'Juliette', 'Matteo', 'Nina', 'Sam', 'Sofia'])
+    assert.deepEqual(names, ['Daniel', 'Ellie', 'Maya', 'Alex', 'You', 'James', 'Juliette', 'Matteo', 'Nina', 'Sam', 'Sofia'])
     assert.equal(await evaluate('document.querySelectorAll(".contact-pin").length'), 3)
-    assert.equal(await evaluate('document.querySelectorAll(".contact-item img").length < 10'), true)
+    assert.equal(await evaluate('document.querySelectorAll(".contact-item img").length < 11'), true)
     assert.equal(await evaluate('Boolean([...document.querySelectorAll(".contact-item")].at(-1).querySelector("img"))'), false)
     await browser.until(() => evaluate(`(() => {
       const list = document.querySelector('.contact-list').getBoundingClientRect();

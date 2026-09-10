@@ -13,13 +13,13 @@ f('z-home', ({ h }) => {
     headerSpaceRef$: null,
     contactsRef$: null,
     user$: data.user,
-    contacts$: data.contacts.toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
+    contacts$: [...data.contacts, data.user].toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
       ...contact,
       unread: data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0
     })),
     conversations$: data.conversations.toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)).map(conversation => ({
       ...conversation,
-      contact: data.contacts.find(contact => contact.id === conversation.contactId)
+      contact: [...data.contacts, data.user].find(contact => contact.id === conversation.contactId)
     }))
   }))
   useHeaderCollapse(view)

@@ -1,0 +1,18 @@
+{
+  "messages": [
+    { "id": "m1", "outgoing": true, "text": "Do you have any plans for the weekend?", "time": "09:12" },
+    { "id": "m2", "outgoing": false, "text": "I was thinking we could find somewhere quiet, get a coffee and spend a little time outside.", "time": "09:14" },
+    { "id": "m3", "outgoing": true, "text": "Found a new place for coffee", "time": "09:18" },
+    { "id": "m4", "outgoing": false, "text": "A little inspiration for the weekend 🌿", "time": "09:21", "reaction": "💚" },
+    { "id": "m5", "outgoing": true, "text": "Sounds good! Let's take our time and enjoy the morning.", "time": "09:28", "replyTo": "m2" },
+    { "id": "m6", "outgoing": false, "text": "See you there!", "time": "09:32" },
+    { "id": "m7", "outgoing": true, "text": "I'll bring my camera 📷", "time": "09:34" },
+    { "id": "m8", "outgoing": false, "text": "Here's the link", "url": "https://example.com", "preview": "Weekend ideas", "time": "09:38" },
+    { "id": "m9", "outgoing": false, "text": "That sounds like a perfect plan ☀️", "time": "09:41" }
+  ],
+  "selfMessages": [
+    { "id": "s1", "outgoing": true, "text": "Notes for later", "time": "17:24" },
+    { "id": "s2", "outgoing": true, "text": "A little inspiration for the weekend 🌿", "time": "17:26", "url": "https://example.com", "preview": "Weekend ideas" },
+    { "id": "s3", "outgoing": true, "text": "Remember to bring the camera.", "time": "17:30" }
+  ]
+}

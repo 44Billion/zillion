@@ -15,7 +15,8 @@ export default [
       globals: {
         ...globals.browser,
         IS_DEVELOPMENT: 'readonly',
-        IS_PRODUCTION: 'readonly'
+        IS_PRODUCTION: 'readonly',
+        CHAT_ATTENTION_ENABLED: 'readonly'
       }
     },
     rules: {
