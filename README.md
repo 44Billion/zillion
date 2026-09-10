@@ -6,7 +6,8 @@ which combines private messages (`private-message`) with transport over private
 channels (`private-channel`). The entire front-end uses **thenameisf**.
 
 The project is just getting started: this repository contains documentation,
-tooling, a home preview with fixed sample DMs, and reusable avatar/cache foundations.
+tooling, a localized home preview with fixed sample DMs, a reactive toast, and
+reusable avatar/cache foundations.
 Real conversations, identity, and messaging integration have yet to be implemented.
 
 Zillion will run as a SPA inside the **44billion launcher**, using its
@@ -14,8 +15,8 @@ Zillion will run as a SPA inside the **44billion launcher**, using its
 Startup will identify the instance's fixed user through `window.nostr.peekPublicKey()`.
 Personas will expand known-contact discovery, while the inbox remains limited to
 that user. Routing will use the browser History API through thenameisf's
-`useLocation` and `f-route`, and reactive i18n will follow the
-launcher's locale. Widget integration is out of scope.
+`useLocation` and `f-route`. Reactive i18n follows the launcher's initial locale
+and subsequent changes in all 11 supported languages. Widget integration is out of scope.
 
 Zillion is **offline-first**: the launcher loads the installed app, Nostr events
 and private-message personal copies belong in `window.napp.eventStore`, and
@@ -41,8 +42,18 @@ the visible strip, using thenameisf's visibility task with an 84px preloading ma
 Light and dark themes follow the system; backgrounds are off-white and graphite.
 The same logo artwork serves both themes and the launcher icon; its sources and
 safety padding are documented in [design/branding](design/branding/README.md).
-Preview content is fixed English JSON with local portraits, and the buttons
-remain intentionally inert.
+Preview content uses fixed English source keys translated at render time, with
+local portraits; the buttons remain intentionally inert. Real user messages will
+not pass through the preview translation catalog.
+
+The shared [toast](src/components/shared/toast.md) supports success, error,
+warning and info, expandable details and navigation through unique notices. It
+stays centered inside the same mobile column and follows locale/theme changes.
+Import its helpers from `#shared/toast.js`; the app root mounts its host once.
+
+Typography follows 44billion: the root font is `0.0625em` and body text is
+`16rem`. Author font sizes in `rem` (`16rem` is normally 16px) and fixed layout
+dimensions in `px`, allowing the browser's preferred font size to scale text.
 
 ## Development
 

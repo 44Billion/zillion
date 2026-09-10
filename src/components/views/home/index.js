@@ -1,3 +1,4 @@
+import { t } from '#i18n/messages.js'
 import { f, useStore } from '#f'
 import '#f/components/f-to-signals.js'
 import data from './fixtures/home.json'
@@ -26,7 +27,7 @@ f('z-home', ({ h }) => {
     <main class="home" ref=${view.homeRef$}>
       <style>${`
         z-home .home {
-          width: 100%; max-width: 718px; min-height: 100svh; margin-inline: auto;
+          width: 100%; max-width: var(--z-mobile-width); min-height: 100svh; margin-inline: auto;
           --home-header-collapse: 0;
           --home-header-expanded-height: calc(84px + env(safe-area-inset-top));
           --home-header-height: calc(var(--home-header-expanded-height) - 37px * var(--home-header-collapse));
@@ -48,7 +49,7 @@ f('z-home', ({ h }) => {
         <z-home-contacts props=${{ contacts$: view.contacts$ }} />
       </div>
       <div class="contacts-divider" aria-hidden="true"></div>
-      <ul class="conversations" aria-label="Direct messages">
+      <ul class="conversations" aria-label=${t('Direct messages')}>
         ${view.conversations$().map(conversation => h({ key: conversation.id })`
           <f-to-signals props=${{
             from: { conversation },

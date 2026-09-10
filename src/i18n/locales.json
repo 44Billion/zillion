@@ -1,0 +1,336 @@
+{
+  "Direct messages": {
+    "en": "Direct messages",
+    "fr": "Messages privés",
+    "it": "Messaggi diretti",
+    "de": "Direktnachrichten",
+    "es": "Mensajes directos",
+    "pt-BR": "Mensagens diretas",
+    "ru": "Личные сообщения",
+    "zh-CN": "私信",
+    "zh-TW": "私人訊息",
+    "ja": "ダイレクトメッセージ",
+    "ko": "다이렉트 메시지"
+  },
+  "Search messages": {
+    "en": "Search messages",
+    "fr": "Rechercher des messages",
+    "it": "Cerca messaggi",
+    "de": "Nachrichten suchen",
+    "es": "Buscar mensajes",
+    "pt-BR": "Buscar mensagens",
+    "ru": "Поиск сообщений",
+    "zh-CN": "搜索消息",
+    "zh-TW": "搜尋訊息",
+    "ja": "メッセージを検索",
+    "ko": "메시지 검색"
+  },
+  "New message": {
+    "en": "New message",
+    "fr": "Nouveau message",
+    "it": "Nuovo messaggio",
+    "de": "Neue Nachricht",
+    "es": "Nuevo mensaje",
+    "pt-BR": "Nova mensagem",
+    "ru": "Новое сообщение",
+    "zh-CN": "新消息",
+    "zh-TW": "新訊息",
+    "ja": "新しいメッセージ",
+    "ko": "새 메시지"
+  },
+  "Your profile": {
+    "en": "Your profile",
+    "fr": "Votre profil",
+    "it": "Il tuo profilo",
+    "de": "Dein Profil",
+    "es": "Tu perfil",
+    "pt-BR": "Seu perfil",
+    "ru": "Ваш профиль",
+    "zh-CN": "你的个人资料",
+    "zh-TW": "你的個人檔案",
+    "ja": "あなたのプロフィール",
+    "ko": "내 프로필"
+  },
+  "Pinned contacts, then alphabetical contacts": {
+    "en": "Pinned contacts, then alphabetical contacts",
+    "fr": "Contacts épinglés, puis par ordre alphabétique",
+    "it": "Contatti fissati, poi in ordine alfabetico",
+    "de": "Angeheftete Kontakte, dann alphabetisch",
+    "es": "Contactos fijados, luego por orden alfabético",
+    "pt-BR": "Contatos fixados, depois em ordem alfabética",
+    "ru": "Закреплённые контакты, затем по алфавиту",
+    "zh-CN": "置顶联系人，然后按字母排序",
+    "zh-TW": "置頂聯絡人，再依字母排序",
+    "ja": "固定した連絡先、続いてアルファベット順",
+    "ko": "고정된 연락처 다음에 알파벳순"
+  },
+  "Contacts; scroll horizontally for more": {
+    "en": "Contacts; scroll horizontally for more",
+    "fr": "Contacts ; faites défiler horizontalement pour en voir plus",
+    "it": "Contatti; scorri orizzontalmente per vederne altri",
+    "de": "Kontakte; für weitere horizontal scrollen",
+    "es": "Contactos; desplázate horizontalmente para ver más",
+    "pt-BR": "Contatos; role horizontalmente para ver mais",
+    "ru": "Контакты; прокрутите по горизонтали, чтобы увидеть больше",
+    "zh-CN": "联系人；横向滚动查看更多",
+    "zh-TW": "聯絡人；橫向捲動查看更多",
+    "ja": "連絡先：横にスクロールして続きを表示",
+    "ko": "연락처: 가로로 스크롤하여 더 보기"
+  },
+  "More contacts": {
+    "en": "More contacts",
+    "fr": "Plus de contacts",
+    "it": "Altri contatti",
+    "de": "Weitere Kontakte",
+    "es": "Más contactos",
+    "pt-BR": "Mais contatos",
+    "ru": "Больше контактов",
+    "zh-CN": "更多联系人",
+    "zh-TW": "更多聯絡人",
+    "ja": "その他の連絡先",
+    "ko": "연락처 더 보기"
+  },
+  "More": {
+    "en": "More",
+    "fr": "Plus",
+    "it": "Altro",
+    "de": "Mehr",
+    "es": "Más",
+    "pt-BR": "Mais",
+    "ru": "Ещё",
+    "zh-CN": "更多",
+    "zh-TW": "更多",
+    "ja": "もっと見る",
+    "ko": "더 보기"
+  },
+  "pinned": {
+    "en": "pinned",
+    "fr": "épinglé",
+    "it": "fissato",
+    "de": "angeheftet",
+    "es": "fijado",
+    "pt-BR": "fixado",
+    "ru": "закреплён",
+    "zh-CN": "已置顶",
+    "zh-TW": "已置頂",
+    "ja": "固定済み",
+    "ko": "고정됨"
+  },
+  "{{count}} unread messages": {
+    "en": {
+      "one": "{{count}} unread message",
+      "other": "{{count}} unread messages"
+    },
+    "fr": {
+      "one": "{{count}} message non lu",
+      "other": "{{count}} messages non lus"
+    },
+    "it": {
+      "one": "{{count}} messaggio non letto",
+      "other": "{{count}} messaggi non letti"
+    },
+    "de": {
+      "one": "{{count}} ungelesene Nachricht",
+      "other": "{{count}} ungelesene Nachrichten"
+    },
+    "es": {
+      "one": "{{count}} mensaje sin leer",
+      "other": "{{count}} mensajes sin leer"
+    },
+    "pt-BR": {
+      "one": "{{count}} mensagem não lida",
+      "other": "{{count}} mensagens não lidas"
+    },
+    "ru": {
+      "one": "{{count}} непрочитанное сообщение",
+      "other": "{{count}} непрочитанных сообщений",
+      "few": "{{count}} непрочитанных сообщения",
+      "many": "{{count}} непрочитанных сообщений"
+    },
+    "zh-CN": {
+      "one": "{{count}} 条未读消息",
+      "other": "{{count}} 条未读消息"
+    },
+    "zh-TW": {
+      "one": "{{count}} 則未讀訊息",
+      "other": "{{count}} 則未讀訊息"
+    },
+    "ja": {
+      "one": "未読メッセージ{{count}}件",
+      "other": "未読メッセージ{{count}}件"
+    },
+    "ko": {
+      "one": "읽지 않은 메시지 {{count}}개",
+      "other": "읽지 않은 메시지 {{count}}개"
+    }
+  },
+  "Yesterday": {
+    "en": "Yesterday",
+    "fr": "Hier",
+    "it": "Ieri",
+    "de": "Gestern",
+    "es": "Ayer",
+    "pt-BR": "Ontem",
+    "ru": "Вчера",
+    "zh-CN": "昨天",
+    "zh-TW": "昨天",
+    "ja": "昨日",
+    "ko": "어제"
+  },
+  "Sunday": {
+    "en": "Sunday",
+    "fr": "Dimanche",
+    "it": "Domenica",
+    "de": "Sonntag",
+    "es": "Domingo",
+    "pt-BR": "Domingo",
+    "ru": "Воскресенье",
+    "zh-CN": "星期日",
+    "zh-TW": "星期日",
+    "ja": "日曜日",
+    "ko": "일요일"
+  },
+  "That sounds like a perfect plan ☀️": {
+    "en": "That sounds like a perfect plan ☀️",
+    "fr": "Ça semble être un plan parfait ☀️",
+    "it": "Sembra un piano perfetto ☀️",
+    "de": "Das klingt nach einem perfekten Plan ☀️",
+    "es": "Suena como un plan perfecto ☀️",
+    "pt-BR": "Parece um plano perfeito ☀️",
+    "ru": "Звучит как идеальный план ☀️",
+    "zh-CN": "听起来是个完美的计划 ☀️",
+    "zh-TW": "聽起來是個完美的計畫 ☀️",
+    "ja": "最高の計画だね ☀️",
+    "ko": "완벽한 계획 같은데 ☀️"
+  },
+  "I'll send you the photos in a bit": {
+    "en": "I'll send you the photos in a bit",
+    "fr": "Je t'envoie les photos dans un moment",
+    "it": "Ti mando le foto tra poco",
+    "de": "Ich schicke dir gleich die Fotos",
+    "es": "Te envío las fotos en un rato",
+    "pt-BR": "Já te mando as fotos",
+    "ru": "Скоро отправлю тебе фотографии",
+    "zh-CN": "我一会儿把照片发给你",
+    "zh-TW": "我等一下把照片傳給你",
+    "ja": "あとで写真を送るね",
+    "ko": "조금 있다가 사진 보내줄게"
+  },
+  "You: See you there!": {
+    "en": "You: See you there!",
+    "fr": "Vous : On se voit là-bas !",
+    "it": "Tu: Ci vediamo lì!",
+    "de": "Du: Bis dann!",
+    "es": "Tú: ¡Nos vemos allí!",
+    "pt-BR": "Você: Nos vemos lá!",
+    "ru": "Вы: Увидимся там!",
+    "zh-CN": "你：到时见！",
+    "zh-TW": "你：到時見！",
+    "ja": "自分：現地で会おう！",
+    "ko": "나: 거기서 봐!"
+  },
+  "Found a new place for coffee": {
+    "en": "Found a new place for coffee",
+    "fr": "J'ai trouvé un nouveau café",
+    "it": "Ho trovato un nuovo posto per un caffè",
+    "de": "Habe ein neues Café gefunden",
+    "es": "Encontré un nuevo sitio para tomar café",
+    "pt-BR": "Achei um lugar novo para tomar café",
+    "ru": "Нашёл новое кафе",
+    "zh-CN": "发现了一家新咖啡馆",
+    "zh-TW": "發現了一家新咖啡館",
+    "ja": "新しいカフェを見つけたよ",
+    "ko": "새로운 카페를 찾았어"
+  },
+  "Wait, you have to hear this 😂": {
+    "en": "Wait, you have to hear this 😂",
+    "fr": "Attends, il faut que tu écoutes ça 😂",
+    "it": "Aspetta, devi sentire questa 😂",
+    "de": "Warte, das musst du hören 😂",
+    "es": "Espera, tienes que oír esto 😂",
+    "pt-BR": "Espera, você precisa ouvir isso 😂",
+    "ru": "Подожди, тебе надо это услышать 😂",
+    "zh-CN": "等等，你一定要听听这个 😂",
+    "zh-TW": "等等，你一定要聽聽這個 😂",
+    "ja": "待って、これ聞いて 😂",
+    "ko": "잠깐, 이건 꼭 들어봐야 해 😂"
+  },
+  "Merci! That means a lot": {
+    "en": "Merci! That means a lot",
+    "fr": "Merci ! Ça me touche beaucoup",
+    "it": "Grazie! Significa molto per me",
+    "de": "Danke! Das bedeutet mir viel",
+    "es": "¡Gracias! Significa mucho para mí",
+    "pt-BR": "Obrigado! Isso significa muito",
+    "ru": "Спасибо! Это много для меня значит",
+    "zh-CN": "谢谢！这对我意义重大",
+    "zh-TW": "謝謝！這對我意義重大",
+    "ja": "ありがとう！すごくうれしい",
+    "ko": "고마워! 정말 큰 힘이 돼"
+  },
+  "You: On my way": {
+    "en": "You: On my way",
+    "fr": "Vous : Je suis en route",
+    "it": "Tu: Sto arrivando",
+    "de": "Du: Bin unterwegs",
+    "es": "Tú: Voy de camino",
+    "pt-BR": "Você: Estou a caminho",
+    "ru": "Вы: Уже в пути",
+    "zh-CN": "你：在路上了",
+    "zh-TW": "你：在路上了",
+    "ja": "自分：今向かってる",
+    "ko": "나: 가는 중이야"
+  },
+  "A little inspiration for the weekend 🌿": {
+    "en": "A little inspiration for the weekend 🌿",
+    "fr": "Un peu d'inspiration pour le week-end 🌿",
+    "it": "Un po' d'ispirazione per il weekend 🌿",
+    "de": "Ein wenig Inspiration fürs Wochenende 🌿",
+    "es": "Un poco de inspiración para el fin de semana 🌿",
+    "pt-BR": "Um pouco de inspiração para o fim de semana 🌿",
+    "ru": "Немного вдохновения на выходные 🌿",
+    "zh-CN": "给周末来点灵感 🌿",
+    "zh-TW": "給週末來點靈感 🌿",
+    "ja": "週末に向けてちょっとしたひらめき 🌿",
+    "ko": "주말을 위한 작은 영감 🌿"
+  },
+  "Let's catch up soon": {
+    "en": "Let's catch up soon",
+    "fr": "On se retrouve bientôt",
+    "it": "Vediamoci presto",
+    "de": "Lass uns bald mal wieder treffen",
+    "es": "Pongámonos al día pronto",
+    "pt-BR": "Vamos colocar o papo em dia em breve",
+    "ru": "Давай скоро встретимся",
+    "zh-CN": "我们找时间聚聚吧",
+    "zh-TW": "我們找時間聚聚吧",
+    "ja": "近いうちに会おうね",
+    "ko": "조만간 만나서 얘기하자"
+  },
+  "You: Thanks for the recommendation!": {
+    "en": "You: Thanks for the recommendation!",
+    "fr": "Vous : Merci pour la recommandation !",
+    "it": "Tu: Grazie per il consiglio!",
+    "de": "Du: Danke für den Tipp!",
+    "es": "Tú: ¡Gracias por la recomendación!",
+    "pt-BR": "Você: Obrigado pela recomendação!",
+    "ru": "Вы: Спасибо за рекомендацию!",
+    "zh-CN": "你：谢谢推荐！",
+    "zh-TW": "你：謝謝推薦！",
+    "ja": "自分：おすすめしてくれてありがとう！",
+    "ko": "나: 추천해 줘서 고마워!"
+  },
+  "Zillion — private conversations": {
+    "en": "Zillion — private conversations",
+    "fr": "Zillion — conversations privées",
+    "it": "Zillion — conversazioni private",
+    "de": "Zillion — private Unterhaltungen",
+    "es": "Zillion — conversaciones privadas",
+    "pt-BR": "Zillion — conversas privadas",
+    "ru": "Zillion — личные беседы",
+    "zh-CN": "Zillion — 私密对话",
+    "zh-TW": "Zillion — 私密對話",
+    "ja": "Zillion — プライベートな会話",
+    "ko": "Zillion — 비공개 대화"
+  }
+}

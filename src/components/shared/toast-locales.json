@@ -1,0 +1,54 @@
+{
+  "Toggle details": {
+    "en": "Toggle details",
+    "fr": "Afficher les détails",
+    "it": "Mostra dettagli",
+    "de": "Details umschalten",
+    "es": "Mostrar detalles",
+    "pt-BR": "Alternar detalhes",
+    "ru": "Показать подробности",
+    "zh-CN": "切换详细信息",
+    "zh-TW": "切換詳細資料",
+    "ja": "詳細を切り替え",
+    "ko": "세부정보 전환"
+  },
+  "Close": {
+    "en": "Close",
+    "fr": "Fermer",
+    "it": "Chiudi",
+    "de": "Schließen",
+    "es": "Cerrar",
+    "pt-BR": "Fechar",
+    "ru": "Закрыть",
+    "zh-CN": "关闭",
+    "zh-TW": "關閉",
+    "ja": "閉じる",
+    "ko": "닫기"
+  },
+  "Previous": {
+    "en": "Previous",
+    "fr": "Précédent",
+    "it": "Precedente",
+    "de": "Zurück",
+    "es": "Anterior",
+    "pt-BR": "Anterior",
+    "ru": "Предыдущее",
+    "zh-CN": "上一个",
+    "zh-TW": "上一個",
+    "ja": "前へ",
+    "ko": "이전"
+  },
+  "Next": {
+    "en": "Next",
+    "fr": "Suivant",
+    "it": "Successivo",
+    "de": "Weiter",
+    "es": "Siguiente",
+    "pt-BR": "Próximo",
+    "ru": "Следующее",
+    "zh-CN": "下一个",
+    "zh-TW": "下一個",
+    "ja": "次へ",
+    "ko": "다음"
+  }
+}

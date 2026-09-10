@@ -2,6 +2,9 @@
 
 `home.json` is a fixed, fictional inbox for visual review. Contacts are pinned
 first, alphabetically within each group; conversation timestamps and labels are intentionally fixed.
+English messages and relative day labels are translation keys for the preview
+catalog in `src/i18n/locales.json`. Names and clock labels remain fixed data.
+This translation applies only to fictional preview content, not real messages.
 No identity, contacts, messages, or presence come from the runtime or relays.
 Buttons have no actions or navigation; the contact strip supports scrolling. Remove this preview data when wiring
 the real inbox; it is deliberately included in the current layout build.

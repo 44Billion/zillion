@@ -13,7 +13,12 @@ export const colors = {
   primary: ['#168447', '#21c063'],
   onPrimary: ['#f5fff8', '#082b18'],
   accentText: ['#147b45', '#6ad995'],
-  bgAvatarLoading: ['#e0e5df', '#303a34']
+  bgAvatarLoading: ['#e0e5df', '#303a34'],
+  success: ['#147b45', '#6ad995'],
+  error: ['#b42318', '#ff9189'],
+  warning: ['#875500', '#efc466'],
+  info: ['#1765a6', '#86c4ff'],
+  shadow: ['#00000033', '#00000066']
 }
 
 const variableName = name => `--z-${name.replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`)}`

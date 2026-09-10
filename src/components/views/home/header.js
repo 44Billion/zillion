@@ -1,3 +1,4 @@
+import { t } from '#i18n/messages.js'
 import { f } from '#f'
 import '#shared/icons/icon-search.js'
 import '#shared/icons/icon-circle-plus.js'
@@ -14,7 +15,7 @@ f('z-home-header', ({ h, props }) => h`
         padding-inline: calc(18px - 6px * var(--home-header-collapse));
         pointer-events: auto; background: var(--z-surface);
         .brand {
-          display: flex; align-items: center; min-width: 0; font-size: 25px;
+          display: flex; align-items: center; min-width: 0; font-size: 25rem;
           gap: calc(11px - 3px * var(--home-header-collapse));
         }
         .brand-logo {
@@ -41,13 +42,13 @@ f('z-home-header', ({ h, props }) => h`
       <h1>Zillion</h1>
     </div>
     <div class="actions">
-      <button type="button" aria-label="Search messages" aria-disabled="true">
+      <button type="button" aria-label=${t('Search messages')} aria-disabled="true">
         <span aria-hidden="true"><icon-search props=${{ size: '26px', weight: 'light' }} /></span>
       </button>
-      <button type="button" aria-label="New message" aria-disabled="true">
+      <button type="button" aria-label=${t('New message')} aria-disabled="true">
         <span aria-hidden="true"><icon-circle-plus props=${{ size: '26px', weight: 'light' }} /></span>
       </button>
-      <button type="button" aria-label="Your profile" aria-disabled="true">
+      <button type="button" aria-label=${t('Your profile')} aria-disabled="true">
         <span class="user-avatar" aria-hidden="true"><z-home-avatar props=${{ person$: props.user$ }} /></span>
       </button>
     </div>

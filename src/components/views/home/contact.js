@@ -1,3 +1,4 @@
+import { t } from '#i18n/messages.js'
 import { f, useStore, useTask } from '#f'
 import '#shared/icons/icon-pin.js'
 import '#shared/unread-badge.js'
@@ -16,7 +17,7 @@ f('z-home-contact', ({ h, props }) => {
 
   const person = props.person$()
   return h`
-    <button class="contact-item" type="button" aria-label=${`${person.name}${person.pinned ? ', pinned' : ''}${person.unread ? `, ${person.unread} unread messages` : ''}`} aria-disabled="true">
+    <button class="contact-item" type="button" aria-label=${`${person.name}${person.pinned ? `, ${t('pinned')}` : ''}${person.unread ? `, ${t('{{count}} unread messages', { count: person.unread })}` : ''}`} aria-disabled="true">
       <style>${`
         z-home-contact .contact-item {
           scroll-snap-align: start;

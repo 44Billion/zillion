@@ -78,6 +78,14 @@ and build/publishing tooling exist. Do not describe planned features as already 
   listener on unmount. Do not let an app-local persisted preference override the
   launcher; define supported locales and an explicit fallback. Avoid applying a
   stale initial read after a newer locale notification.
+- `src/i18n/index.js` owns the reactive instance and `useInitI18n`, mounted once
+  by `z-app`. Subscribe only to `onLocaleChanged`: its initial notification
+  supplies the handshake locale, so no separate asynchronous read can race it.
+  Support `en`, `fr`, `it`, `de`, `es`, `pt-BR`, `ru`, `zh-CN`, `zh-TW`, `ja`,
+  and `ko`, with English until the handshake and as the explicit fallback.
+  Synchronize `html.lang`; do not configure browser preference storage.
+  Catalogs use source English keys and explicit locale objects, validated by
+  thenameisf. Translate during render through `getT`/`useT` so text stays live.
 
 ## Offline-first data and media
 
@@ -156,6 +164,18 @@ and build/publishing tooling exist. Do not describe planned features as already 
   reloads, and browser Back/Forward; serve the app shell for SPA route URLs.
 - Scope component style selectors to the host or component root; account for
   accessibility, keyboard use, and small screens.
+- Typography follows 44billion: `html { font-size: 0.0625em }` and
+  `body { font-size: 16rem }`, so `1rem` is approximately `1px` with the default
+  16px browser font. Use `rem` for authored `font-size` only; use `px` for fixed
+  layout dimensions, spacing, borders, and icons. Relative layout units and
+  unitless line heights remain valid. Preserve browser font preference scaling.
+  `--z-mobile-width: 718px` is shared by the home column and toast.
+- Mount one `z-toast` in the stable app root. Import `show`, `close`, `success`,
+  `error`, `warning`, or `info` from `#shared/toast.js`; do not create DOM toast
+  instances. The reactive port preserves ez-vault's unique history, navigation,
+  expandable details, animations, and 4s/8s timing. Component tasks own timers
+  and clear them on unmount. See `src/components/shared/toast.md` for the API,
+  text callbacks, accessibility behavior, and duplicate identity rules.
 
 ## Home layout preview
 
@@ -201,8 +221,11 @@ and build/publishing tooling exist. Do not describe planned features as already 
 - Authored UI colors belong to `src/assets/styles/theme.js` as light/dark pairs,
   consumed as CSS variables. Follow the system color scheme, preserve portrait
   colors, and use `:active` plus `:focus-visible` instead of hover-specific styles.
-- Preview labels/messages are fixed English fixtures. Runtime locale, identity,
-  and router integration remain separate implementation work; keep app.js lean.
+- Preview fixtures retain English source keys; UI labels, accessibility text,
+  sample messages and relative day labels render in the launcher's locale.
+  Names and fixed clock labels remain fixture data. Do not apply sample-message
+  translation to future real user messages. Identity and router integration
+  remain separate implementation work; keep app.js lean.
 
 ## Structure and imports
 

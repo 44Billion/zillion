@@ -1,3 +1,4 @@
+import { t } from '#i18n/messages.js'
 import { f, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import '#shared/icons/icon-chevron-down.js'
@@ -65,7 +66,7 @@ f('z-home-contacts', ({ h, props }) => {
   }, { after: 'rendering' })
 
   return h`
-    <section class="contact-strip" aria-label="Pinned contacts, then alphabetical contacts">
+    <section class="contact-strip" aria-label=${t('Pinned contacts, then alphabetical contacts')}>
       <style>${`
         z-home-contacts .contact-strip {
           display: flex; gap: 8px; align-items: start;
@@ -82,7 +83,7 @@ f('z-home-contacts', ({ h, props }) => {
             display: flex; flex-direction: column; align-items: center; gap: 9px;
             min-width: 0; border: 0; border-radius: 12px; padding: 7px 0 0;
             background: transparent; cursor: pointer; color: var(--z-muted);
-            font-size: 11px; line-height: 16px;
+            font-size: 11rem; line-height: 16px;
           }
           button:active { background: var(--z-pressed); }
           .contact-list button:focus-visible { outline-offset: -2px; }
@@ -94,7 +95,7 @@ f('z-home-contacts', ({ h, props }) => {
           }
         }
       `}</style>
-      <div class="contact-list" ref=${view.listRef$} tabindex="0" role="group" aria-label="Contacts; scroll horizontally for more">
+      <div class="contact-list" ref=${view.listRef$} tabindex="0" role="group" aria-label=${t('Contacts; scroll horizontally for more')}>
         <span hidden></span>
         ${props.contacts$().map(person => h({ key: person.id })`
           <f-to-signals props=${{
@@ -103,9 +104,9 @@ f('z-home-contacts', ({ h, props }) => {
           }} />
         `)}
       </div>
-      <button class="more" type="button" aria-label="More contacts" aria-disabled="true">
+      <button class="more" type="button" aria-label=${t('More contacts')} aria-disabled="true">
         <span class="more-icon" aria-hidden="true"><icon-chevron-down props=${{ size: '20px', weight: 'regular' }} /></span>
-        <span>More</span>
+        <span>${t('More')}</span>
       </button>
     </section>
   `
