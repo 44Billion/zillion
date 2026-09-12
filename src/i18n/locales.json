@@ -800,5 +800,83 @@
     "zh-TW": "謝謝推薦！",
     "ja": "おすすめしてくれてありがとう！",
     "ko": "추천해 줘서 고마워!"
+  },
+  "Could not load conversation": {
+    "en": "Could not load conversation",
+    "fr": "Impossible de charger la conversation",
+    "it": "Impossibile caricare la conversazione",
+    "de": "Unterhaltung konnte nicht geladen werden",
+    "es": "No se pudo cargar la conversación",
+    "pt-BR": "Não foi possível carregar a conversa",
+    "ru": "Не удалось загрузить разговор",
+    "zh-CN": "无法加载对话",
+    "zh-TW": "無法載入對話",
+    "ja": "会話を読み込めませんでした",
+    "ko": "대화를 불러오지 못했습니다"
+  },
+  "Loading conversation": {
+    "en": "Loading conversation",
+    "fr": "Chargement de la conversation",
+    "it": "Caricamento della conversazione",
+    "de": "Unterhaltung wird geladen",
+    "es": "Cargando conversación",
+    "pt-BR": "Carregando conversa",
+    "ru": "Загрузка разговора",
+    "zh-CN": "正在加载对话",
+    "zh-TW": "正在載入對話",
+    "ja": "会話を読み込み中",
+    "ko": "대화 불러오는 중"
+  },
+  "Sign in to save notes": {
+    "en": "Sign in to save notes",
+    "fr": "Connectez-vous pour enregistrer des notes",
+    "it": "Accedi per salvare le note",
+    "de": "Zum Speichern von Notizen anmelden",
+    "es": "Inicia sesión para guardar notas",
+    "pt-BR": "Entre para salvar notas",
+    "ru": "Войдите, чтобы сохранять заметки",
+    "zh-CN": "登录以保存笔记",
+    "zh-TW": "登入以儲存筆記",
+    "ja": "ログインしてメモを保存",
+    "ko": "로그인하여 메모 저장"
+  },
+  "Retry": {
+    "en": "Retry",
+    "fr": "Réessayer",
+    "it": "Riprova",
+    "de": "Erneut versuchen",
+    "es": "Reintentar",
+    "pt-BR": "Tentar novamente",
+    "ru": "Повторить",
+    "zh-CN": "重试",
+    "zh-TW": "重試",
+    "ja": "再試行",
+    "ko": "다시 시도"
+  },
+  "Cancel reply": {
+    "en": "Cancel reply",
+    "fr": "Annuler la réponse",
+    "it": "Annulla risposta",
+    "de": "Antwort abbrechen",
+    "es": "Cancelar respuesta",
+    "pt-BR": "Cancelar resposta",
+    "ru": "Отменить ответ",
+    "zh-CN": "取消回复",
+    "zh-TW": "取消回覆",
+    "ja": "返信をキャンセル",
+    "ko": "답장 취소"
+  },
+  "Could not save message": {
+    "en": "Could not save message",
+    "fr": "Impossible d’enregistrer le message",
+    "it": "Impossibile salvare il messaggio",
+    "de": "Nachricht konnte nicht gespeichert werden",
+    "es": "No se pudo guardar el mensaje",
+    "pt-BR": "Não foi possível salvar a mensagem",
+    "ru": "Не удалось сохранить сообщение",
+    "zh-CN": "无法保存消息",
+    "zh-TW": "無法儲存訊息",
+    "ja": "メッセージを保存できませんでした",
+    "ko": "메시지를 저장하지 못했습니다"
   }
 }

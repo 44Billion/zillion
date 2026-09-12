@@ -38,7 +38,7 @@ f('z-home-conversation', ({ h, props }) => {
         <span class="avatar" aria-hidden="true"><z-home-avatar props=${{ person$: view.person$ }} /></span>
         <span class="summary">
           <span class="name">${conversation.contact.self ? t('You') : conversation.contact.name}</span>
-          <span class="preview">${t(conversation.message)}</span>
+          <span class="preview">${conversation.real ? conversation.message || t('Notes to yourself') : t(conversation.message)}</span>
         </span>
         <span class="metadata">
           <time datetime=${conversation.lastMessageAt}>${/^\d{2}:\d{2}$/.test(conversation.timeLabel) ? conversation.timeLabel : t(conversation.timeLabel)}</time>

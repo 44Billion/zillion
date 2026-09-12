@@ -40,7 +40,7 @@ test('home contacts snap, load nearby avatars, share unread counts, and scroll u
     assert.ok(Math.abs(logoPixels.fraction - 0.8) < 0.01)
     assert.equal(logoPixels.icon, logoPixels.source)
     const names = await evaluate('[...document.querySelectorAll(".contact-item .contact-name")].map(el => el.textContent)')
-    assert.deepEqual(names, ['Daniel', 'Ellie', 'Maya', 'Alex', 'You', 'James', 'Juliette', 'Matteo', 'Nina', 'Sam', 'Sofia'])
+    assert.deepEqual(names, ['Daniel', 'Ellie', 'Maya', 'You', 'Alex', 'James', 'Juliette', 'Matteo', 'Nina', 'Sam', 'Sofia'])
     assert.equal(await evaluate('document.querySelectorAll(".contact-pin").length'), 3)
     assert.equal(await evaluate('document.querySelectorAll(".contact-item img").length < 11'), true)
     assert.equal(await evaluate('Boolean([...document.querySelectorAll(".contact-item")].at(-1).querySelector("img"))'), false)

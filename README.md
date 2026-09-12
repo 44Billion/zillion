@@ -8,11 +8,13 @@ channels (`private-channel`). The entire front-end uses **thenameisf**.
 The project is just getting started: this repository contains documentation,
 tooling, localized home and conversation previews with fixed sample DMs, a reactive toast, and
 reusable avatar/cache foundations.
-Real conversations, identity, and messaging integration have yet to be implemented.
+Self chat now uses the logged-in account and persists NIP-C7 kind-9 messages as
+personal copies in the launcher event store, with live updates, replies and
+NIP-27 media rendering. Third-party conversations remain sample data.
 
 Zillion will run as a SPA inside the **44billion launcher**, using its
 [committed injected API contract](https://github.com/44Billion/44billion/blob/main/APP_API.md).
-Startup will identify the instance's fixed user through `window.nostr.peekPublicKey()`.
+Startup identifies the instance's fixed user through `window.nostr.peekPublicKey()`.
 Personas will expand known-contact discovery, while the inbox remains limited to
 that user. Routing uses the browser History API through thenameisf's
 `useLocation` and `f-route`. Reactive i18n follows the launcher's initial locale
@@ -23,8 +25,9 @@ and private-message personal copies belong in `window.napp.eventStore`, and
 image bytes use `libp2r2p/idb-queue` (IndexedDB). `temporaryStorage` is reserved
 for disposable session data. Cached content renders before remote refreshes;
 uncached avatars use a generated fallback. HTTPS images need a successful
-CORS download to be reliably available offline. Message attachment rendering
-and conversation persistence are still planned.
+CORS download to be reliably available offline. Chat images use this cache; videos render online and remain links offline.
+Self messages persist through the launcher; uploads and third-party messaging
+remain planned.
 
 ## Home preview
 
@@ -45,8 +48,8 @@ The same logo artwork serves both themes and the launcher icon; its sources and
 safety padding are documented in [design/branding](design/branding/README.md).
 Preview content uses fixed English source keys translated at render time, with
 local portraits. Contacts and conversation rows open a fixture DM, including a
-conversation with yourself. Search, compose, profile and More are still inert. Real user messages will
-not pass through the preview translation catalog.
+real conversation with yourself. Search, new-conversation, profile and More
+remain previews. Real user messages never pass through the translation catalog.
 
 The shared [toast](src/components/shared/toast.md) supports success, error,
 warning and info, expandable details and navigation through unique notices. It
@@ -59,8 +62,8 @@ dimensions in `px`, allowing the browser's preferred font size to scale text.
 
 ## Conversation preview
 
-`/chat/:contactId` opens a sample conversation (`maya`, `daniel`, or `user` for
-self chat, for example). The floating header, incoming/outgoing bubbles,
+`/chat/:contactId` opens a sample conversation (`maya` or `daniel`, for
+example); `/chat/user` opens the real self chat. The floating header, incoming/outgoing bubbles,
 quotes, reactions, link cards and composer use the same 718px column and theme.
 Message long-press, right-click or Shift+F10 reveals Reply, Share/Copy and Delete
 above the messages. Sharing uses the browser API when available, otherwise it
@@ -70,8 +73,8 @@ does not copy; other failures can fall back to the clipboard.
 The text area grows up to five lines, then scrolls internally. Enter inserts a
 newline. With future-feature previews enabled, typing hides Attach and replaces
 Camera with Send. Otherwise Attach and Camera are absent and Send is always
-shown, including with an empty draft. Sending, replying,
-deleting, attachments, camera capture and paid attention are still unimplemented;
+shown, including with an empty draft. Sending and replying work in self chat;
+deletion, attachments, camera capture and paid attention remain unimplemented;
 drafts are temporary component state. The three-dot menu displays the future
 content-deletion action without performing it. Paid attention (the bolt button
 and menu option) is available only with the development flag described below.
@@ -226,3 +229,26 @@ an ecosystem convention; document customizations separately from NIP-5A.
 See [`AGENTS.md`](AGENTS.md) for architecture and contribution guidelines.
 Keep both documents updated alongside the changes they describe. Write all
 project documentation and code comments in English.
+
+
+## Self chat
+
+`/chat/user` belongs exclusively to `window.nostr.peekPublicKey()`. Messages use
+`window.napp.eventStore.addPersonalCopy(template, { context: 'dm:<own pubkey>' })`;
+they never use private-messenger or relay publication. Replies use `q` with the
+inner event ID, an empty relay hint and the owner's public key. Identical sends
+in the same second remain distinct. Failed saves preserve the draft for retry.
+The app root owns history/profile subscriptions and cleans them up on unmount;
+home's self avatar and last-message preview share that state.
+
+Use the companion 44billion update supporting `subscribe(filter, { initial: true })`
+to close the history/live delivery race. This new option is not yet in the
+committed upstream API. Offline signing also requires the companion ez-vault
+update for local content keys. Remote bunker signers require connectivity.
+The existing identity, personal-copy write and signer
+APIs were verified against upstream. The launcher's vault handles eventual
+device synchronization; Zillion consumes the resulting local updates.
+Generic private account lists will use context `''`; self chat never queries it.
+Third-party profile caches retain local-first reads and relay refreshes.
+Deletion, reactions, uploads, history pagination and third-party transport are
+not implemented. Video bytes are not persisted for offline playback.

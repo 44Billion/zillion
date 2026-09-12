@@ -127,7 +127,7 @@ f('a-avatar', ({ h, props }) => {
   // Read local profiles immediately and refresh independently after connectivity recovers.
   useTask(({ track, cleanup }) => {
     const pk = track(() => pk$())
-    if (!pk) return
+    if (!pk || props.localOnly) return
     const controller = new AbortController()
     let pending = false
     const refresh = async () => {

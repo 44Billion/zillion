@@ -1,26 +1,42 @@
 import { t } from '#i18n/messages.js'
+import { i18n } from '#i18n/index.js'
 import { f, useStore } from '#f'
 import '#f/components/f-to-signals.js'
 import data from './fixtures/home.json'
+import { useAccount } from '#hooks/use-account.js'
 import { useHeaderCollapse } from './hooks/use-header-collapse.js'
 import './header.js'
 import './contacts.js'
 import './conversation.js'
 
 f('z-home', ({ h }) => {
+  const account = useAccount()
   const view = useStore(() => ({
     homeRef$: null,
     headerSpaceRef$: null,
     contactsRef$: null,
-    user$: data.user,
-    contacts$: [...data.contacts, data.user].toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
-      ...contact,
-      unread: data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0
-    })),
-    conversations$: data.conversations.toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt)).map(conversation => ({
-      ...conversation,
-      contact: [...data.contacts, data.user].find(contact => contact.id === conversation.contactId)
-    }))
+    user$: account.person$,
+    contacts$ () {
+      return [...data.contacts, account.person$()].toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
+        ...contact,
+        unread: data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0
+      }))
+    },
+    conversations$ () {
+      const self = account.person$()
+      const latest = account.messages$().at(-1)
+      const date = latest ? new Date(latest.created_at * 1000) : null
+      return data.conversations.map(conversation => {
+        if (conversation.contactId === self.id) {
+          return {
+            ...conversation, contact: self, real: true, unread: 0,
+            message: latest?.content ?? '', lastMessageAt: date?.toISOString() ?? '',
+            timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
+          }
+        }
+        return { ...conversation, contact: data.contacts.find(contact => contact.id === conversation.contactId) }
+      }).toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
+    }
   }))
   useHeaderCollapse(view)
   return h`

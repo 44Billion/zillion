@@ -10,6 +10,7 @@ import '#shared/icons/icon-share-2.js'
 import '#shared/icons/icon-copy.js'
 import '#shared/icons/icon-check.js'
 import '#shared/icons/icon-trash.js'
+import './content.js'
 
 f('z-chat-message', ({ h, props }) => {
   const page = useRoutePage()
@@ -18,11 +19,12 @@ f('z-chat-message', ({ h, props }) => {
     busy$: false,
     keyboard$: false,
     alive: true,
+    content$ () { return props.message$().text },
     selected$ () { return props.activeId$() === props.message$().id },
     placement$ () { return props.message$().outgoing ? 'left-end' : 'right-end' },
     text$ () {
       const message = props.message$()
-      return [t(message.text), message.url].filter(Boolean).join('\n')
+      return [message.real ? message.text : t(message.text), message.url].filter(Boolean).join('\n')
     },
     open (keyboard) {
       if (!page.isActive$()) return
@@ -111,16 +113,16 @@ f('z-chat-message', ({ h, props }) => {
         aria-haspopup="menu" aria-expanded=${String(view.selected$())} onpointerdown=${press.down} onpointermove=${press.move}
         onpointerup=${press.cancel} onpointercancel=${press.cancel} onpointerleave=${press.cancel}
         oncontextmenu=${press.context} onkeydown=${press.key} onclick=${press.click}>
-        ${quoted ? h`<blockquote class="message-quote"><span class="quote-name">${quoted.outgoing || props.person$().self ? t('You') : props.person$().name}</span><span class="quote-text">${t(quoted.text)}</span></blockquote>` : null}
-        <div class="message-text">${t(message.text)}</div>
+        ${quoted ? h`<blockquote class="message-quote"><span class="quote-name">${quoted.outgoing || props.person$().self ? t('You') : props.person$().name}</span><span class="quote-text">${quoted.real ? quoted.text : t(quoted.text)}</span></blockquote>` : null}
+        <div class="message-text">${message.real ? h`<z-chat-content props=${{ text$: view.content$ }} />` : t(message.text)}</div>
         ${message.url ? h`<a class="message-link" href=${message.url} target="_blank" rel="noopener noreferrer">${message.url}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}
-        <div class="message-meta"><time>${message.time}</time>${message.outgoing ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>
+        <div class="message-meta"><time datetime=${message.datetime ?? null} title=${message.date ?? null}>${message.real ? `${message.date} ${message.time}` : message.time}</time>${message.outgoing && !message.real ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>
       </article>
       ${floating.isVisible$()
 ? h`
         <div class="message-actions" data-action-message=${message.id} role="menu" aria-label=${t('Message actions')} ref=${floating.floatingRef$} style=${floating.floatingStyle$()} onkeydown=${view.key}>
-          <button type="button" role="menuitem" aria-label=${t('Reply')} aria-disabled="true"><icon-bubble props=${{ size: '22px', weight: 'regular' }} /></button>
+          <button type="button" role="menuitem" aria-label=${t('Reply')} aria-disabled=${String(!message.real)} onclick=${() => { if (message.real) props.onReply(message.id) }}><icon-bubble props=${{ size: '22px', weight: 'regular' }} /></button>
           <button class=${`message-share ${view.copied$() ? 'copied' : ''}`} type="button" role="menuitem" aria-label=${t(view.copied$() ? 'Copied' : canShare ? 'Share' : 'Copy')} ?disabled=${view.busy$()} onclick=${view.share}>
             ${view.copied$() ? h`<icon-check props=${{ size: '22px', weight: 'regular' }} />` : canShare ? h`<icon-share-2 props=${{ size: '22px', weight: 'regular' }} />` : h`<icon-copy props=${{ size: '22px', weight: 'regular' }} />`}
           </button>

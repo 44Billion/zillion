@@ -62,7 +62,10 @@ test('route retention, eviction and mobile page transitions in the real launcher
       savedHome.closest('.route-scroll').scrollTop = 210;
       savedHome.querySelector('.contact-list').scrollLeft = 10000;
     })()`)
-    await browser.until(() => evaluate('getComputedStyle(savedHome).getPropertyValue("--home-header-collapse").trim() === "1"'), 'home collapsed')
+    await browser.until(async () => {
+      await browser.evaluate('document.querySelector("dialog[open] .permission-button.allow-button:not(:disabled)")?.click()')
+      return evaluate('savedHome.closest(".route-scroll").scrollTop = 210; getComputedStyle(savedHome).getPropertyValue("--home-header-collapse").trim() === "1"')
+    }, 'home collapsed')
     const homeState = await evaluate('({ top: savedHome.closest(".route-scroll").scrollTop, left: savedHome.querySelector(".contact-list").scrollLeft })')
     await evaluate('document.querySelector(".conversation [data-contact-id=maya]").click()')
     await settled()

@@ -1,8 +1,8 @@
 # Zillion
 
 A Nostr client for private chat inspired by WhatsApp and Signal. The project
-is in its initial phase: fixture-backed home and DM layouts, avatar/cache foundations,
-and build/publishing tooling exist. Do not describe planned features as already implemented.
+has real self chat alongside fixture-backed third-party DMs, avatar/cache
+foundations, and build/publishing tooling. Do not describe planned features as already implemented.
 
 ## Living documentation
 
@@ -61,10 +61,8 @@ and build/publishing tooling exist. Do not describe planned features as already 
   accounts are accessible. `getWindowNostrFor(pubkey)` obtains a signer for an
   accessible member; normal permissions and account restrictions still apply.
 - `window.napp.eventStore` belongs to the primary user and app. The companion
-  launcher change adds `window.napp.getWindowNappEventStoreFor(pubkey)` with the
-  same store API for a persona member. Until that addition is committed and
-  available in the target launcher, treat it as a pending runtime dependency and
-  check availability before using it; remove this note once verified upstream.
+  launcher exposes `window.napp.getWindowNappEventStoreFor(pubkey)` with the
+  same store API for a persona member, verified in the committed upstream contract.
 - Use accessible persona members' event stores to expand the set of known
   contacts. Open communication channels only for contacts known to the primary
   user or the corresponding persona. Broader contact discovery does not authorize
@@ -127,7 +125,7 @@ and build/publishing tooling exist. Do not describe planned features as already 
   omitted credentials, bounded sizes/timeouts, and cancellation. A server may
   allow an online `<img>` while denying CORS downloads; do not promise offline
   persistence for that case. Storage denial/quota must not break the UI.
-- For future message attachments, show a link when image bytes are unavailable
+- For message media, show a link when image bytes are unavailable
   offline and upgrade to a rendered image after confirmed connectivity. A URL
   alone is not a locally cached image. Avatars use their generated fallback.
 - Use `isOnline` and `onOnline` from `libp2r2p/network` for remote work. The
@@ -179,12 +177,13 @@ and build/publishing tooling exist. Do not describe planned features as already 
 
 ## Home layout preview
 
-- Home currently renders fixed JSON from `src/components/views/home/fixtures/`.
+- Home uses real self-chat state alongside third-party JSON from `src/components/views/home/fixtures/`.
   This visual preview deliberately ships sample data and local portraits. It is
   separate from browser-test fixtures, which remain excluded from publication.
-- Do not fetch real identity, contacts, or messages for this preview. `a-avatar`
+- Third-party preview contacts do not fetch real contacts or messages; self identity
+  and history use the runtime. `a-avatar`
   receives provided data-URL profiles without public keys, so no Nostr lookup is
-  triggered. Contact and conversation controls navigate to fixture DMs. Search,
+  triggered. Contact and conversation controls navigate to fixture DMs or real self chat. Search,
   compose, profile and More remain inert.
 - Keep the main column at a maximum of 718px, centered with vertical borders on
   wider screens. Use the same mobile composition at every width. The contact
@@ -225,8 +224,8 @@ and build/publishing tooling exist. Do not describe planned features as already 
 - Preview fixtures retain English source keys; UI labels, accessibility text,
   sample messages and relative day labels render in the launcher's locale.
   Names and fixed clock labels remain fixture data. Do not apply sample-message
-  translation to future real user messages. Identity and messaging integration
-  remain separate implementation work; keep app.js lean.
+  translation to real user messages. Third-party messaging integration remains
+  future work; keep app.js lean.
 
 ## Conversation preview and routing
 
@@ -238,10 +237,10 @@ and build/publishing tooling exist. Do not describe planned features as already 
   Conditionally omit disabled controls from the DOM. The contact strip must
   reclaim More's width and gap, and the chat three-dot button occupies a single
   44px circle. Without the previews, the composer always displays Send, even
-  when empty. Keep the profile button visible. Sending remains unimplemented.
+  when empty. Keep the profile button visible. Sending is implemented only in self chat.
 
 - `src/components/router.js` owns `url-router`, `useLocation`, and `f-route`.
-  `/` is home, `/chat/:contactId` is a fixture DM, and unknown routes/contacts
+  `/` is home, `/chat/user` is real self chat, other `/chat/:contactId` routes are fixture DMs, and unknown routes/contacts
   render a localized unavailable state. No real contact lookup occurs.
 - `z-route-page` scopes one `f-route` to its history entry using reactive
   `paths$`, so different contacts do not share a mounted chat instance. Keep
@@ -267,9 +266,9 @@ and build/publishing tooling exist. Do not describe planned features as already 
   outside the route deck. Do not import Flame's styling or old router code.
 - Route retention requires thenameisf 1.2.10 or newer. Validate against the
   lockfile-managed dependency; do not ship sibling source imports.
-- Home's fixture user participates in the horizontal strip and active chat list
-  as `You`, sorted by their fixture name. `/chat/user` is self chat; group chats
-  remain out of scope. Reuse the home portraits without public keys.
+- The primary user participates in the horizontal strip and active chat list
+  as `You`, sorted by the locally stored profile name. `/chat/user` is self chat; group chats
+  remain out of scope. Third-party previews reuse the home portraits without public keys.
 - `?entry=1` makes a conversation the entry screen: show the inert Zillion logo
   instead of Back and expose no home link, including on unknown-contact states.
   This is a navigation presentation mode, not an identity/authorization contract.
@@ -278,9 +277,9 @@ and build/publishing tooling exist. Do not describe planned features as already 
   Key the chat by contact and entry mode within its retained history page;
   replacing that page discards its drafts and timers.
 - Chat fixtures live in `src/components/views/chat/fixtures`. Sample DMs share an
-  exchange and end with their home preview; self messages have a separate fixture.
+  exchange and end with their home preview; the former self-message fixture is retained only as sample/test reference.
   Quotes, reactions, timestamps, presence and link cards are static sample data.
-  Do not fetch link previews or read runtime messages for these screens.
+  Do not fetch link previews for the sample screens; self chat reads runtime messages.
 - The floating header is 48px plus top safe area, with 44px controls and equal
   2px vertical padding. Keep the chat column centered at `--z-mobile-width`.
   The composer follows the visual viewport when the mobile keyboard opens.
@@ -298,12 +297,12 @@ and build/publishing tooling exist. Do not describe planned features as already 
   failures fall back to `copy-text.js`, which tries Clipboard then legacy copy
   and restores focus/selection. Show an icon-only green check for 1600ms after
   successful copy; failures use the reactive toast. Clean up pending UI work.
-- The header menu, Reply/Delete actions, attention, attachments, camera and Send
-  are presentation only. With future-feature previews enabled, typing hides
+- The header menu, Delete actions, attention, attachments and camera are
+  presentation only; Reply and Send work in self chat. With future-feature previews enabled, typing hides
   Attach and swaps Camera for Send. Preserve
   Enter/newlines, grow to five text lines, then scroll inside the textarea; align
-  icons to the bottom line. Drafts are local component state and are not sent or
-  persisted. Keep all added labels and fixture texts translated in 11 locales.
+  icons to the bottom line. Drafts are local component state; Send persists self-chat messages only after
+  successful event-store writes, and failed writes preserve the draft. Keep all added labels and fixture texts translated in 11 locales.
 
 ## Structure and imports
 
@@ -453,3 +452,33 @@ needed; empty folders mark the initial structure.
 - The explicit menu reset affects only the selected user/app. It must pause other
   instances, await completion and report partial failures. Remote draft cleanup
   continues unchanged. Run the local-update browser scenario when changing this.
+
+
+## Real self chat
+
+- `useInitAccount` runs once in `z-app`, calls `peekPublicKey` early and owns
+  profile/history subscriptions. `useAccount` readers do not start subscriptions.
+  `/chat/user` never falls back to fixture messages, including when signed out.
+- `src/services/self-chat.js` uses kind-9 unsigned templates, explicit context
+  `dm:<own hex pubkey>`, `addPersonalCopy` and query/subscribe. No relay sends or
+  private-messenger transport are involved. Only owner-authored direct/signed
+  copies in that exact context are rendered; hearsay/other authors are excluded.
+- The launcher owns wrapper encryption/signing. Read kind-1006 wrappers with
+  obfuscated `c` and inner `k=9`; decrypt through the documented NIP-44 v3 signer
+  extension. Compute inner IDs with the library event hash; q tags use those IDs,
+  empty relay hints and the owner pubkey. A `zillion` UUID tag distinguishes
+  identical intentional sends; retries retain the same template until saved.
+- Keep subscriptions alive across retained route changes and cancel on root
+  unmount. Initial replay requires this change's companion launcher update and
+  is pending upstream deployment. Offline personal-copy signing also requires
+  the companion ez-vault update for local content keys (nsec accounts). Deduplicate snapshot/live overlap by inner ID.
+- Own public profiles come only from the event store; the launcher imports their
+  relay updates. `a-avatar` supports static `localOnly` to suppress relay work
+  for this identity. Third-party profile caches retain stale-while-revalidate.
+- Render real text verbatim through escaped templates. Use public
+  `libp2r2p/nip27.extractMedia` for links/media/references; images reuse the cache,
+  videos render after connectivity confirmation, and unavailable media remains
+  a link. Do not fetch link-preview metadata. No new persistent app store exists.
+- Generic private contact/follow events will use context `''`, outside chat.
+  Deletion/reactions/uploads, paginated history and third-party messaging remain
+  unimplemented. All user-facing status/error/reply labels cover 11 locales.

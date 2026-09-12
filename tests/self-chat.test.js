@@ -1,0 +1,82 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { finalizeEvent, getEventHash } from 'libp2r2p/event'
+import { bytesToBase64Url } from 'libp2r2p/base64'
+import { createSelfChat } from '#services/self-chat.js'
+import { parseChatContent } from '#helpers/chat-content.js'
+
+const secret = new Uint8Array(32).fill(1)
+const pubkey = finalizeEvent({ kind: 0, created_at: 1, tags: [], content: '' }, secret).pubkey
+const inner = (text, at = 10) => ({ kind: 9, created_at: at, content: text, tags: [] })
+function wrapper (event, context = `dm:${pubkey}`, provenance = '1') {
+  return finalizeEvent({ kind: 1006, created_at: event.created_at, tags: [['k', String(event.kind)], ['c', context], ['v', provenance]], content: bytesToBase64Url(new TextEncoder().encode(JSON.stringify(event))) }, secret)
+}
+function fixture (history = []) {
+  let deliver
+  let returned = false
+  const writes = []
+  const errors = []
+  let messages = []
+  const subscription = {
+    [Symbol.asyncIterator] () { return this },
+    next: () => new Promise(resolve => { deliver = resolve }),
+    return: async () => { returned = true; deliver?.({ done: true }); return { done: true } }
+  }
+  const eventStore = {
+    subscribe (filter, options) {
+      assert.deepEqual(options, { initial: true })
+      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
+      return subscription
+    },
+    query: async () => ({ results: history }),
+    addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true, stored: true } } }
+  }
+  const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => content } }, onMessages: value => { messages = value }, onError: error => errors.push(error) })
+  return { chat, writes, errors, eventStore, get messages () { return messages }, get returned () { return returned }, deliver: event => deliver({ done: false, value: { result: event } }) }
+}
+const tick = () => new Promise(resolve => setTimeout(resolve, 10))
+
+test('self history and live copies deduplicate, order by inner ID and exclude hearsay, other authors and contexts', async () => {
+  const first = inner('Private note')
+  const f = fixture([wrapper(first), wrapper(inner('Not a chat'), ''), wrapper({ ...inner('Hearsay'), pubkey: 'b'.repeat(64) }, `dm:${pubkey}`, '2')])
+  await f.chat.start()
+  assert.equal(f.messages.length, 1)
+  assert.equal(f.messages[0].id, getEventHash({ ...first, pubkey }))
+  f.deliver(wrapper(first)); await tick()
+  assert.equal(f.messages.length, 1)
+  f.deliver(wrapper(inner('Earlier note', 5))); await tick()
+  assert.deepEqual(f.messages.map(event => event.content), ['Earlier note', 'Private note'])
+  f.chat.close(); await tick()
+  assert.equal(f.returned, true)
+  assert.deepEqual(f.errors, [])
+})
+
+test('saving uses only personal copies, preserves text, quotes inner IDs with an empty relay hint and retries the same event', async () => {
+  const f = fixture([wrapper(inner('Parent'))])
+  await f.chat.start()
+  const parent = f.messages[0].id
+  await f.chat.send('Reply\nhttps://example.com/image.png', parent)
+  assert.deepEqual(f.writes[0].options, { context: `dm:${pubkey}` })
+  assert.deepEqual(f.writes[0].event.tags[0], ['q', parent, '', pubkey])
+  assert.equal(f.writes[0].event.kind, 9)
+  assert.equal(f.writes[0].event.sig, undefined)
+  const write = f.eventStore.addPersonalCopy
+  let failed
+  f.eventStore.addPersonalCopy = async event => { failed = event; return { result: { ok: false, code: 'invalid' } } }
+  await assert.rejects(f.chat.send('Retry'), /invalid/)
+  assert.equal(f.messages.length, 2)
+  f.eventStore.addPersonalCopy = write
+  await f.chat.send('Retry')
+  assert.deepEqual(f.writes.at(-1).event, failed)
+  await f.chat.send('Retry')
+  assert.notDeepEqual(f.writes.at(-1).event.tags, failed.tags, 'identical intentional sends remain distinct within one second')
+  f.chat.close()
+})
+
+test('NIP-27 preserves text and distinguishes images, videos, links and hashtags', () => {
+  const parts = parseChatContent('Photo https://example.com/a.png and https://example.com/v.mp4 #nostr')
+  assert.deepEqual(parts.filter(part => part.key === 'url').map(part => part.url.m), ['image/png', 'video/mp4'])
+  assert.equal(parts.at(-1).key, 'hashtag')
+  assert.equal(parseChatContent('<script>alert(1)</script>')[0].text.value, '<script>alert(1)</script>')
+  assert.equal(parseChatContent('https://example.com/file#m=image%2Fpng')[0].url.m, 'image/png')
+})

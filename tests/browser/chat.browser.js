@@ -169,7 +169,7 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
     await evaluate('document.querySelector(".chat-back").click()')
     await browser.until(() => evaluate('location.pathname === "/" && Boolean(document.querySelector(".home"))'), 'back to home')
     await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
-    await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 3'), 'self DM')
+    await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 0 && document.querySelector(".chat-screen")?.dataset.contactId === "user"'), 'empty self DM without a logged-in account')
     assert.equal(await evaluate('document.querySelector(".chat-header h1").textContent'), 'You')
     assert.equal(await evaluate('document.querySelectorAll(".incoming").length'), 0)
     await evaluate('history.back()')

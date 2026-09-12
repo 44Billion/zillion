@@ -4,8 +4,9 @@ import portraits from './fixtures/portraits.js'
 
 f('z-home-avatar', ({ h, props }) => {
   const view = useStore({
-    profile$ () { return { picture: portraits[props.person$().avatar] } }
+    profile$ () { return props.person$().self ? props.person$().profile ?? {} : { picture: portraits[props.person$().avatar] } },
+    pk$ () { return props.person$().pubkey ?? '' }
   })
-  // A supplied data URL without a public key keeps the preview entirely local.
-  return h`<a-avatar props=${{ pk: '', profile$: view.profile$, alt: '' }} />`
+  // Self profiles come from the account store; sample portraits stay local.
+  return h`<a-avatar props=${{ pk$: view.pk$, localOnly: true, profile$: view.profile$, alt: '' }} />`
 })
