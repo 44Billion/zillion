@@ -176,8 +176,6 @@ export default /* css */`
   z-toast .toast-card[data-multi] .toast-nav {
     display: flex;
   }
-  z-toast .toast-card .toast-nav-prev svg { transform: rotate(90deg); }
-  z-toast .toast-card .toast-nav-next svg { transform: rotate(-90deg); }
   z-toast .toast-card .toast-counter {
     min-width: 36px;
     text-align: center;

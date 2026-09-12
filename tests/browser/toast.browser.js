@@ -58,6 +58,10 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
     await evaluate('__toastTest.error("Second"); __toastTest.warning("Third"); __toastTest.error("Second")')
     await browser.until(() => evaluate('document.querySelector(".toast-message")?.textContent === "Second" && document.querySelector(".toast-counter")?.textContent === "3 / 3"'), 'unique queue, newest first')
     assert.equal(await evaluate('document.querySelector(".toast-nav-next").disabled'), true)
+    assert.deepEqual(await evaluate(`['prev', 'next'].map(direction => {
+      const matrix = new DOMMatrixReadOnly(getComputedStyle(document.querySelector('.toast-nav-' + direction + ' svg')).transform);
+      return [Math.round(matrix.a), Math.round(matrix.b), Math.round(matrix.c), Math.round(matrix.d)];
+    })`), [[0, 1, -1, 0], [0, -1, 1, 0]], 'chevrons point left and right through f-svg rotation')
     await evaluate('document.querySelector(".toast-nav-prev").click()')
     await browser.until(() => evaluate('document.querySelector(".toast-message")?.textContent === "Third"'), 'previous message')
     assert.equal(await evaluate('document.querySelector(".toast-card").dataset.type'), 'warning')
@@ -106,6 +110,24 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
     await evaluate('__toastTest.view.mounted$(true)')
     await browser.until(() => evaluate('document.querySelector(".more")?.textContent.includes("Plus")'), 'root remount follows current locale')
     assert.equal(await evaluate('document.querySelector(".toast-card")'), null)
+    await browser.until(() => evaluate('!!document.querySelector(".conversation [data-contact-id=user]")'), 'self row after remount')
+    await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".chat-header")'), 'self chat retry state')
+    await evaluate('__toastTest.account.error$("Test loading failure")')
+    await browser.until(() => evaluate('!!document.querySelector(".retry-btn")'), 'retry button')
+    for (const theme of ['light', 'dark']) {
+      await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] }, appSession)
+      assert.equal(await evaluate(`(() => {
+        const button = document.querySelector('.retry-btn');
+        const style = getComputedStyle(button);
+        const rect = button.getBoundingClientRect();
+        return style.backgroundColor !== 'rgba(0, 0, 0, 0)' && style.borderRadius === '4px'
+          && rect.width > rect.height && rect.right <= window.innerWidth;
+      })()`), true, 'retry uses theme colors and keeps its compact rectangular shape')
+    }
+    const previousRetry = await evaluate('__toastTest.account.retry$()')
+    await evaluate('document.querySelector(".retry-btn").click()')
+    await browser.until(() => evaluate(`__toastTest.account.retry$() === ${previousRetry + 1}`), 'retry requests another load')
     const appErrors = browser.logs.filter(log => log.method === 'Runtime.exceptionThrown' && log.sessionId === appSession)
     assert.deepEqual(appErrors, [])
   } catch (error) {

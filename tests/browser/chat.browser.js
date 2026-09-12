@@ -66,9 +66,11 @@ test('future feature flag controls home and chat previews without leaving empty 
 test('fixture DM routes, self chat, context actions and multiline composer in the real launcher', { timeout: 120000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
+  let permissions
   try {
     const app = await prepareTestApp(await compile({ futureFeatures: true }), { identifier: 'chat-test', name: 'Chat preview test' })
     browser = await launchChrome()
+    permissions = setInterval(() => browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {}), 100)
     await browser.navigate('http://localhost:10000')
     await browser.until(() => browser.evaluate('Boolean(localStorage.getItem("session_workspaceKeys"))'), 'launcher initialization')
     const pageSession = [...browser.contexts.values()].find(context => context.origin === 'http://localhost:10000' && context.auxData?.isDefault).sessionId
@@ -115,12 +117,15 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
     await evaluate('document.querySelector("[data-message-id=m9] .chat-bubble").dispatchEvent(new PointerEvent("pointerdown",{pointerId:2,pointerType:"touch",isPrimary:true,button:0,clientX:50,clientY:400,bubbles:true}))')
     await browser.until(() => evaluate('document.querySelector(".message-actions")?.style.visibility === "visible"'), 'stationary long press')
     await evaluate('document.querySelector("[data-message-id=m9] .chat-bubble").dispatchEvent(new PointerEvent("pointerup",{pointerId:2,pointerType:"touch",bubbles:true}))')
-    const bounds = await evaluate(`(() => {
+    const measureBounds = () => evaluate(`(() => {
       const actions=document.querySelector('.message-actions').getBoundingClientRect();
       const bubble=document.querySelector('[data-message-id=m9] .chat-bubble').getBoundingClientRect();
       return { top:actions.top,bubbleTop:bubble.top,right:actions.right,bottom:actions.bottom,width:innerWidth,height:innerHeight };
     })()`)
-    assert.ok(bounds.top < bounds.bubbleTop && bounds.top >= 0 && bounds.right <= bounds.width && bounds.bottom <= bounds.height)
+    await browser.until(async () => {
+      const bounds = await measureBounds()
+      return bounds.top < bounds.bubbleTop && bounds.top >= 0 && bounds.right <= bounds.width && bounds.bottom <= bounds.height
+    }, 'actions settle inside the viewport')
     const gutterHit = await evaluate(`(() => {
       const row = document.querySelector('[data-message-id=m9]');
       const rect = row.getBoundingClientRect();
@@ -170,7 +175,7 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
     await browser.until(() => evaluate('location.pathname === "/" && Boolean(document.querySelector(".home"))'), 'back to home')
     await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 0 && document.querySelector(".chat-screen")?.dataset.contactId === "user"'), 'empty self DM without a logged-in account')
-    assert.equal(await evaluate('document.querySelector(".chat-header h1").textContent'), 'You')
+    await browser.until(() => evaluate('document.querySelector(".chat-screen[data-contact-id=user] .chat-header h1")?.textContent === "You"'), 'self header rendered')
     assert.equal(await evaluate('document.querySelectorAll(".incoming").length'), 0)
     await evaluate('history.back()')
     await browser.until(() => evaluate('location.pathname === "/"'), 'browser Back')
@@ -207,6 +212,7 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/chat'))
     throw error
   } finally {
+    clearInterval(permissions)
     await browser?.close()
     await runtime.close()
   }

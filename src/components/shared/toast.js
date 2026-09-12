@@ -155,11 +155,11 @@ f('z-toast-message', ({ h, props }) => {
       </div>
       <div class="toast-nav toast-fader">
         <button type="button" class="toast-btn toast-nav-prev" aria-label=${t('Previous')} ?disabled=${session.index === 0} onclick=${() => navigate(-1)}>
-          <span aria-hidden="true"><icon-chevron-down props=${{ size: '16px', weight: 'regular' }} /></span>
+          <span aria-hidden="true"><icon-chevron-down props=${{ size: '16px', weight: 'regular', rotate: 90 }} /></span>
         </button>
         <span class="toast-counter">${session.index + 1} / ${session.queue.length}</span>
         <button type="button" class="toast-btn toast-nav-next" aria-label=${t('Next')} ?disabled=${session.index === session.queue.length - 1} onclick=${() => navigate(1)}>
-          <span aria-hidden="true"><icon-chevron-down props=${{ size: '16px', weight: 'regular' }} /></span>
+          <span aria-hidden="true"><icon-chevron-down props=${{ size: '16px', weight: 'regular', rotate: 270 }} /></span>
         </button>
       </div>
     </section>

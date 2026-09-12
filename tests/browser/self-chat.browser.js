@@ -1,6 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
+import { noteEncode, appEncode } from 'libp2r2p/nip19'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { bytesToBase16 } from 'libp2r2p/base16'
 import { compile, root } from '../../bin/build-options.js'
@@ -16,13 +18,27 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
   let browser
   let permissions
   let offline = true
+  const requests = []
   try {
-    const app = await prepareTestApp(await compile(), { identifier: 'self-chat-test', name: 'Self chat test' })
+    const app = await prepareTestApp(await compile({ development: true, futureFeatures: true }), { identifier: 'self-chat-test', name: 'Self chat test' })
     browser = await launchChrome({
       intercept: request => {
         const url = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(url.hostname)) return null
+        requests.push(request.url)
         if (offline) return false
+        if (url.pathname.endsWith('/favicon.ico') || url.pathname === '/brand.png') {
+          return {
+            responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
+            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+          }
+        }
+        if (['/article', '/plain'].includes(url.pathname) || (url.hostname === 'njump.me' && !url.pathname.includes('missing'))) {
+          return {
+            responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'text/html' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
+            body: Buffer.from(`<html><head><link rel="icon" href="/brand.png">${url.pathname === '/plain' ? '' : '<meta property="og:title" content="Preview title"><meta property="og:description" content="Preview description"><meta property="og:image" content="https://example.com/photo.png">'}<script>window.previewScriptExecuted=true</script></head><body>Untrusted body</body></html>`).toString('base64')
+          }
+        }
         if (request.url === 'https://example.com/photo.png') {
           return {
             responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
@@ -75,6 +91,11 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
     await browser.until(() => evaluate('document.querySelector(".chat-header h1")?.textContent === "You"'), 'real self chat')
     assert.equal(await evaluate('document.querySelectorAll(".chat-bubble").length'), 0)
+    assert.equal(await evaluate('document.querySelector(".chat-attention")'), null)
+    await evaluate('document.querySelector(".chat-more").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".chat-menu")'), 'self menu')
+    assert.equal(await evaluate('document.querySelector(".chat-attention-option")'), null)
+    await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape"}))')
     const setText = text => evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event('input', { bubbles: true })); })()`)
     await setText('Today\nhttps://example.com/photo.png #private')
     await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'enabled Send')
@@ -89,10 +110,13 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('Boolean(document.querySelector(".message-actions"))'), 'message actions')
     await evaluate('document.querySelector(".message-actions [aria-label=Reply]").click()')
     await browser.until(() => evaluate('Boolean(document.querySelector(".composer-reply"))'), 'reply preview')
+    assert.equal(await evaluate('document.querySelector(".composer-reply span").textContent'), 'Reply: Today\nexample.com/photo.png #private')
     await setText('Reply to my note')
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 2'), 'saved reply')
     assert.equal(await evaluate('document.querySelectorAll(".message-quote").length'), 1)
+    assert.equal(await evaluate('document.querySelector(".quote-text").textContent'), 'Today\nexample.com/photo.png #private')
+    assert.equal(await evaluate('document.querySelector(".quote-text").title'), 'Today\nhttps://example.com/photo.png #private')
     const readMessages = `window.napp.eventStore.query({ kinds: [1006], '#k': ['9'] }).then(async ({ results }) => Promise.all(results.map(async wrapper => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob((await window.nostr.nip44v3.decrypt(${JSON.stringify(pubkey)}, '9', '', wrapper.content)).replaceAll('-', '+').replaceAll('_', '/')), char => char.charCodeAt(0)))))))`
     const events = await evaluate(readMessages)
     assert.deepEqual(events.find(event => event.content === 'Reply to my note').tags.find(tag => tag[0] === 'q'), ['q', id, '', pubkey])
@@ -111,6 +135,149 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     offline = true
     await evaluate('location.reload()')
     await browser.until(() => evaluate('document.querySelector(".chat-media img")?.naturalWidth > 0'), 'cached image remains available offline', 30000)
+    await browser.until(() => evaluate('document.querySelector(".quote-thumbnail")?.naturalWidth > 0'), 'posted reply uses the cached thumbnail offline')
+    // Real messages share the fixture bubble geometry and group by calendar day.
+    const addNote = (content, createdAt = Math.floor(Date.now() / 1000)) => evaluate(`window.napp.eventStore.addPersonalCopy({kind:9, created_at:${createdAt}, tags:[], content:${JSON.stringify(content)}}, {context:${JSON.stringify(`dm:${pubkey}`)}})`)
+    await addNote('Hi')
+    await browser.until(() => evaluate('[...document.querySelectorAll(".chat-bubble")].some(el => el.querySelector(".chat-content")?.innerText === "Hi")'), 'verbatim short text')
+    assert.ok(await evaluate(`(() => {
+      const el = [...document.querySelectorAll('.chat-bubble')].find(el => el.querySelector('.chat-content')?.innerText === 'Hi');
+      return el.getBoundingClientRect().height < 45 && !el.querySelector('time').innerText.includes('/') && el.querySelector('time').innerText.length < 10;
+    })()`), 'short messages have one line with clock metadata')
+    await addNote('Yesterday note', Math.floor(Date.now() / 1000) - 86400)
+    await browser.until(() => evaluate('document.querySelectorAll(".message-list .chat-date").length === 2'), 'day separators')
+    assert.deepEqual(await evaluate('[...document.querySelectorAll(".message-list .chat-date")].map(el=>el.textContent)'), ['Yesterday', 'Today'])
+
+    offline = false
+    await evaluate('window.dispatchEvent(new Event("online"))')
+    await addNote('https://example.com/article')
+    await browser.until(() => evaluate('document.querySelector(".website-preview strong")?.innerText === "Preview title"'), 'Open Graph preview')
+    await browser.until(() => evaluate('document.querySelector(".reference-icon")?.naturalWidth > 0 && document.querySelector(".preview-image")?.naturalWidth > 0'), 'preview images')
+    assert.equal(await evaluate('window.previewScriptExecuted'), undefined)
+    assert.equal(await evaluate('document.querySelector(\'.reference-link[href="https://example.com/article"] .reference-label\').innerText'), 'example.com/article')
+    assert.equal(await evaluate('[...document.querySelectorAll(\'.reference-link, .chat-media a, .chat-reference\')].every(link => getComputedStyle(link).textDecorationLine === \'none\')'), true)
+    await addNote('https://example.com/plain')
+    await browser.until(() => evaluate('document.querySelector(\'.reference-link[href="https://example.com/plain"] img\')?.naturalWidth > 0'), 'declared icon without OG')
+    await addNote('https://blocked.example.com/page')
+    await browser.until(() => evaluate('document.querySelector(\'.reference-link[href="https://blocked.example.com/page"] img\')?.naturalWidth > 0'), 'favicon fallback after unreadable HTML')
+    const publicPointer = noteEncode('a'.repeat(64))
+    await addNote(`https://njump.me/${publicPointer}`)
+    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="https://njump.me/${publicPointer}"]')`), 'public Nostr preview')
+    await browser.until(() => evaluate('document.querySelectorAll(".preview-image").length === 2 && [...document.querySelectorAll(".preview-image")].every(image => image.naturalWidth > 0)'), 'both preview images')
+    // Watch old content throughout insertion and asynchronous preview resolution,
+    // not just after a cache hit has restored the final DOM.
+    await evaluate(`(() => {
+      const nodes = [...document.querySelectorAll('.website-preview, .preview-image, .reference-icon, .chat-media img, .quote-thumbnail')];
+      const changes = [];
+      const observer = new MutationObserver(records => {
+        for (const record of records) {
+          for (const removed of record.removedNodes) {
+            if (nodes.some(node => removed === node || removed.contains(node))) changes.push('removed');
+          }
+          if (record.type === 'attributes' && nodes.includes(record.target)) changes.push('source changed');
+        }
+      });
+      observer.observe(document.querySelector('.message-list'), {subtree:true, childList:true, attributes:true, attributeFilter:['src']});
+      window.previewStability = {nodes, changes, observer};
+    })()`)
+    await addNote('Unrelated new message https://example.com/article')
+    await browser.until(() => evaluate('document.querySelectorAll(".website-preview").length === 3 && [...document.querySelectorAll(".preview-image")].filter(image => image.naturalWidth > 0).length === 3'), 'new message preview')
+    assert.deepEqual(await evaluate('window.previewStability.changes'), [], 'existing previews never collapse while another message is added or enriched')
+    assert.equal(await evaluate('window.previewStability.nodes.every(node => node.isConnected)'), true)
+    await evaluate('window.previewStability.observer.disconnect(); delete window.previewStability')
+    const privatePointer = noteEncode(id) + appEncode({ pubkey, dTag: 'zillion', channel: 'main' })
+    const requestStart = requests.length
+    await addNote(privatePointer)
+    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`), 'private Nostr link retained')
+    assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false, 'private pointer never reaches njump')
+    assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').textContent`), privatePointer.slice(0, 22) + '…')
+    assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').getAttribute('aria-label')`), privatePointer)
+    assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').title`), privatePointer)
+    await addNote(`https://njump.me/${noteEncode(id)}`)
+    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${noteEncode(id)}"]')`), 'private njump URL stays local')
+    assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false)
+
+    const startReply = async (target, title) => {
+      await evaluate(`(async () => {
+        const bubble = (${target}).closest('.chat-bubble');
+        bubble.scrollIntoView({block:'center'});
+        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        bubble.dispatchEvent(new MouseEvent('contextmenu', {bubbles:true, cancelable:true}));
+      })()`)
+      await browser.until(() => evaluate('!!document.querySelector(".message-actions [aria-label=Reply]")'), 'reply action')
+      await evaluate('document.querySelector(".message-actions [aria-label=Reply]").click()')
+      await browser.until(() => evaluate(`document.querySelector('.reply-text')?.title === ${JSON.stringify(title)}`), 'selected reply')
+    }
+    await startReply(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`, privatePointer)
+    assert.equal(await evaluate('document.querySelector(".reply-thumbnail")'), null)
+    assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false, 'reply thumbnails keep personal pointers local')
+    await startReply('document.querySelector(\'.reference-link[href="https://example.com/article"]\')', 'https://example.com/article')
+    await browser.until(() => evaluate('document.querySelector(".reply-thumbnail")?.naturalWidth > 0'), 'OG reply thumbnail')
+    assert.equal(await evaluate('document.querySelectorAll(".reply-thumbnail").length'), 1)
+    await evaluate('document.querySelector(".cancel-reply").click()')
+    await browser.until(() => evaluate('!document.querySelector(".composer-reply")'), 'cancel reply')
+    const longReply = 'Long reply ' + 'unbroken'.repeat(180)
+    await addNote(longReply)
+    await browser.until(() => evaluate(`!![...document.querySelectorAll('.chat-content')].find(el => el.innerText === ${JSON.stringify(longReply)})`), 'long reply target')
+    await startReply(`[...document.querySelectorAll('.chat-content')].find(el => el.innerText === ${JSON.stringify(longReply)})`, longReply)
+    await setText('Reply to long text')
+    await evaluate('document.querySelector(".compose-action").click()')
+    await browser.until(() => evaluate(`!![...document.querySelectorAll('.quote-text')].find(el => el.title === ${JSON.stringify(longReply)})`), 'posted reply to long text')
+
+    await mkdir(path.join(root, 'tmp/browser-failures'), { recursive: true })
+    const session = [...browser.contexts.values()].find(context => context.origin === launcherOrigin && context.auxData?.isDefault).sessionId
+    for (const width of [390, 1100]) {
+      await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width < 500 }, session)
+      for (const theme of ['light', 'dark']) {
+        for (const sessionId of new Set([...browser.contexts.values()].filter(context => context.auxData?.frameId).map(context => context.sessionId))) await browser.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] }, sessionId)
+        assert.equal(await evaluate('document.querySelector(".chat-timeline").scrollWidth <= document.querySelector(".chat-timeline").clientWidth'), true)
+        assert.equal(await evaluate(`(() => {
+          const text = [...document.querySelectorAll('.quote-text')].find(el => el.title === ${JSON.stringify(longReply)});
+          const quote = text.closest('.message-quote');
+          const thumbnail = document.querySelector('.quote-thumbnail');
+          const copy = thumbnail.parentElement.querySelector('.quote-copy').getBoundingClientRect();
+          const image = thumbnail.getBoundingClientRect();
+          return text.scrollWidth > text.clientWidth && getComputedStyle(text).textOverflow === 'ellipsis'
+            && getComputedStyle(text).whiteSpace === 'nowrap' && Math.abs(text.getBoundingClientRect().height - 18.9) < 1
+            && quote.scrollWidth === quote.clientWidth && image.width === 38 && image.height === 38
+            && Math.abs(copy.height - image.height) < 1 && image.right < copy.left
+            && thumbnail.parentElement.querySelectorAll('.quote-thumbnail').length === 1;
+        })()`), true, 'posted quotes ellipsize one text line and size the thumbnail to author plus excerpt')
+        await writeFile(path.join(root, `tmp/browser-failures/self-chat-${width}-${theme}.png`), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' }, session)).data, 'base64'))
+        await startReply('[...document.querySelectorAll(".chat-content")].find(el => el.innerText === "Hi")', 'Hi')
+        assert.equal(await evaluate(`(() => {
+          const text = document.querySelector('.reply-text').getBoundingClientRect();
+          const button = document.querySelector('.cancel-reply').getBoundingClientRect();
+          return text.height === 22 && Math.abs(text.top + text.height / 2 - button.top - button.height / 2) < 1;
+        })()`), true, 'one-line reply stays vertically centered')
+        await startReply(`[...document.querySelectorAll('.chat-content')].find(el => el.innerText === ${JSON.stringify(longReply)})`, longReply)
+        assert.equal(await evaluate(`(() => {
+          const text = document.querySelector('.reply-text');
+          const button = document.querySelector('.cancel-reply').getBoundingClientRect();
+          const composer = document.querySelector('.chat-composer').getBoundingClientRect();
+          return text.clientHeight === 44 && text.scrollHeight > text.clientHeight && getComputedStyle(text).webkitLineClamp === '2'
+            && button.width === 44 && button.height === 44 && button.right <= composer.right
+            && document.querySelector('.cancel-reply svg').getBoundingClientRect().width === 24
+            && composer.width === document.querySelector('.chat-composer').scrollWidth;
+        })()`), true, 'two-line clamp cannot push the cancel button out of view')
+        await writeFile(path.join(root, `tmp/browser-failures/reply-text-${width}-${theme}.png`), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' }, session)).data, 'base64'))
+        offline = true
+        await startReply(`document.querySelector('[data-message-id="${id}"] .chat-bubble')`, 'Today\nhttps://example.com/photo.png #private')
+        await browser.until(() => evaluate('document.querySelector(".reply-thumbnail")?.naturalWidth > 0'), 'cached reply thumbnail offline')
+        assert.equal(await evaluate(`(() => {
+          const image = document.querySelector('.reply-thumbnail').getBoundingClientRect();
+          const text = document.querySelector('.reply-text').getBoundingClientRect();
+          return document.querySelectorAll('.reply-thumbnail').length === 1 && image.width === 44 && image.height === 44
+            && image.right < text.left && Math.abs(text.top - image.top) < 1;
+        })()`), true, 'single thumbnail spans two lines with text aligned to its top')
+        await writeFile(path.join(root, `tmp/browser-failures/reply-media-${width}-${theme}.png`), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' }, session)).data, 'base64'))
+        await evaluate('document.querySelector(".quote-thumbnail").closest(".message-quote").scrollIntoView({block:"center"})')
+        await writeFile(path.join(root, `tmp/browser-failures/posted-reply-${width}-${theme}.png`), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' }, session)).data, 'base64'))
+        await evaluate('document.querySelector(".cancel-reply").focus(); document.querySelector(".cancel-reply").click()')
+        await browser.until(() => evaluate('!document.querySelector(".composer-reply")'), 'reply thumbnail removed on cancel')
+        offline = false
+      }
+    }
     await evaluate('document.querySelector(".chat-back").click()')
     await browser.until(() => evaluate('location.pathname === "/"'), 'home navigation')
     await browser.until(() => evaluate('document.querySelector(".conversation [data-contact-id=user] .preview").textContent.length > 0'), 'real self preview')

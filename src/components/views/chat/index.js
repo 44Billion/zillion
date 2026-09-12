@@ -1,6 +1,7 @@
 import { f, useLocation, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import { t } from '#i18n/messages.js'
+import { chatTimeline } from '#helpers/chat-timeline.js'
 import { i18n } from '#i18n/index.js'
 import { useRoutePage } from '#shared/route-page.js'
 import home from '#views/home/fixtures/home.json'
@@ -41,23 +42,23 @@ f('z-chat', ({ h, props }) => {
     screenRef$: null,
     activeId$: null,
     replyTo$: null,
+    now$: Date.now(),
     real$ () { return props.person$().self === true },
     messages$ () {
       if (!this.real$()) return getMessages(props.person$())
-      return account.messages$().map(event => ({
-        id: event.id, text: event.content, real: true, outgoing: true,
-        replyTo: event.tags.find(tag => tag[0] === 'q')?.[1],
-        time: new Date(event.created_at * 1000).toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }),
-        date: new Date(event.created_at * 1000).toLocaleDateString(i18n.getLocale()),
-        datetime: new Date(event.created_at * 1000).toISOString()
-      }))
+      return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t })
     },
     reply (id) { this.replyTo$(id); this.activeId$(null) },
     reply$ () { return this.messages$().find(message => message.id === this.replyTo$()) },
     canSend$ () { return this.real$() && account.ready$() && !!account.pubkey$() },
     send (text) { return account.send(text, this.replyTo$()) }
   }))
-  useTask(({ track }) => { if (!track(() => page.isActive$())) view.activeId$(null) })
+  useTask(({ track, cleanup }) => {
+    if (!track(() => page.isActive$())) { view.activeId$(null); return }
+    view.now$(Date.now())
+    const timer = setInterval(() => view.now$(Date.now()), 60000)
+    cleanup(() => clearInterval(timer))
+  })
   useTask(({ track, cleanup }) => {
     const timeline = track(() => view.timelineRef$())
     if (!timeline) return
@@ -123,7 +124,8 @@ f('z-chat', ({ h, props }) => {
           .chat-timeline { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: calc(60px + env(safe-area-inset-top)) 12px 12px; }
           .message-list { list-style: none; padding: 0; margin: 0; }
           .chat-date { width: fit-content; margin: 8px auto 16px; padding: 4px 12px; border-radius: 14px; background: var(--z-chat-overlay); color: var(--z-muted); font-size: 12rem; line-height: 1.4; }
-          .retry-btn { margin-left: 8px; }
+          .retry-btn { margin-left: 8px; background: var(--z-control); color: var(--z-text); border: 2px solid var(--z-border); border-radius: 4px; cursor: pointer; }
+          .retry-btn:active { background: var(--z-pressed); }
         }
       `}</style>
       <z-chat-header props=${{ person$: props.person$, entry$: props.entry$, route$: props.route$ }} />

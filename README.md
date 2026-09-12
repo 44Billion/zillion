@@ -77,7 +77,8 @@ shown, including with an empty draft. Sending and replying work in self chat;
 deletion, attachments, camera capture and paid attention remain unimplemented;
 drafts are temporary component state. The three-dot menu displays the future
 content-deletion action without performing it. Paid attention (the bolt button
-and menu option) is available only with the development flag described below.
+and menu option) is available only in third-party fixture chats with the
+development flag described below; self chat always hides both.
 
 Use `/chat/maya?entry=1` to make a specific conversation the initial screen for
 an embedded app. Its logo replaces Back and has no action yet; this UI offers no
@@ -114,7 +115,7 @@ Attach, and Camera. These controls are still inert previews.
 Production always omits these controls, even with the flag set to `1`.
 The contact list expands into More's space, the three-dot chat button occupies
 a single 44px circle, and the composer always shows Send instead of Camera.
-Sending remains unimplemented. The profile button remains visible.
+Sending works in self chat. The profile button remains visible.
 
 Requirements: Node.js 24+, npm, Python 3, and the `44billion` and
 `ez-vault` repositories with their npm dependencies installed. Chrome is also
@@ -252,3 +253,24 @@ Generic private account lists will use context `''`; self chat never queries it.
 Third-party profile caches retain local-first reads and relay refreshes.
 Deletion, reactions, uploads, history pagination and third-party transport are
 not implemented. Video bytes are not persisted for offline playback.
+
+Real messages use the same bubble spacing as fixtures, with clock-only timestamps
+and localized day separators. HTTPS links show Open Graph cards when the remote
+site allows browser CORS reads, or a declared icon/default favicon otherwise.
+Requests omit credentials/referrers and have size, timeout and concurrency limits.
+No preview proxy is configured: CORS-blocked metadata cannot be rendered.
+Preview metadata is cached in memory; image bytes reuse the disposable media cache.
+Unsupported Nostr event pointers use njump.me where accessible, retaining their
+original destinations and app-routing suffixes. URLs and NIP-19 labels are shortened
+to about 22 characters, without underlines; full references remain available in
+tooltips, accessible link names and copied/shared text. Reply quotes and the
+composer's reply summary use the same compact labels. The composer allows two
+lines beside a fixed cancel button and shows at most one media thumbnail, reusing
+the image/metadata caches and Nostr privacy checks.
+Posted reply quotes use a smaller 38px thumbnail beside the author and a single
+excerpt line, with ellipses for overflow.
+Loaded previews stay mounted when unrelated messages arrive or retained routes
+become inactive.
+Known personal-copy references never go
+to njump; an unavailable local provenance check or missing remote page also keeps
+the plain Nostr link. Sample-chat link cards remain static fixtures.

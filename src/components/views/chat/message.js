@@ -2,6 +2,7 @@ import { f, useStore, useTask } from '#f'
 import { useAnchoredMenu } from '#hooks/use-anchored-menu.js'
 import { t } from '#i18n/messages.js'
 import { useRoutePage } from '#shared/route-page.js'
+import { shortUrlLabel } from '#helpers/reference-label.js'
 import { canShareText, shareText } from '#helpers/share-text.js'
 import { error } from '#shared/toast.js'
 import { useMessagePress } from './hooks/use-message-press.js'
@@ -11,6 +12,7 @@ import '#shared/icons/icon-copy.js'
 import '#shared/icons/icon-check.js'
 import '#shared/icons/icon-trash.js'
 import './content.js'
+import './quote.js'
 
 f('z-chat-message', ({ h, props }) => {
   const page = useRoutePage()
@@ -20,6 +22,13 @@ f('z-chat-message', ({ h, props }) => {
     keyboard$: false,
     alive: true,
     content$ () { return props.message$().text },
+    quoted$ () { return props.messages$().find(item => item.id === props.message$().replyTo) },
+    quoteContent$ () {
+      const quoted = this.quoted$()
+      return quoted ? quoted.real ? quoted.text : t(quoted.text) : ''
+    },
+    quoteMedia$ () { return this.quoted$()?.real ? this.quoteContent$() : '' },
+    quoteAuthor$ () { return this.quoted$()?.outgoing || props.person$().self ? t('You') : props.person$().name },
     selected$ () { return props.activeId$() === props.message$().id },
     placement$ () { return props.message$().outgoing ? 'left-end' : 'right-end' },
     text$ () {
@@ -66,12 +75,13 @@ f('z-chat-message', ({ h, props }) => {
   })
   useTask(({ track }) => {
     const element = track(() => view.selected$() && view.keyboard$() && floating.position$() && floating.floatingRef$())
-    element?.querySelector('button')?.focus({ preventScroll: true })
+    if (element) element.querySelector('button')?.focus({ preventScroll: true })
   }, { after: 'rendering' })
   const message = props.message$()
-  const quoted = props.messages$().find(item => item.id === message.replyTo)
+  const quoted = view.quoted$()
   const canShare = canShareText(view.text$())
   return h`
+    ${message.dayLabel ? h`<li class="chat-date" data-day=${message.dayKey}>${message.dayLabel}</li>` : null}
     <li class=${`message-row ${message.outgoing ? 'outgoing' : 'incoming'}`} data-message-id=${message.id}>
       <style>${`
         z-chat-message .message-row {
@@ -90,10 +100,7 @@ f('z-chat-message', ({ h, props }) => {
           .chat-bubble::after { content: ''; display: block; clear: both; }
           .message-text { display: inline; font-size: 16rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
           .message-meta { float: right; display: flex; align-items: center; justify-content: end; gap: 4px; margin: 6px 0 -1px 10px; color: var(--z-muted); font-size: 11rem; line-height: 1.25; }
-          .message-quote { margin: 0 0 7px; padding: 7px 9px; border-left: 3px solid var(--z-accent-text); border-radius: 5px 12px 12px 5px; background: var(--z-bubble-quote); font-size: 14rem; line-height: 1.35; }
-          .quote-name { display: block; color: var(--z-accent-text); font-weight: 600; }
-          .quote-text { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-          .message-link { display: block; color: var(--z-accent-text); font-size: 16rem; line-height: 1.4; overflow-wrap: anywhere; }
+          .message-link { display: block; text-decoration: none; color: var(--z-accent-text); font-size: 16rem; line-height: 1.4; overflow-wrap: anywhere; }
           .link-preview { display: block; margin-top: 7px; padding: 10px; border-left: 3px solid var(--z-accent-text); border-radius: 5px 10px 10px 5px; background: var(--z-bubble-quote); text-decoration: none; color: var(--z-text); font-size: 14rem; }
           .link-preview small { display: block; color: var(--z-accent-text); font-size: 12rem; margin-bottom: 4px; }
           .message-reaction { display: inline-flex; padding: 2px 8px; border-radius: 14px; background: var(--z-bubble-quote); margin-top: 6px; font-size: 16rem; }
@@ -113,11 +120,11 @@ f('z-chat-message', ({ h, props }) => {
         aria-haspopup="menu" aria-expanded=${String(view.selected$())} onpointerdown=${press.down} onpointermove=${press.move}
         onpointerup=${press.cancel} onpointercancel=${press.cancel} onpointerleave=${press.cancel}
         oncontextmenu=${press.context} onkeydown=${press.key} onclick=${press.click}>
-        ${quoted ? h`<blockquote class="message-quote"><span class="quote-name">${quoted.outgoing || props.person$().self ? t('You') : props.person$().name}</span><span class="quote-text">${quoted.real ? quoted.text : t(quoted.text)}</span></blockquote>` : null}
+        ${quoted ? h`<z-chat-quote props=${{ text$: view.quoteContent$, author$: view.quoteAuthor$, mediaText$: view.quoteMedia$ }} />` : null}
         <div class="message-text">${message.real ? h`<z-chat-content props=${{ text$: view.content$ }} />` : t(message.text)}</div>
-        ${message.url ? h`<a class="message-link" href=${message.url} target="_blank" rel="noopener noreferrer">${message.url}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
+        ${message.url ? h`<a class="message-link" href=${message.url} title=${message.url} aria-label=${message.url} target="_blank" rel="noopener noreferrer">${shortUrlLabel(message.url)}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}
-        <div class="message-meta"><time datetime=${message.datetime ?? null} title=${message.date ?? null}>${message.real ? `${message.date} ${message.time}` : message.time}</time>${message.outgoing && !message.real ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>
+        <div class="message-meta"><time datetime=${message.datetime ?? null} title=${message.date ?? null}>${message.time}</time>${message.outgoing && !message.real ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>
       </article>
       ${floating.isVisible$()
 ? h`

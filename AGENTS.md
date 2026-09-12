@@ -234,6 +234,7 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Camera. Development enables them by default; `0` disables and `1` enables
   them. Restart the watcher after changing the flag. `bin/build-options.js`
   defines `FUTURE_FEATURES_ENABLED` and always forces it off in production.
+  Self chat always omits both paid-attention controls, even with the flag enabled.
   Conditionally omit disabled controls from the DOM. The contact strip must
   reclaim More's width and gap, and the chat three-dot button occupies a single
   44px circle. Without the previews, the composer always displays Send, even
@@ -478,7 +479,42 @@ needed; empty folders mark the initial structure.
 - Render real text verbatim through escaped templates. Use public
   `libp2r2p/nip27.extractMedia` for links/media/references; images reuse the cache,
   videos render after connectivity confirmation, and unavailable media remains
-  a link. Do not fetch link-preview metadata. No new persistent app store exists.
+  a link. Real messages share fixture bubble spacing and clock-only metadata;
+  separate localized calendar-day rows group the timeline. Preserve user
+  whitespace without introducing template indentation into inline content.
+- Real-message HTTPS links use bounded, credential-free CORS head reads for OG
+  cards and declared icons, with /favicon.ico as fallback. Metadata has a bounded
+  in-memory cache; image bytes reuse media-cache. Never mount fetched page HTML.
+  CORS-denied sites keep a link and best-effort favicon; no proxy is configured.
+  Fetch only visible references on active routes and cancel work on exit.
+- Compact URL/NIP-19 display labels to 22 characters plus an ellipsis when needed;
+  URLs omit the scheme/www and retain file extensions, while NIP-19 never gains
+  a slash prefix. Preserve full destinations, tooltips and accessible link names.
+  References use the accent color without underlines; copy/share keeps full text.
+  Reply quotes and composer summaries reuse the same compact labels and full-text
+  tooltips. Posted quotes show an ellipsized author line and one ellipsized excerpt
+  line, with at most one 38px thumbnail matching their combined height. Start
+  quoted-media work only near the viewport; sample quotes never fetch media.
+  Composer summaries clamp to two lines beside
+  a fixed 44px cancel button (24px icon-x), centering short text vertically. A
+  single 44px image/video/website thumbnail aligns text to the top when available;
+  reuse media-cache and bounded link-preview reads with the same Nostr privacy
+  checks. Cancel pending thumbnail work when changing replies or leaving the route.
+  Never clear a loaded thumbnail on unrelated message updates.
+  Preview tasks track derived target/private-status values, not the raw message
+  list or parsed object identity. Keep loaded content across unrelated updates
+  and retained route changes; clear it on target/account changes or discovery of
+  a private copy. Media tasks similarly track URL/type values. Browser regressions
+  observe existing preview nodes throughout insertion and enrichment, not only
+  their eventual restored state.
+- Unsupported NIP-27 event references can use njump.me after checking local
+  provenance. Known self-message IDs, kind-1006 wrappers and inner IDs with local
+  personal copies never trigger external previews. Denied/unavailable provenance
+  checks also retain the plain Nostr link. Preserve validated app-entity suffixes;
+  njump receives only the Nostr pointer. Explicit njump URLs pass through the
+  same provenance check. Address pointers conservatively stay local if copies
+  of the same author/kind exist, since there is no personal-copy address index. Missing/unreadable njump pages keep the
+  original pointer label and nostr: destination. No new persistent app store exists.
 - Generic private contact/follow events will use context `''`, outside chat.
   Deletion/reactions/uploads, paginated history and third-party messaging remain
   unimplemented. All user-facing status/error/reply labels cover 11 locales.
