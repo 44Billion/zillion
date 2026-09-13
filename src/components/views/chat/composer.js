@@ -34,8 +34,11 @@ f('z-chat-composer', ({ h, props }) => {
   useTask(({ cleanup }) => cleanup(() => { view.alive = false }))
   useTask(({ track }) => { if (track(() => props.reply$?.())) view.inputRef$()?.focus() })
   useTask(({ track, cleanup }) => {
-    const { input, field } = track(() => ({ input: view.inputRef$(), field: view.fieldRef$(), text: view.text$() }))
+    const { input, field, text } = track(() => ({ input: view.inputRef$(), field: view.fieldRef$(), text: view.text$() }))
     if (!input || !field) return
+    // Signal updates can precede template commits. Synchronize the value before
+    // measuring, including programmatic clears after a successful send.
+    if (input.value !== text) input.value = text
     const resize = () => {
       const style = getComputedStyle(input)
       const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
@@ -89,7 +92,7 @@ f('z-chat-composer', ({ h, props }) => {
 : null}
       <div class="composer-field" ref=${view.fieldRef$}>
         <textarea ref=${view.inputRef$} rows="1" placeholder=${t('Message')} aria-label=${t('Message')}
-          enterkeyhint="enter" .value=${view.text$()} oninput=${event => view.text$(event.target.value)}></textarea>
+          enterkeyhint="enter" oninput=${event => view.text$(event.target.value)}></textarea>
         ${showMediaControls ? h`<button class="attach" type="button" aria-label=${t('Attach file')} aria-disabled="true"><icon-paperclip props=${{ size: '24px', weight: 'light' }} /></button>` : null}
       </div>
       <button class="compose-action" type="button" aria-label=${t(showMediaControls ? 'Camera' : 'Send message')} aria-disabled=${String(showMediaControls || !props.canSend$?.() || view.busy$() || !view.text$().trim())} onclick=${view.send}>

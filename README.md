@@ -82,7 +82,8 @@ separators retain their identity as earlier messages arrive. Bottom following
 also aligns fractional layout positions with scroll pixel rounding, keeping
 unchanged text bubbles from shifting by a pixel as history grows.
 
-The text area grows up to five lines, then scrolls internally. Enter inserts a
+The text area grows up to five lines, then scrolls internally. Sending a draft
+successfully clears it and returns the field to one line. Enter inserts a
 newline. With future-feature previews enabled, typing hides Attach and replaces
 Camera with Send. Otherwise Attach and Camera are absent and Send is always
 shown, including with an empty draft. Sending and replying work in self chat;

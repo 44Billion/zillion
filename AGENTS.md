@@ -318,6 +318,11 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Enter/newlines, grow to five text lines, then scroll inside the textarea; align
   icons to the bottom line. Drafts are local component state; Send persists self-chat messages only after
   successful event-store writes, and failed writes preserve the draft. Keep all added labels and fixture texts translated in 11 locales.
+- The composer task synchronizes `textarea.value` from the draft signal before
+  measuring its height. Do not also bind `.value` in the template: reactive task
+  reruns can precede template commits and measure stale text after sending.
+  A successful clear resets height and internal scrolling without another input
+  event; text changed during an in-flight send remains the current draft.
 
 ## Structure and imports
 
