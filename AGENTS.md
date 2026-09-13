@@ -121,6 +121,13 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   offline reads. Native CORS fallbacks must decode before presentation and are
   never persisted. Preparation (including cache reads) has a 15-second deadline.
   There is no legacy-record migration; use a clean disposable cache for testing.
+- `src/services/avatar-cache.js` reuses `createMediaCache` with an independent
+  16 MiB FIFO queue in `zillion:avatars:v1:idb-queue`. Every `a-avatar` resolves
+  pictures through this instance. Chat images, preview images/icons and reply
+  thumbnails keep the existing 64 MiB media queue (80 MiB total logical budget).
+  Both queues share the record/decoding contract and 4 MiB download limit;
+  eviction and clearing are independent, including when URLs are identical.
+  Do not migrate avatar bytes from the old shared cache or fall back to it.
 - `a-avatar` starts from nappstore's component. Preserve its public props,
   image lifecycle, and deterministic DiceBear fallback while improving it.
   Zillion replaces its default LRU with event-store profile reads and IndexedDB

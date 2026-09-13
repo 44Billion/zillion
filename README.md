@@ -25,7 +25,10 @@ and private-message personal copies belong in `window.napp.eventStore`, and
 image bytes use `libp2r2p/idb-queue` (IndexedDB). `temporaryStorage` is reserved
 for disposable session data. Cached content renders before remote refreshes;
 uncached avatars use a generated fallback. HTTPS images need a successful
-CORS download to be reliably available offline. Chat images use this cache, including their decoded dimensions; videos render online and remain links offline.
+CORS download to be reliably available offline. Avatars have a dedicated 16 MiB
+FIFO cache; chat images, previews and thumbnails share a separate 64 MiB FIFO
+cache. Both store decoded dimensions. Conversation media cannot evict avatars
+from their reserved budget. Videos render online and remain links offline.
 Self messages persist through the launcher; uploads and third-party messaging
 remain planned.
 

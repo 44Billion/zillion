@@ -1,6 +1,7 @@
 import { f, useStore } from '#f'
 import '#shared/avatar.js'
 import mediaCache from '#services/media-cache.js'
+import avatarCache from '#services/avatar-cache.js'
 import { getProfile } from '#helpers/nostr/queries.js'
 
 // Imported only by the browser fixture entry, never by the published app.
@@ -10,6 +11,7 @@ const fixture = window.__zillionTest = {
   identity: window.nostr.peekPublicKey(),
   locale: window.napp.getLocale(),
   mediaCache,
+  avatarCache,
   getProfile
 }
 

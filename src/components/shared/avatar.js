@@ -11,7 +11,7 @@ import '#shared/icons/icon-user-circle.js'
 import { cssVars } from '#assets/styles/theme.js'
 import { getProfile, refreshProfile, selectPreferredProfile } from '#helpers/nostr/queries.js'
 import { onOnline } from 'libp2r2p/network'
-import mediaCache from '#services/media-cache.js'
+import avatarCache from '#services/avatar-cache.js'
 
 const AVATAR_PICTURE_TIMEOUT_MS = 15000
 
@@ -156,7 +156,7 @@ f('a-avatar', ({ h, props }) => {
       if (pending || controller.signal.aborted) return
       pending = true
       try {
-        const image = await mediaCache.resolveImage(url, { signal: controller.signal })
+        const image = await avatarCache.resolveImage(url, { signal: controller.signal })
         if (!controller.signal.aborted) {
           store.rejectedPicture$(null)
           store.resolvedPicture$({ pk, url, src: image?.source ?? null })

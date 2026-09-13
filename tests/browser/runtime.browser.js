@@ -125,6 +125,11 @@ for (const localDevelopment of [false, true]) {
       await withPermissions(browser, `__zillionTest.view.pk$(${JSON.stringify(profile.pubkey)}); __zillionTest.getProfile(${JSON.stringify(profile.pubkey)})`, origin)
       await browser.until(() => browser.evaluate('Boolean(document.querySelector("a-avatar img")?.src.startsWith("data:image") && document.querySelector("a-avatar img").naturalWidth > 0)', origin), 'cached avatar')
       assert.equal(imageRequests, 1)
+      const avatarImage = await browser.evaluate(`__zillionTest.avatarCache.get(${JSON.stringify(imageUrl)})`, origin)
+      assert.deepEqual(avatarImage, { source: `data:image/png;base64,${imageBytes}`, width: 1, height: 1 })
+      assert.equal(await browser.evaluate(`__zillionTest.mediaCache.get(${JSON.stringify(imageUrl)})`, origin), null, 'avatar bytes use their dedicated cache')
+      await browser.evaluate('__zillionTest.mediaCache.clear()', origin)
+      assert.deepEqual(await browser.evaluate(`__zillionTest.avatarCache.get(${JSON.stringify(imageUrl)})`, origin), avatarImage, 'clearing conversation media preserves avatars')
       const instance = await browser.evaluate('window.napp.getInstanceMetadata()', origin)
       const coordinate = `zillion:test:${runId}:${instance.instanceKey}`
       const now = Math.floor(Date.now() / 1000)
