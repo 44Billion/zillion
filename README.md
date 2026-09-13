@@ -245,6 +245,12 @@ in the same second remain distinct. Failed saves preserve the draft for retry.
 The app root owns history/profile subscriptions and cleans them up on unmount;
 home's self avatar and last-message preview share that state.
 
+The companion launcher must expose NIP-44 v3 plaintext as `ArrayBuffer`, matching
+the NIP-07 extension. Self chat decodes those bytes directly as UTF-8 JSON.
+The local launcher/vault channel keeps those bytes binary; Base64 is confined
+to remote bunker requests and the vault's encrypted activity-log fields. Update
+the launcher, vault and app together; existing encrypted messages do not need migration.
+
 Use the companion 44billion update supporting `subscribe(filter, { initial: true })`
 to close the history/live delivery race. This new option is not yet in the
 committed upstream API. Offline signing also requires the companion ez-vault

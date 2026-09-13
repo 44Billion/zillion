@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { finalizeEvent, getEventHash } from 'libp2r2p/event'
-import { bytesToBase64Url } from 'libp2r2p/base64'
+import { bytesToBase64, base64ToBytes } from 'libp2r2p/base64'
 import { createSelfChat } from '#services/self-chat.js'
 import { parseChatContent } from '#helpers/chat-content.js'
 
@@ -9,7 +9,7 @@ const secret = new Uint8Array(32).fill(1)
 const pubkey = finalizeEvent({ kind: 0, created_at: 1, tags: [], content: '' }, secret).pubkey
 const inner = (text, at = 10) => ({ kind: 9, created_at: at, content: text, tags: [] })
 function wrapper (event, context = `dm:${pubkey}`, provenance = '1') {
-  return finalizeEvent({ kind: 1006, created_at: event.created_at, tags: [['k', String(event.kind)], ['c', context], ['v', provenance]], content: bytesToBase64Url(new TextEncoder().encode(JSON.stringify(event))) }, secret)
+  return finalizeEvent({ kind: 1006, created_at: event.created_at, tags: [['k', String(event.kind)], ['c', context], ['v', provenance]], content: bytesToBase64(new TextEncoder().encode(JSON.stringify(event))) }, secret)
 }
 function fixture (history = []) {
   let deliver
@@ -31,7 +31,7 @@ function fixture (history = []) {
     query: async () => ({ results: history }),
     addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true, stored: true } } }
   }
-  const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => content } }, onMessages: value => { messages = value }, onError: error => errors.push(error) })
+  const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => base64ToBytes(content).buffer } }, onMessages: value => { messages = value }, onError: error => errors.push(error) })
   return { chat, writes, errors, eventStore, get messages () { return messages }, get returned () { return returned }, deliver: event => deliver({ done: false, value: { result: event } }) }
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))

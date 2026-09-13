@@ -468,7 +468,10 @@ needed; empty folders mark the initial structure.
   copies in that exact context are rendered; hearsay/other authors are excluded.
 - The launcher owns wrapper encryption/signing. Read kind-1006 wrappers with
   obfuscated `c` and inner `k=9`; decrypt through the documented NIP-44 v3 signer
-  extension. Compute inner IDs with the library event hash; q tags use those IDs,
+  extension's `ArrayBuffer` result directly with `TextDecoder`; never Base64
+  decode the injected v3 API result. The local launcher/vault channel also stays
+  binary; remote bunker and encrypted-log encoding belong to the vault. This
+  requires the companion launcher/vault binary API update. Compute inner IDs with the library event hash; q tags use those IDs,
   empty relay hints and the owner pubkey. A `zillion` UUID tag distinguishes
   identical intentional sends; retries retain the same template until saved.
 - Keep subscriptions alive across retained route changes and cancel on root

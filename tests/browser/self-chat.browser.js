@@ -117,8 +117,22 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     assert.equal(await evaluate('document.querySelectorAll(".message-quote").length'), 1)
     assert.equal(await evaluate('document.querySelector(".quote-text").textContent'), 'Today\nexample.com/photo.png #private')
     assert.equal(await evaluate('document.querySelector(".quote-text").title'), 'Today\nhttps://example.com/photo.png #private')
-    const readMessages = `window.napp.eventStore.query({ kinds: [1006], '#k': ['9'] }).then(async ({ results }) => Promise.all(results.map(async wrapper => JSON.parse(new TextDecoder().decode(Uint8Array.from(atob((await window.nostr.nip44v3.decrypt(${JSON.stringify(pubkey)}, '9', '', wrapper.content)).replaceAll('-', '+').replaceAll('_', '/')), char => char.charCodeAt(0)))))))`
+    const readMessages = `window.napp.eventStore.query({ kinds: [1006], '#k': ['9'] }).then(async ({ results }) => Promise.all(results.map(async wrapper => JSON.parse(new TextDecoder().decode(await window.nostr.nip44v3.decrypt(${JSON.stringify(pubkey)}, 9, '', wrapper.content))))))`
     const events = await evaluate(readMessages)
+    assert.deepEqual(await evaluate(`(async () => {
+      const owner = ${JSON.stringify(pubkey)};
+      const bytes = new Uint8Array([0, 255, 251, 128, 63]);
+      const signers = [window.nostr, window.napp.getWindowNostrFor(owner), window.nostr.ns('')];
+      for (const signer of signers) {
+        const encrypted = await signer.nip44v3.encrypt(owner, 9, '', bytes.buffer);
+        const decrypted = await signer.nip44v3.decrypt(owner, 9, '', encrypted);
+        if (!(decrypted instanceof ArrayBuffer) || String(new Uint8Array(decrypted)) !== String(bytes)) throw new Error('Binary NIP-07 round-trip failed');
+      }
+      const [ciphertext, senderContentPubkey] = await window.nostr.nip44v3.encryptDoubleDH(owner, 9, '', bytes.buffer);
+      const plain = await window.nostr.nip44v3.decryptDoubleDH(owner, 9, '', ciphertext, senderContentPubkey, senderContentPubkey);
+      if (!(plain instanceof ArrayBuffer)) throw new Error('Double DH did not return an ArrayBuffer');
+      return Array.from(new Uint8Array(plain));
+    })()`), [0, 255, 251, 128, 63], 'real vault preserves arbitrary bytes across default, persona, namespace and Double DH APIs')
     assert.deepEqual(events.find(event => event.content === 'Reply to my note').tags.find(tag => tag[0] === 'q'), ['q', id, '', pubkey])
     assert.equal((await evaluate('window.napp.eventStore.query({ kinds: [9] })')).results.length, 0, 'no public chat copies')
     await evaluate(`window.napp.eventStore.addPersonalCopy({ kind: 9, created_at: Math.floor(Date.now()/1000), tags: [], content: 'Arrived through the store' }, { context: ${JSON.stringify(`dm:${pubkey}`)} })`)

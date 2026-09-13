@@ -1,6 +1,5 @@
 import { getEventHash, isSerializableEvent, isValidEvent } from 'libp2r2p/event'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
-import { base64UrlToBytes } from 'libp2r2p/base64'
 
 export const SELF_CHAT_KIND = 9
 
@@ -21,8 +20,8 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     const tag = name => wrapper.tags.filter(tag => tag[0] === name)
     if (tag('k').length !== 1 || tag('k')[0][1] !== '9' || tag('c').length !== 1 || tag('c')[0][1] !== filter['#c'][0]) return
     if (tag('v').length !== 1 || !['0', '1'].includes(tag('v')[0][1])) return
-    const plaintext = await signer.nip44v3.decrypt(pubkey, '9', '', wrapper.content)
-    const inner = JSON.parse(new TextDecoder().decode(base64UrlToBytes(plaintext)))
+    const plaintext = await signer.nip44v3.decrypt(pubkey, 9, '', wrapper.content)
+    const inner = JSON.parse(new TextDecoder().decode(plaintext))
     const event = { ...inner, pubkey: inner.pubkey ?? pubkey }
     if (event.pubkey !== pubkey || event.kind !== 9 || event.created_at !== wrapper.created_at || !isSerializableEvent(event)) return
     if (tag('v')[0][1] === '0' ? !isValidEvent(event) : ('id' in inner || 'sig' in inner || 'pubkey' in inner)) return
