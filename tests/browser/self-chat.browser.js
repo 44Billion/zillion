@@ -9,16 +9,27 @@ import { compile, root } from '../../bin/build-options.js'
 import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
 import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
+import { checkScrollScenarios } from './scroll-scenarios.js'
 
 const launcherOrigin = 'http://localhost:10000'
 const vaultOrigin = 'http://localhost:4000'
 
-test('real self chat persists offline, quotes inner IDs and receives event-store updates', { timeout: 180000 }, async () => {
+test('real self chat persists offline, quotes inner IDs and receives event-store updates', { timeout: 300000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
   let offline = true
   const requests = []
+  const held = []
+  const media = {
+    hold: false,
+    async release () {
+      while (held.length) {
+        held.shift()()
+        await new Promise(resolve => setTimeout(resolve, 35))
+      }
+    }
+  }
   try {
     const app = await prepareTestApp(await compile({ development: true, futureFeatures: true }), { identifier: 'self-chat-test', name: 'Self chat test' })
     browser = await launchChrome({
@@ -27,6 +38,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(url.hostname)) return null
         requests.push(request.url)
         if (offline) return false
+        if (url.pathname.startsWith('/scroll-')) {
+          if (media.reject) return false
+          const response = {
+            responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
+            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+          }
+          return media.hold ? new Promise(resolve => held.push(() => resolve(response))) : media.stagger ? new Promise(resolve => setTimeout(() => resolve(response), 150 + (Number(url.pathname.match(/\d+/)?.[0]) % 3 || 0) * 75)) : response
+        }
         if (url.pathname.endsWith('/favicon.ico') || url.pathname === '/brand.png') {
           return {
             responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
@@ -79,6 +98,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.navigate(`${launcherOrigin}/${app.app}`)
     const appUrl = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app iframe')
     const origin = new URL(appUrl).origin
+    media.origin = origin
     const evaluate = expression => browser.evaluate(expression, origin)
     permissions = setInterval(() => browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {}), 100)
     // Reloading the launcher also reloads the vault; unlock through its real UI.
@@ -300,6 +320,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
         offline = false
       }
     }
+    await checkScrollScenarios({ browser, evaluate, addNote, media })
     await evaluate('document.querySelector(".chat-back").click()')
     await browser.until(() => evaluate('location.pathname === "/"'), 'home navigation')
     await browser.until(() => evaluate('document.querySelector(".conversation [data-contact-id=user] .preview").textContent.length > 0'), 'real self preview')

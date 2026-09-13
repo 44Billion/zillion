@@ -5,6 +5,8 @@ import { shortNostrLabel, shortUrlLabel } from '#helpers/reference-label.js'
 import { isOnline, onOnline } from 'libp2r2p/network'
 import mediaCache from '#services/media-cache.js'
 import './link.js'
+import { useRoutePage } from '#shared/route-page.js'
+import { abortable, preparationSignal, prepareVideo, mediaDimensions, mediaSizeStyle } from '#helpers/media-dimensions.js'
 
 f('z-chat-content', ({ h, props }) => {
   const view = useStore({ items$ () { return parseChatContent(props.text$()) } })
@@ -30,43 +32,58 @@ f('z-chat-content-item', ({ h, props }) => {
 })
 
 f('z-chat-media', ({ h, props }) => {
+  const page = useRoutePage()
   const view = useStore({
     source$: null,
+    prepared$: false,
+    loadedFor: null,
     failed$: false,
     url$ () { return props.item$().url.value },
-    type$ () { return props.item$().url.m }
+    type$ () { return props.item$().url.m },
+    dimensions$ () { return mediaDimensions(this.source$()) || (!this.prepared$() ? mediaDimensions(props.item$().url) : null) }
   })
   useTask(({ track, cleanup }) => {
+    const active = track(() => page.isActive$())
     const url = track(() => view.url$())
     const type = track(() => view.type$())
-    view.source$(null)
-    view.failed$(false)
-    if (!/^https:\/\//.test(url) || !/^(image|video)\//.test(type ?? '')) return
+    if (view.loadedFor !== url) {
+      view.source$(null)
+      view.failed$(false)
+      view.prepared$(false)
+      view.loadedFor = url
+    }
+    if (!active) return
+    if (!/^https:\/\//.test(url) || !/^(image|video)\//.test(type ?? '')) { view.prepared$(true); return }
     const controller = new AbortController()
     let pending = false
     const resolve = async () => {
-      if (pending || controller.signal.aborted) return
+      if (pending || controller.signal.aborted || (view.source$() && !view.failed$())) return
       pending = true
+      const signal = preparationSignal(controller.signal)
       try {
         const source = type.startsWith('image/')
-          ? await mediaCache.resolveImage(url, { signal: controller.signal })
-          : await isOnline({ signal: controller.signal }) ? url : null
+          ? await mediaCache.resolveImage(url, { signal })
+          : await abortable(isOnline({ signal }), signal) ? await prepareVideo(url, { signal, dimensions: props.item$().url }) : null
         if (!controller.signal.aborted && source) { view.source$(source); view.failed$(false) }
-      } catch { /* The URL remains usable when media cannot be loaded. */ } finally { pending = false }
+      } catch { /* The URL remains usable when media cannot be loaded. */ } finally { pending = false; if (!controller.signal.aborted) view.prepared$(true) }
     }
     const stop = onOnline(resolve)
     resolve()
     cleanup(() => { controller.abort(); stop() })
   })
   const media = props.item$().url
-  return h`<span class="chat-media"><style>${`
+  const image = view.source$()
+  const dimensions = view.failed$() ? null : view.dimensions$()
+  return h`<span class="chat-media" data-chat-prepared=${String(view.prepared$())}><style>${`
       z-chat-media .chat-media {
         a { color: var(--z-accent-text); text-decoration: none; overflow-wrap: anywhere; }
-        img, video { display: block; max-width: 100%; width: 320px; max-height: 360px; object-fit: contain; border-radius: 8px; margin-block: 6px; }
+        .media-frame { display: block; max-width: 100%; margin-block: 6px; }
+        .media-frame[hidden] { display: none; }
+        img, video { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
       }
-    `}</style><a href=${media.value} title=${media.value} aria-label=${media.value} target="_blank" rel="noopener noreferrer">${shortUrlLabel(media.value, media.ext)}</a>${view.source$() && !view.failed$()
+    `}</style><a href=${media.value} title=${media.value} aria-label=${media.value} target="_blank" rel="noopener noreferrer">${shortUrlLabel(media.value, media.ext)}</a><span class="media-frame" style=${mediaSizeStyle(dimensions)} ?hidden=${!dimensions}>${image && !view.failed$()
       ? media.m?.startsWith('image/')
-        ? h`<img src=${view.source$()} alt=${media.alt ?? ''} loading="lazy" referrerpolicy="no-referrer" onerror=${() => view.failed$(true)}>`
-        : h`<video src=${view.source$()} controls playsinline preload="metadata" onerror=${() => view.failed$(true)}></video>`
-      : null}</span>`
+        ? h`<img src=${image.source} width=${image.width} height=${image.height} alt=${media.alt ?? ''} loading="lazy" referrerpolicy="no-referrer" onerror=${() => view.failed$(true)}>`
+        : h`<video src=${image.source} width=${image.width} height=${image.height} controls playsinline preload="metadata" onerror=${() => view.failed$(true)}></video>`
+      : null}</span></span>`
 })

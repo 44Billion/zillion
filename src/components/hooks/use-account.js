@@ -4,7 +4,7 @@ import { eventToProfile, selectPreferredProfile } from '#helpers/nostr/queries.j
 
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
-    pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false,
+    pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false,
     retry$: 0,
     person$ () {
       const profile = this.profile$()
@@ -27,6 +27,7 @@ export function useInitAccount () {
     let profiles
     let chat
     account.error$(null)
+    account.historyLoaded$(false)
     cleanup(() => {
       closed = true
       chat?.close()
@@ -40,12 +41,12 @@ export function useInitAccount () {
     const start = async () => {
       const pubkey = await window.nostr.peekPublicKey()
       if (closed) return
-      if (!/^[0-9a-f]{64}$/.test(pubkey || '')) { account.ready$(true); return }
+      if (!/^[0-9a-f]{64}$/.test(pubkey || '')) { account.ready$(true); account.historyLoaded$(true); return }
       account.pubkey$(pubkey)
       const eventStore = window.napp.eventStore
       if (!(await eventStore.supports()).includes('subscribe:initial')) throw new Error('Launcher update required for initial event-store subscriptions')
       if (closed) return
-      chat = createSelfChat({ pubkey, eventStore, signer: window.nostr, onMessages: account.messages$, onError: report })
+      chat = createSelfChat({ pubkey, eventStore, signer: window.nostr, onMessages: account.messages$, onError: report, onInitialLoad: () => { if (!closed) account.historyLoaded$(true) } })
       runtime.chat = chat
       account.ready$(true)
       chat.start()

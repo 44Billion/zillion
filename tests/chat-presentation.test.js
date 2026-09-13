@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { noteEncode, appEncode } from 'libp2r2p/nip19'
-import { chatTimeline } from '#helpers/chat-timeline.js'
+import { chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
 import { parseChatContent } from '#helpers/chat-content.js'
 import { shortNostrLabel, shortQuotedText, shortUrlLabel } from '#helpers/reference-label.js'
 import { canPreviewNostrReference, createLinkPreviews, safePreviewUrl } from '#services/link-preview.js'
@@ -35,6 +35,17 @@ test('timeline groups consecutive local calendar days and keeps the clock separa
   assert.equal(messages[3].time, '12:00 PM')
   assert.equal(messages[3].text, '  verbatim\ntext  ')
   assert.equal(chatTimeline([{ id: 1, content: '', tags: [], created_at: now / 1000 }], { now, locale: 'pt-BR', t: () => 'Hoje' })[0].dayLabel, 'Hoje')
+})
+
+test('day groups retain their identity when older messages arrive ahead of the current first message', () => {
+  const at = new Date(2026, 8, 13, 12).getTime() / 1000
+  const message = (id, offset) => ({ id, created_at: at + offset, content: id, tags: [] })
+  const before = groupChatDays(chatTimeline([message('newer', 0)], { locale: 'en' }))
+  const after = groupChatDays(chatTimeline([message('older', -60), message('newer', 0)], { locale: 'en' }))
+  assert.equal(after.length, 1)
+  assert.equal(after[0].key, before[0].key)
+  assert.equal(after[0].label, before[0].label)
+  assert.deepEqual(after[0].messages.map(message => message.id), ['older', 'newer'])
 })
 
 test('Nostr app suffix stays attached to its validated pointer', () => {

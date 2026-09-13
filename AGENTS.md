@@ -112,10 +112,15 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Its default is sessionStorage; it is not the persistent offline media cache.
 - `src/services/media-cache.js` owns database `zillion:media:v1:idb-queue`,
   managed by libp2r2p with `items` and `state` stores and a unique `url` index.
-  Records contain `{ url, dataUrl }`; the logical budget is 64 MiB with FIFO
-  eviction and a 4 MiB download limit per image before base64 encoding.
+  Records contain `{ url, dataUrl, width, height }` with decoded image dimensions;
+  the logical budget is 64 MiB with FIFO eviction and a 4 MiB download limit per image before base64 encoding.
   Cache hits remain usable offline until evicted or explicitly cleared; there
   is no freshness/TTL policy yet. Do not put message history in this cache.
+  `get`/`resolveImage` return `{ source, width, height }` or `null`. Decode
+  downloads before persisting; cached dimensions avoid a network/decode step on
+  offline reads. Native CORS fallbacks must decode before presentation and are
+  never persisted. Preparation (including cache reads) has a 15-second deadline.
+  There is no legacy-record migration; use a clean disposable cache for testing.
 - `a-avatar` starts from nappstore's component. Preserve its public props,
   image lifecycle, and deterministic DiceBear fallback while improving it.
   Zillion replaces its default LRU with event-store profile reads and IndexedDB
@@ -523,3 +528,40 @@ needed; empty folders mark the initial structure.
 - Generic private contact/follow events will use context `''`, outside chat.
   Deletion/reactions/uploads, paginated history and third-party messaging remain
   unimplemented. All user-facing status/error/reply labels cover 11 locales.
+
+
+## Chat layout stability
+
+- `useInitChatLayout` owns a conversation-scoped viewport controller. It keeps
+  bottom-following intent across programmatic corrections and uses a visible
+  message as a reading anchor when the user scrolls away. Native scroll anchoring
+  is disabled while this controller owns compensation, preventing duplicate
+  adjustments. All layout corrections run through ResizeObserver before paint.
+- While following the bottom, align the content's end to the scroll pixel grid
+  using less than one device pixel of leading padding on `.timeline-content`.
+  Fractional line heights otherwise move unchanged bubble edges by nearly one
+  pixel as messages are prepended, even when scrollHeight reports a zero gap.
+  Freeze this adjustment while reading or inactive, and restore it on teardown.
+  Browser regressions must measure both bubble edges and heights throughout
+  text-only history replay at multiple device pixel ratios.
+- Day separators live in groups keyed by calendar day, outside message
+  components. Prepending history must preserve existing date DOM nodes.
+- Account readiness and initial history completion are separate. Self chat calls
+  `onInitialLoad` after processing the initial query. Initial growth never animates;
+  it ends after history and first resource attempts near the viewport settle,
+  or when the user navigates up the history. Recheck visibility after bottom
+  corrections, and retain this state across Back/Forward. Inactive routes do
+  not adjust scroll or animate.
+- Message content has an intrinsic inner box and an animated outer box. After
+  initial loading, visible enrichment changes animate height through Web Animations
+  for 150ms/ease-out. Replacements start at the current animated height, and
+  completion/cancellation releases animation styles. Observe only the intrinsic
+  box. Viewport/keyboard changes and reduced motion never trigger growth animation.
+- Direct media reserves validated NIP-27 URL `#dim` proportions immediately.
+  Otherwise images decode and videos obtain metadata outside the layout before
+  insertion. Decoded dimensions take precedence over URL hints. Videos remain
+  online-only and are not byte-cached. Preview metadata/icon/image still arrive
+  independently; privacy checks remain ahead of external Nostr previews.
+- Browser scroll regressions must sample the bottom throughout staged resource
+  delivery and preserve a visible reading anchor during offscreen growth, in
+  addition to checking final offsets and retained navigation.

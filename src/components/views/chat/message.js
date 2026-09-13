@@ -12,10 +12,12 @@ import '#shared/icons/icon-copy.js'
 import '#shared/icons/icon-check.js'
 import '#shared/icons/icon-trash.js'
 import './content.js'
+import { useMessageGrowth } from './hooks/use-message-growth.js'
 import './quote.js'
 
 f('z-chat-message', ({ h, props }) => {
   const page = useRoutePage()
+  const growth = useMessageGrowth()
   const view = useStore(() => ({
     copied$: false,
     busy$: false,
@@ -81,7 +83,6 @@ f('z-chat-message', ({ h, props }) => {
   const quoted = view.quoted$()
   const canShare = canShareText(view.text$())
   return h`
-    ${message.dayLabel ? h`<li class="chat-date" data-day=${message.dayKey}>${message.dayLabel}</li>` : null}
     <li class=${`message-row ${message.outgoing ? 'outgoing' : 'incoming'}`} data-message-id=${message.id}>
       <style>${`
         z-chat-message .message-row {
@@ -98,6 +99,7 @@ f('z-chat-message', ({ h, props }) => {
           &.outgoing .chat-bubble { background: var(--z-bubble-outgoing); border-radius: 18px 18px 5px 18px; }
           .chat-bubble:focus-visible, .chat-bubble.selected { outline: 2px solid var(--z-accent-text); }
           .chat-bubble::after { content: ''; display: block; clear: both; }
+          .message-growth, .message-growth-inner { display: flow-root; }
           .message-text { display: inline; font-size: 16rem; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
           .message-meta { float: right; display: flex; align-items: center; justify-content: end; gap: 4px; margin: 6px 0 -1px 10px; color: var(--z-muted); font-size: 11rem; line-height: 1.25; }
           .message-link { display: block; text-decoration: none; color: var(--z-accent-text); font-size: 16rem; line-height: 1.4; overflow-wrap: anywhere; }
@@ -120,11 +122,13 @@ f('z-chat-message', ({ h, props }) => {
         aria-haspopup="menu" aria-expanded=${String(view.selected$())} onpointerdown=${press.down} onpointermove=${press.move}
         onpointerup=${press.cancel} onpointercancel=${press.cancel} onpointerleave=${press.cancel}
         oncontextmenu=${press.context} onkeydown=${press.key} onclick=${press.click}>
+        <div class="message-growth" ref=${growth.outerRef$}><div class="message-growth-inner" ref=${growth.innerRef$}>
         ${quoted ? h`<z-chat-quote props=${{ text$: view.quoteContent$, author$: view.quoteAuthor$, mediaText$: view.quoteMedia$ }} />` : null}
         <div class="message-text">${message.real ? h`<z-chat-content props=${{ text$: view.content$ }} />` : t(message.text)}</div>
         ${message.url ? h`<a class="message-link" href=${message.url} title=${message.url} aria-label=${message.url} target="_blank" rel="noopener noreferrer">${shortUrlLabel(message.url)}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}
         <div class="message-meta"><time datetime=${message.datetime ?? null} title=${message.date ?? null}>${message.time}</time>${message.outgoing && !message.real ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>
+        </div></div>
       </article>
       ${floating.isVisible$()
 ? h`

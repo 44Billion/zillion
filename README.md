@@ -25,7 +25,7 @@ and private-message personal copies belong in `window.napp.eventStore`, and
 image bytes use `libp2r2p/idb-queue` (IndexedDB). `temporaryStorage` is reserved
 for disposable session data. Cached content renders before remote refreshes;
 uncached avatars use a generated fallback. HTTPS images need a successful
-CORS download to be reliably available offline. Chat images use this cache; videos render online and remain links offline.
+CORS download to be reliably available offline. Chat images use this cache, including their decoded dimensions; videos render online and remain links offline.
 Self messages persist through the launcher; uploads and third-party messaging
 remain planned.
 
@@ -69,6 +69,15 @@ Message long-press, right-click or Shift+F10 reveals Reply, Share/Copy and Delet
 above the messages. Sharing uses the browser API when available, otherwise it
 copies text and briefly displays a checkmark on green. Cancelling native sharing
 does not copy; other failures can fall back to the clipboard.
+
+Initial self-chat history keeps the scroll at the latest message while media
+loads, without growth animations. Scrolling up preserves the reading position
+as earlier media expands. After initial loading, visible media and preview
+changes animate briefly, respecting reduced motion. URL `#dim` hints reserve
+space; otherwise media dimensions are prepared before presentation. Day
+separators retain their identity as earlier messages arrive. Bottom following
+also aligns fractional layout positions with scroll pixel rounding, keeping
+unchanged text bubbles from shifting by a pixel as history grows.
 
 The text area grows up to five lines, then scrolls internally. Enter inserts a
 newline. With future-feature previews enabled, typing hides Attach and replaces

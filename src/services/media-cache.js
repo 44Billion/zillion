@@ -1,5 +1,6 @@
 import { createQueue } from 'libp2r2p/idb-queue'
 import { isOnline } from 'libp2r2p/network'
+import { abortable, preparationSignal, prepareImage, mediaDimensions } from '#helpers/media-dimensions.js'
 import { isDataAvatarPicture, isValidAvatarPicture } from '#helpers/avatar.js'
 
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024
@@ -43,6 +44,7 @@ export function createMediaCache ({
   openQueue = createQueue,
   checkOnline = isOnline,
   fetchImage = (...args) => fetch(...args),
+  decodeImage = prepareImage,
   prefix = 'zillion:media:v1',
   maxBytes = 64 * 1024 * 1024
 } = {}) {
@@ -54,33 +56,45 @@ export function createMediaCache ({
   }
 
   async function get (url) {
-    try { return (await (await queue()).getBy('url', url))?.dataUrl ?? null } catch { return null }
+    try {
+      const record = await (await queue()).getBy('url', url)
+      return record && mediaDimensions(record) ? { source: record.dataUrl, width: record.width, height: record.height } : null
+    } catch { return null }
   }
 
   async function resolveImage (url, { signal } = {}) {
     if (!isValidAvatarPicture(url)) return null
-    if (isDataAvatarPicture(url)) return url
-    const cached = await get(url)
-    if (signal?.aborted) return null
-    if (cached) return cached
-    try {
-      if (!await checkOnline({ signal })) return null
-      const requestSignal = AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])])
-      const response = await fetchImage(url, {
-        mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', signal: requestSignal
-      })
-      const dataUrl = await imageDataUrl(response, requestSignal)
-      if (signal?.aborted) return null
-      try {
-        // The unique index also resolves concurrent downloads of the same URL.
-        await (await queue()).push({ url, dataUrl })
-      } catch { /* Storage denial, quota, or a duplicate must not prevent rendering. */ }
-      return dataUrl
-    } catch {
-      if (signal?.aborted || globalThis.navigator?.onLine === false) return null
-      // CORS can prevent fetching bytes while a native image remains displayable online.
-      return await checkOnline({ signal }).catch(() => false) ? url : null
+    const requestSignal = preparationSignal(signal)
+    const decode = async source => {
+      const result = await abortable(decodeImage(source, { signal: requestSignal }), requestSignal)
+      if (!mediaDimensions(result)) throw new Error('INVALID_IMAGE_DIMENSIONS')
+      return result
     }
+    try {
+      requestSignal.throwIfAborted()
+      if (isDataAvatarPicture(url)) return await decode(url)
+      const cached = await abortable(get(url), requestSignal)
+      if (cached) return cached
+      if (!await abortable(checkOnline({ signal: requestSignal }), requestSignal)) return null
+      let dataUrl
+      try {
+        const response = await abortable(fetchImage(url, {
+          mode: 'cors', credentials: 'omit', referrerPolicy: 'no-referrer', signal: requestSignal
+        }), requestSignal)
+        dataUrl = await abortable(imageDataUrl(response, requestSignal), requestSignal)
+      } catch {
+        requestSignal.throwIfAborted()
+        // Native images may work despite CORS, but their bytes cannot be cached.
+        if (globalThis.navigator?.onLine === false) return null
+        return await decode(url)
+      }
+      const image = await decode(dataUrl)
+      try {
+        await abortable((await queue()).push({ url, dataUrl, width: image.width, height: image.height }), requestSignal)
+      } catch { /* Storage denial, quota, or a duplicate must not prevent rendering. */ }
+      requestSignal.throwIfAborted()
+      return image
+    } catch { return null }
   }
 
   async function clear () { await (await queue()).clear() }

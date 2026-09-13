@@ -17,6 +17,7 @@ function fixture (history = []) {
   const writes = []
   const errors = []
   let messages = []
+  let initialMessages = null
   const subscription = {
     [Symbol.asyncIterator] () { return this },
     next: () => new Promise(resolve => { deliver = resolve }),
@@ -31,8 +32,8 @@ function fixture (history = []) {
     query: async () => ({ results: history }),
     addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true, stored: true } } }
   }
-  const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => base64ToBytes(content).buffer } }, onMessages: value => { messages = value }, onError: error => errors.push(error) })
-  return { chat, writes, errors, eventStore, get messages () { return messages }, get returned () { return returned }, deliver: event => deliver({ done: false, value: { result: event } }) }
+  const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => base64ToBytes(content).buffer } }, onMessages: value => { messages = value }, onError: error => errors.push(error), onInitialLoad: () => { initialMessages = messages } })
+  return { chat, writes, errors, eventStore, get initialMessages () { return initialMessages }, get messages () { return messages }, get returned () { return returned }, deliver: event => deliver({ done: false, value: { result: event } }) }
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 
@@ -41,6 +42,7 @@ test('self history and live copies deduplicate, order by inner ID and exclude he
   const f = fixture([wrapper(first), wrapper(inner('Not a chat'), ''), wrapper({ ...inner('Hearsay'), pubkey: 'b'.repeat(64) }, `dm:${pubkey}`, '2')])
   await f.chat.start()
   assert.equal(f.messages.length, 1)
+  assert.equal(f.initialMessages, f.messages, 'initial completion follows decryption and delivery')
   assert.equal(f.messages[0].id, getEventHash({ ...first, pubkey }))
   f.deliver(wrapper(first)); await tick()
   assert.equal(f.messages.length, 1)

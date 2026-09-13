@@ -156,10 +156,10 @@ f('a-avatar', ({ h, props }) => {
       if (pending || controller.signal.aborted) return
       pending = true
       try {
-        const src = await mediaCache.resolveImage(url, { signal: controller.signal })
+        const image = await mediaCache.resolveImage(url, { signal: controller.signal })
         if (!controller.signal.aborted) {
           store.rejectedPicture$(null)
-          store.resolvedPicture$({ pk, url, src })
+          store.resolvedPicture$({ pk, url, src: image?.source ?? null })
         }
       } finally { pending = false }
     }

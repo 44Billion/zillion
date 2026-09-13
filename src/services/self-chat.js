@@ -5,7 +5,7 @@ export const SELF_CHAT_KIND = 9
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.
-export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError }) {
+export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onInitialLoad = () => {} }) {
   const context = `dm:${pubkey}`
   const messages = new Map()
   let closed = false
@@ -45,6 +45,7 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
       live.catch(error => { if (!closed) onError(error) })
       const { results } = await eventStore.query(filter)
       for (const wrapper of results) await accept(wrapper)
+      if (!closed) onInitialLoad()
     } catch (error) { if (!closed) onError(error) }
   }
   async function send (content, replyTo) {

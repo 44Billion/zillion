@@ -53,11 +53,11 @@ export function useReplyThumbnail (text$, { when = 'init' } = {}) {
             const type = item.url?.m?.startsWith('video/') ? 'video' : 'image'
             let source
             if (/^(image|video)\//.test(item.url?.m ?? '')) {
-              source = type === 'video' ? await isOnline({ signal }) ? url : null : await mediaCache.resolveImage(url, { signal })
+              source = type === 'video' ? await isOnline({ signal }) ? url : null : (await mediaCache.resolveImage(url, { signal }))?.source
             } else {
               const metadata = await previews.load(url, { signal })
               if (signal.aborted || !metadata || (reference && !metadata.found)) continue
-              source = await mediaCache.resolveImage(metadata.image || metadata.icon, { signal })
+              source = (await mediaCache.resolveImage(metadata.image || metadata.icon, { signal }))?.source
             }
             if (signal.aborted) return
             if (source) {
