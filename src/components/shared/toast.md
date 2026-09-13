@@ -33,6 +33,10 @@ notices and navigation restart the current duration. Keyboard focus inside the
 content controls also pauses expiry until focus leaves the toast. Close is
 exempt from pointer pausing. Unmounting the host clears the queue and timers.
 
+Bind bubbling focus events with `@focusin`/`@focusout`, which install listeners.
+Their `onfocusin`/`onfocusout` counterparts are not native handler properties in
+all browsers; uhtml can serialize those callbacks as executable HTML attributes.
+
 The visual design is ported from ez-vault, with theme tokens owned by Zillion.
 It uses the shared 718px column limit, a 12px inset, device safe areas, bounded
 scrolling for long details, and reduced-motion support. Control labels follow

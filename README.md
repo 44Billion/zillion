@@ -117,6 +117,9 @@ The contact list expands into More's space, the three-dot chat button occupies
 a single 44px circle, and the composer always shows Send instead of Camera.
 Sending works in self chat. The profile button remains visible.
 
+Toast history supports keyboard focus: expiry pauses while browsing its controls
+and resumes with an extended timeout when focus leaves.
+
 Requirements: Node.js 24+, npm, Python 3, and the `44billion` and
 `ez-vault` repositories with their npm dependencies installed. Chrome is also
 required for browser tests (`CHROME_BIN` overrides `/usr/bin/google-chrome`).

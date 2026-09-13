@@ -174,6 +174,8 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   expandable details, animations, and 4s/8s timing. Component tasks own timers
   and clear them on unmount. See `src/components/shared/toast.md` for the API,
   text callbacks, accessibility behavior, and duplicate identity rules.
+  Bind bubbling focus events with `@focusin`/`@focusout` listeners; their `on...`
+  forms can become stringified HTML attributes instead of native handlers.
 
 ## Home layout preview
 

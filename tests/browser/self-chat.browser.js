@@ -224,6 +224,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate(`!![...document.querySelectorAll('.quote-text')].find(el => el.title === ${JSON.stringify(longReply)})`), 'posted reply to long text')
 
+    const queryUrl = 'https://tabler.io/icons?icon=server-bolt'
+    await setText(queryUrl)
+    await evaluate('document.querySelector(".compose-action").click()')
+    await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === "" || document.querySelector(".toast-message")?.textContent === "Could not save message"'), 'query-string message outcome')
+    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), '', 'query-string message sends successfully')
+    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="${queryUrl}"]')`), 'query-string link rendered intact')
+    assert.equal((await evaluate(readMessages)).filter(event => event.content === queryUrl).length, 1, 'query-string content is stored verbatim once')
+
     await mkdir(path.join(root, 'tmp/browser-failures'), { recursive: true })
     const session = [...browser.contexts.values()].find(context => context.origin === launcherOrigin && context.auxData?.isDefault).sessionId
     for (const width of [390, 1100]) {

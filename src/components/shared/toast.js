@@ -137,7 +137,7 @@ f('z-toast-message', ({ h, props }) => {
     <section class=${`toast-card ${session.closing ? 'is-closing' : view.open$() ? 'is-open' : ''} ${view.swapping$() ? 'is-swapping' : ''}`}
       data-type=${entry.type} ?data-has-long=${Boolean(longMessage)} ?data-expanded=${view.expanded$()} ?data-multi=${session.queue.length > 1}
       onpointerdown=${view.pause} onpointerup=${view.release} onpointercancel=${view.release} onpointerleave=${view.release}
-      onfocusin=${view.focus} onfocusout=${view.blur}>
+      @focusin=${view.focus} @focusout=${view.blur}>
       <div class="toast-row">
         <span class="toast-icon toast-fader" aria-hidden="true">${icon}</span>
         <div class="toast-body toast-fader">
