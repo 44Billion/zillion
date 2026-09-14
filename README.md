@@ -82,8 +82,8 @@ separators retain their identity as earlier messages arrive. Bottom following
 also aligns fractional layout positions with scroll pixel rounding, keeping
 unchanged text bubbles from shifting by a pixel as history grows.
 
-The text area grows up to five lines, then scrolls internally. Sending a draft
-successfully clears it and returns the field to one line. Enter inserts a
+The text area grows up to five lines, then scrolls internally. Sending immediately
+clears the accepted draft and returns the field to one line. Enter inserts a
 newline. With future-feature previews enabled, typing hides Attach and replaces
 Camera with Send. Otherwise Attach and Camera are absent and Send is always
 shown, including with an empty draft. Sending and replying work in self chat;
@@ -254,7 +254,14 @@ project documentation and code comments in English.
 `window.napp.eventStore.addPersonalCopy(template, { context: 'dm:<own pubkey>' })`;
 they never use private-messenger or relay publication. Replies use `q` with the
 inner event ID, an empty relay hint and the owner's public key. Identical sends
-in the same second remain distinct. Failed saves preserve the draft for retry.
+in the same second remain distinct. Accepted sends appear immediately with a
+static clock replacing the time. A failed save shows a red alert; tap it to
+choose the green Retry icon. Icons occupy only their own width. Confirmation smoothly expands
+that space to reveal the time, including any resulting bubble height change.
+Contraction is immediate; initial history and reduced motion skip the animation.
+Retries reuse the original event and never overwrite a newer draft.
+Pending and failed messages live in memory across retained routes; reloading
+the app or restarting the account service discards any that were not saved.
 The app root owns history/profile subscriptions and cleans them up on unmount;
 home's self avatar and last-message preview share that state.
 

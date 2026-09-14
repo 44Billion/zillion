@@ -18,6 +18,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
+  let allowPermissions = true
   let offline = true
   const requests = []
   const held = []
@@ -100,7 +101,9 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     const origin = new URL(appUrl).origin
     media.origin = origin
     const evaluate = expression => browser.evaluate(expression, origin)
-    permissions = setInterval(() => browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {}), 100)
+    permissions = setInterval(() => {
+      if (allowPermissions) browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {})
+    }, 100)
     // Reloading the launcher also reloads the vault; unlock through its real UI.
     await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("lock-overlay .lock-unlock"))', vaultOrigin), 'vault unlock UI')
@@ -121,14 +124,103 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await setText('Today\nhttps://example.com/photo.png #private')
     await browser.until(() => evaluate(`document.querySelector('.chat-composer textarea').clientHeight > ${emptyComposerHeight}`), 'multiline draft grows the composer')
     await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'enabled Send')
+    await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.initialLoading === "false"'), 'initial history processed')
+    allowPermissions = false
+    // Reading history already grants kind-9 access. Revoke that real grant in
+    // this disposable profile so the next write waits on the actual dialog.
+    // No signer, event-store method or permission provider is substituted.
+    await browser.evaluate(`(async () => {
+      for (const {name} of await indexedDB.databases()) {
+        const db = await new Promise((resolve, reject) => {
+          const request = indexedDB.open(name);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+        try {
+          if (!db.objectStoreNames.contains('permissions')) continue;
+          await new Promise((resolve, reject) => {
+            const tx = db.transaction('permissions', 'readwrite');
+            tx.oncomplete = resolve;
+            tx.onabort = () => reject(tx.error);
+            const request = tx.objectStore('permissions').openCursor();
+            request.onsuccess = () => {
+              const cursor = request.result;
+              if (!cursor) return;
+              if (cursor.value.eKind === 9) cursor.delete();
+              cursor.continue();
+            };
+          });
+        } finally { db.close(); }
+      }
+    })()`)
     await evaluate('document.querySelector(".compose-action").click()')
-    await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 1'), 'saved message', 45000)
-    await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === ""'), 'draft cleared after save')
+    await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "pending"'), 'optimistic pending message')
+    await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === ""'), 'draft cleared before save')
     await browser.until(() => evaluate(`document.querySelector('.chat-composer textarea').clientHeight === ${emptyComposerHeight} && getComputedStyle(document.querySelector('.chat-composer textarea')).overflowY === 'hidden'`), 'sent draft returns to one line without another input event', 3000)
     await browser.until(() => evaluate('Boolean(document.querySelector(".chat-media a"))'), 'media link')
     assert.equal(await evaluate('document.querySelector(".chat-media a").href'), 'https://example.com/photo.png')
     assert.equal(await evaluate('document.querySelector(".chat-media img")'), null, 'uncached offline image stays a link')
     const id = await evaluate('document.querySelector(".message-row").dataset.messageId')
+    await browser.until(() => browser.evaluate('!!document.querySelector(".permission-button.deny-button:not(:disabled)")'), 'real write permission held')
+    await browser.until(() => evaluate('!document.querySelector(".chat-bubble").getAnimations({subtree:true}).length'), 'initial text and link presentation settled before comparing status geometry')
+    const geometry = () => evaluate(`(() => {
+      const bubble = document.querySelector('.chat-bubble').getBoundingClientRect();
+      const status = document.querySelector('.message-status').getBoundingClientRect();
+      return {bubbleWidth:bubble.width, bubbleHeight:bubble.height, statusWidth:status.width, statusHeight:status.height};
+    })()`)
+    const pendingGeometry = await geometry()
+    await evaluate(`(() => {
+      window.pendingBubble = document.querySelector('.chat-bubble');
+      window.statusSizes = [];
+      window.statusObserver = new ResizeObserver(() => {
+        const bubble = pendingBubble.getBoundingClientRect();
+        const status = pendingBubble.querySelector('.message-status').getBoundingClientRect();
+        statusSizes.push({bubbleWidth:bubble.width, bubbleHeight:bubble.height, statusWidth:status.width, statusHeight:status.height});
+      });
+      statusObserver.observe(pendingBubble);
+      statusObserver.observe(pendingBubble.querySelector('.message-status'));
+    })()`)
+    assert.equal(pendingGeometry.statusWidth, 14, 'pending metadata uses only the icon width')
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".message-status time")).display'), 'none')
+    assert.equal(await evaluate('document.querySelector(".message-status icon-clock").getAnimations({subtree:true}).length'), 0)
+    await setText('Next draft\nstays here')
+    await browser.evaluate('document.querySelector(".permission-button.deny-button").click()')
+    await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "error"'), 'denied write shows bubble error')
+    assert.deepEqual(await geometry(), pendingGeometry, 'failure preserves bubble and time slot dimensions')
+    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), 'Next draft\nstays here')
+    await evaluate('document.querySelector(".chat-back").click()')
+    await browser.until(() => evaluate('location.pathname === "/"'), 'leave failed message route')
+    await evaluate('history.forward()')
+    await browser.until(() => evaluate('location.pathname === "/chat/user"'), 'return to failed message')
+    assert.equal(await evaluate('document.querySelector(".message-status").dataset.status'), 'error', 'retained routes preserve retryable failures')
+    await evaluate('document.querySelector(".message-status button").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".message-retry")'), 'error opens Retry menu')
+    await evaluate('document.querySelector(".message-retry").click()')
+    await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "pending"'), 'retry restores clock')
+    assert.deepEqual(await geometry(), pendingGeometry, 'retry preserves dimensions')
+    allowPermissions = true
+    await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "saved"'), 'retried message saved', 45000)
+    await browser.until(() => evaluate('!document.querySelector(".chat-bubble").getAnimations({subtree:true}).length'), 'confirmation expansion finishes')
+    const savedGeometry = await geometry()
+    assert.ok(savedGeometry.statusWidth > pendingGeometry.statusWidth, 'confirmation reveals the wider time')
+    assert.equal(savedGeometry.statusHeight, pendingGeometry.statusHeight)
+    assert.equal(savedGeometry.bubbleHeight, pendingGeometry.bubbleHeight)
+    assert.equal(await evaluate('window.pendingBubble === document.querySelector(".chat-bubble")'), true)
+    assert.equal(await evaluate('document.querySelectorAll(".chat-bubble").length'), 1, 'retry never duplicates the bubble')
+    assert.equal(await evaluate('document.querySelector(".message-row").dataset.messageId'), id)
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".message-status time")).visibility'), 'visible')
+    assert.equal(await evaluate('document.querySelector(".message-status .status-indicator")'), null)
+    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), 'Next draft\nstays here')
+    // Retained routes temporarily have no layout. Visible expansion frames
+    // stay between the icon and time widths, with unchanged metadata height.
+    const sizes = await evaluate('statusSizes.filter(size => size.bubbleWidth > 0)')
+    for (const size of sizes) {
+      assert.equal(size.statusHeight, pendingGeometry.statusHeight)
+      assert.ok(size.statusWidth >= 14 && size.statusWidth <= savedGeometry.statusWidth)
+    }
+    assert.ok(sizes.some(size => size.statusWidth > 14 && size.statusWidth < savedGeometry.statusWidth), 'real write confirmation paints intermediate widths')
+    await evaluate('statusObserver.disconnect(); delete window.statusObserver; delete window.statusSizes; delete window.pendingBubble')
+    await setText('')
     await evaluate('document.querySelector(".chat-bubble").dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }))')
     await browser.until(() => evaluate('Boolean(document.querySelector(".message-actions"))'), 'message actions')
     await evaluate('document.querySelector(".message-actions [aria-label=Reply]").click()')
@@ -137,6 +229,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await setText('Reply to my note')
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 2'), 'saved reply')
+    await browser.until(() => evaluate('document.querySelectorAll(".message-status[data-status=saved]").length === 2'), 'reply persistence confirmed')
     assert.equal(await evaluate('document.querySelectorAll(".message-quote").length'), 1)
     assert.equal(await evaluate('document.querySelector(".quote-text").textContent'), 'Today\nexample.com/photo.png #private')
     assert.equal(await evaluate('document.querySelector(".quote-text").title'), 'Today\nhttps://example.com/photo.png #private')
@@ -267,15 +360,17 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === "" || document.querySelector(".toast-message")?.textContent === "Could not save message"'), 'query-string message outcome')
     assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), '', 'query-string message sends successfully')
     await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="${queryUrl}"]')`), 'query-string link rendered intact')
+    await browser.until(() => evaluate(`document.querySelector('.reference-link[href="${queryUrl}"]').closest('.chat-bubble').querySelector('.message-status').dataset.status === 'saved'`), 'query-string message persisted')
     assert.equal((await evaluate(readMessages)).filter(event => event.content === queryUrl).length, 1, 'query-string content is stored verbatim once')
 
     const wrappingDraft = 'Long draft with automatic wrapping. '.repeat(40).trimEnd()
     await setText(wrappingDraft)
     await browser.until(() => evaluate('getComputedStyle(document.querySelector(".chat-composer textarea")).overflowY === "auto"'), 'wrapped draft reaches the five-line limit')
     await evaluate('document.querySelector(".compose-action").click()')
-    await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === ""'), 'wrapped draft cleared after save')
+    await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === ""'), 'wrapped draft cleared after acceptance')
     await browser.until(() => evaluate(`document.querySelector('.chat-composer textarea').clientHeight === ${emptyComposerHeight} && getComputedStyle(document.querySelector('.chat-composer textarea')).overflowY === 'hidden'`), 'wrapped draft releases its height and scrollbar after sending', 3000)
     await browser.until(() => evaluate(`!![...document.querySelectorAll('.chat-content')].find(el => el.innerText === ${JSON.stringify(wrappingDraft)})`), 'wrapped message rendered intact')
+    await browser.until(() => evaluate('!document.querySelector(".message-status[data-status=pending], .message-status[data-status=error]")'), 'all composer messages saved before reload scenarios')
 
     await mkdir(path.join(root, 'tmp/browser-failures'), { recursive: true })
     const session = [...browser.contexts.values()].find(context => context.origin === launcherOrigin && context.auxData?.isDefault).sessionId

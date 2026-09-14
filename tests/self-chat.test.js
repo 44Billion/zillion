@@ -57,7 +57,10 @@ test('saving uses only personal copies, preserves text, quotes inner IDs with an
   const f = fixture([wrapper(inner('Parent'))])
   await f.chat.start()
   const parent = f.messages[0].id
-  await f.chat.send('Reply\nhttps://example.com/image.png', parent)
+  const reply = f.chat.send('Reply\nhttps://example.com/image.png', parent)
+  assert.equal(f.messages.find(message => message.id === reply).status, 'pending')
+  await f.chat.retry(reply)
+  assert.equal(f.messages.find(message => message.id === reply).status, 'saved')
   assert.deepEqual(f.writes[0].options, { context: `dm:${pubkey}` })
   assert.deepEqual(f.writes[0].event.tags[0], ['q', parent, '', pubkey])
   assert.equal(f.writes[0].event.kind, 9)
@@ -65,14 +68,77 @@ test('saving uses only personal copies, preserves text, quotes inner IDs with an
   const write = f.eventStore.addPersonalCopy
   let failed
   f.eventStore.addPersonalCopy = async event => { failed = event; return { result: { ok: false, code: 'invalid' } } }
-  await assert.rejects(f.chat.send('Retry'), /invalid/)
-  assert.equal(f.messages.length, 2)
+  const failedId = f.chat.send('Retry')
+  await f.chat.retry(failedId)
+  assert.equal(f.messages.length, 3)
+  assert.equal(f.messages.find(message => message.id === failedId).status, 'error')
   f.eventStore.addPersonalCopy = write
-  await f.chat.send('Retry')
+  await f.chat.retry(failedId)
   assert.deepEqual(f.writes.at(-1).event, failed)
-  await f.chat.send('Retry')
+  assert.equal(f.messages.find(message => message.id === failedId).status, 'saved')
+  const repeatedId = f.chat.send('Retry')
+  assert.notEqual(repeatedId, failedId)
+  await f.chat.retry(repeatedId)
   assert.notDeepEqual(f.writes.at(-1).event.tags, failed.tags, 'identical intentional sends remain distinct within one second')
   f.chat.close()
+})
+
+test('concurrent sends and retries keep stable IDs, and live confirmation wins over a late rejection', async () => {
+  const f = fixture()
+  await f.chat.start()
+  const attempts = []
+  f.eventStore.addPersonalCopy = event => new Promise((resolve, reject) => attempts.push({ event, resolve, reject }))
+  const first = f.chat.send('Same text')
+  const second = f.chat.send('Same text', first)
+  assert.notEqual(first, second)
+  assert.deepEqual(f.messages.map(message => message.status), ['pending', 'pending'])
+  await tick()
+  assert.equal(attempts.length, 2)
+  assert.deepEqual(attempts[1].event.tags[0], ['q', first, '', pubkey])
+  attempts[1].resolve({ result: { ok: true } })
+  attempts[0].reject(new Error('Permission denied'))
+  await tick()
+  const status = id => f.messages.find(message => message.id === id).status
+  assert.equal(status(first), 'error')
+  assert.equal(status(second), 'saved')
+  const retried = f.chat.retry(first)
+  assert.equal(f.chat.retry(first), retried, 'repeated clicks share the in-flight attempt')
+  assert.equal(status(first), 'pending')
+  await tick()
+  assert.equal(attempts.length, 3)
+  assert.deepEqual(attempts[2].event, attempts[0].event)
+  assert.deepEqual(Object.keys(attempts[2].event).sort(), ['content', 'created_at', 'kind', 'tags'], 'UI state never enters the stored event')
+  f.deliver(wrapper(attempts[2].event))
+  await tick()
+  assert.equal(status(first), 'saved')
+  attempts[2].reject(new Error('Late bridge failure'))
+  await retried
+  assert.equal(status(first), 'saved')
+  await f.chat.retry(first)
+  assert.equal(attempts.length, 3, 'confirmed messages cannot be retried')
+  f.deliver(wrapper(attempts[2].event))
+  await tick()
+  assert.equal(f.messages.length, 2)
+  assert.deepEqual(f.errors, [], 'write errors belong to their bubbles, not history loading')
+  f.chat.close()
+})
+
+test('closing suppresses late write results and rejects new drafts before accepting them', async () => {
+  const f = fixture()
+  await f.chat.start()
+  const completion = Promise.withResolvers()
+  f.eventStore.addPersonalCopy = () => completion.promise
+  assert.equal(f.chat.send('  '), undefined)
+  assert.throws(() => f.chat.send('Reply', 'unknown'), /Unknown reply/)
+  const id = f.chat.send('Still saving')
+  await tick()
+  const snapshot = f.messages
+  f.chat.close()
+  completion.resolve({ result: { ok: true } })
+  await tick()
+  assert.equal(f.messages, snapshot)
+  assert.equal(f.messages[0].id, id)
+  assert.throws(() => f.chat.send('Too late'), /closed/)
 })
 
 test('NIP-27 preserves text and distinguishes images, videos, links and hashtags', () => {

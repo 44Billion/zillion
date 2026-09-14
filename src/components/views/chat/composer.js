@@ -10,28 +10,24 @@ import '#shared/icons/icon-x.js'
 
 f('z-chat-composer', ({ h, props }) => {
   const view = useStore({
-    text$: '', fieldRef$: null, inputRef$: null, busy$: false, alive: true,
+    text$: '', fieldRef$: null, inputRef$: null,
     replyContent$ () {
       const reply = props.reply$?.()
       return reply ? reply.real ? reply.text : t(reply.text) : ''
     },
     replyText$ () { return shortQuotedText(this.replyContent$()) },
-    async send () {
-      if (!props.canSend$?.() || this.busy$() || !this.text$().trim()) return
+    send () {
+      if (!props.canSend$?.() || !this.text$().trim()) return
       const text = this.text$()
       const replyId = props.reply$?.()?.id
-      this.busy$(true)
       try {
-        await props.send(text)
-        if (this.alive) {
-          if (this.text$() === text) this.text$('')
-          if (props.reply$?.()?.id === replyId) props.clearReply()
-        }
-      } catch (_) { if (this.alive) error(() => t('Could not save message')) } finally { if (this.alive) this.busy$(false) }
+        if (!props.send(text)) return
+        if (this.text$() === text) this.text$('')
+        if (props.reply$?.()?.id === replyId) props.clearReply()
+      } catch (_) { error(() => t('Could not save message')) }
     }
   })
   const thumbnail = useReplyThumbnail(view.replyContent$)
-  useTask(({ cleanup }) => cleanup(() => { view.alive = false }))
   useTask(({ track }) => { if (track(() => props.reply$?.())) view.inputRef$()?.focus() })
   useTask(({ track, cleanup }) => {
     const { input, field, text } = track(() => ({ input: view.inputRef$(), field: view.fieldRef$(), text: view.text$() }))
@@ -95,7 +91,7 @@ f('z-chat-composer', ({ h, props }) => {
           enterkeyhint="enter" oninput=${event => view.text$(event.target.value)}></textarea>
         ${showMediaControls ? h`<button class="attach" type="button" aria-label=${t('Attach file')} aria-disabled="true"><icon-paperclip props=${{ size: '24px', weight: 'light' }} /></button>` : null}
       </div>
-      <button class="compose-action" type="button" aria-label=${t(showMediaControls ? 'Camera' : 'Send message')} aria-disabled=${String(showMediaControls || !props.canSend$?.() || view.busy$() || !view.text$().trim())} onclick=${view.send}>
+      <button class="compose-action" type="button" aria-label=${t(showMediaControls ? 'Camera' : 'Send message')} aria-disabled=${String(showMediaControls || !props.canSend$?.() || !view.text$().trim())} onclick=${view.send}>
         ${showMediaControls ? h`<icon-camera props=${{ size: '24px', weight: 'regular' }} />` : h`<icon-send-2 props=${{ size: '24px', weight: 'regular' }} />`}
       </button>
     </footer>

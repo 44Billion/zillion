@@ -34,6 +34,8 @@ test('timeline groups consecutive local calendar days and keeps the clock separa
   assert.deepEqual(messages.map(message => message.dayLabel), ['9/10/2026', 'Yesterday', null, 'Today'])
   assert.equal(messages[3].time, '12:00 PM')
   assert.equal(messages[3].text, '  verbatim\ntext  ')
+  assert.equal(messages[3].status, 'saved')
+  assert.equal(chatTimeline([{ id: 1, content: '?', tags: [], created_at: now / 1000, status: 'pending' }])[0].status, 'pending')
   assert.equal(chatTimeline([{ id: 1, content: '', tags: [], created_at: now / 1000 }], { now, locale: 'pt-BR', t: () => 'Hoje' })[0].dayLabel, 'Hoje')
 })
 

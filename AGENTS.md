@@ -316,13 +316,16 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   presentation only; Reply and Send work in self chat. With future-feature previews enabled, typing hides
   Attach and swaps Camera for Send. Preserve
   Enter/newlines, grow to five text lines, then scroll inside the textarea; align
-  icons to the bottom line. Drafts are local component state; Send persists self-chat messages only after
-  successful event-store writes, and failed writes preserve the draft. Keep all added labels and fixture texts translated in 11 locales.
+  icons to the bottom line. Drafts are local component state. Send synchronously
+  accepts a self-chat message into the service outbox, clears the draft/reply,
+  and leaves the composer ready for another message. Rejection before acceptance
+  keeps the draft and shows a toast; asynchronous write failures belong to the
+  accepted bubble. Keep all added labels and fixture texts translated in 11 locales.
 - The composer task synchronizes `textarea.value` from the draft signal before
   measuring its height. Do not also bind `.value` in the template: reactive task
   reruns can precede template commits and measure stale text after sending.
-  A successful clear resets height and internal scrolling without another input
-  event; text changed during an in-flight send remains the current draft.
+  Clearing an accepted draft resets height and internal scrolling without another
+  input event; later write completion/failure never changes the current draft.
 
 ## Structure and imports
 
@@ -491,6 +494,29 @@ needed; empty folders mark the initial structure.
   requires the companion launcher/vault binary API update. Compute inner IDs with the library event hash; q tags use those IDs,
   empty relay hints and the owner pubkey. A `zillion` UUID tag distinguishes
   identical intentional sends; retries retain the same template until saved.
+- The self-chat service owns an in-memory outbox and message `status` values
+  `pending`, `error`, and `saved`; never serialize UI state into a Nostr event.
+  Concurrent sends have independent entries. Explicit retries reuse the same
+  unsigned template, ID, timestamp and reply, and coalesce in-flight attempts.
+  Either an acknowledged successful write or a verified live copy confirms the
+  message; a late failure cannot regress that confirmation or duplicate a bubble.
+  Retained routes share the outbox, but reload/root teardown/account restart
+  discards unpersisted entries. This is not a durable offline send queue.
+- Real bubbles use `z-chat-message-status`: use 14px-wide icons at the
+  current metadata height for the static Tabler clock and red alert-circle.
+  Saved messages show only the time at its natural width. Visible expansion
+  animates width for 150ms/ease-out through Web Animations; contraction is
+  immediate. Observe intrinsic content, release animation styles, and cancel
+  on viewport/keyboard changes, reduced motion, inactive routes and unmount.
+  Initial history does not animate. Width changes that wrap metadata onto a
+  new line use the existing height animation without cancelling it on every
+  width-only ResizeObserver notification. During width interpolation, a short
+  rAF loop prepares height before observer delivery and temporarily holds the
+  outer height, avoiding invalidation of already-observed ancestors at a wrap
+  boundary. Clicking the alert opens the existing
+  message menu with a 22px regular `refresh-alert` icon in `--z-accent-text`,
+  a standard 44px circular button and localized Retry label/title;
+  status changes preserve DOM identity and icon-to-icon geometry.
 - Keep subscriptions alive across retained route changes and cancel on root
   unmount. Initial replay requires this change's companion launcher update and
   is pending upstream deployment. Offline personal-copy signing also requires
@@ -501,7 +527,7 @@ needed; empty folders mark the initial structure.
 - Render real text verbatim through escaped templates. Use public
   `libp2r2p/nip27.extractMedia` for links/media/references; images reuse the cache,
   videos render after connectivity confirmation, and unavailable media remains
-  a link. Real messages share fixture bubble spacing and clock-only metadata;
+  a link. Real messages share fixture bubble spacing and time/status metadata;
   separate localized calendar-day rows group the timeline. Preserve user
   whitespace without introducing template indentation into inline content.
 - Real-message HTTPS links use bounded, credential-free CORS head reads for OG

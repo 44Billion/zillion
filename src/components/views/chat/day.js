@@ -11,7 +11,7 @@ f('z-chat-day', ({ h, props }) => {
       from: { message },
       render: ({ h, props: data }) => h`<z-chat-message props=${{
         message$: data.message$, messages$: props.messages$, person$: props.person$,
-        activeId$: props.activeId$, onReply: props.onReply
+        activeId$: props.activeId$, onReply: props.onReply, onRetry: props.onRetry
       }} />`
     }} />`)}
   `

@@ -18,9 +18,10 @@ export function useInitAccount () {
   const account = useAccount()
   const runtime = useMemo(() => ({ chat: null }))
   account.send = (content, replyTo) => {
-    if (!runtime.chat) return Promise.reject(new Error('Account unavailable'))
+    if (!runtime.chat) throw new Error('Account unavailable')
     return runtime.chat.send(content, replyTo)
   }
+  account.retryMessage = id => runtime.chat?.retry(id)
   useTask(({ track, cleanup }) => {
     track(() => account.retry$())
     let closed = false

@@ -51,6 +51,7 @@ f('z-chat', ({ h, props }) => {
     },
     days$ () { return groupChatDays(this.messages$()) },
     reply (id) { this.replyTo$(id); this.activeId$(null) },
+    retry (id) { this.activeId$(null); return account.retryMessage(id) },
     reply$ () { return this.messages$().find(message => message.id === this.replyTo$()) },
     historyLoaded$ () { return !this.real$() || account.historyLoaded$() || !!account.error$() },
     canSend$ () { return this.real$() && account.ready$() && !!account.pubkey$() },
@@ -128,7 +129,7 @@ f('z-chat', ({ h, props }) => {
           ${view.days$().map(day => h({ key: day.key })`
             <f-to-signals props=${{
               from: { day },
-              render: ({ h, props: data }) => h`<z-chat-day props=${{ day$: data.day$, messages$: view.messages$, person$: props.person$, activeId$: view.activeId$, onReply: view.reply }} />`
+              render: ({ h, props: data }) => h`<z-chat-day props=${{ day$: data.day$, messages$: view.messages$, person$: props.person$, activeId$: view.activeId$, onReply: view.reply, onRetry: view.retry }} />`
             }} />
           `)}
         </ol>

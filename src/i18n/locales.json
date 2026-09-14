@@ -866,6 +866,19 @@
     "ja": "返信をキャンセル",
     "ko": "답장 취소"
   },
+  "Saving message": {
+    "en": "Saving message",
+    "fr": "Enregistrement du message",
+    "it": "Salvataggio del messaggio",
+    "de": "Nachricht wird gespeichert",
+    "es": "Guardando mensaje",
+    "pt-BR": "Salvando mensagem",
+    "ru": "Сохранение сообщения",
+    "zh-CN": "正在保存消息",
+    "zh-TW": "正在儲存訊息",
+    "ja": "メッセージを保存中",
+    "ko": "메시지 저장 중"
+  },
   "Could not save message": {
     "en": "Could not save message",
     "fr": "Impossible d’enregistrer le message",

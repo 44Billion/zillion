@@ -11,9 +11,11 @@ import '#shared/icons/icon-share-2.js'
 import '#shared/icons/icon-copy.js'
 import '#shared/icons/icon-check.js'
 import '#shared/icons/icon-trash.js'
+import '#shared/icons/icon-refresh-alert.js'
 import './content.js'
 import { useMessageGrowth } from './hooks/use-message-growth.js'
 import './quote.js'
+import './message-status.js'
 
 f('z-chat-message', ({ h, props }) => {
   const page = useRoutePage()
@@ -42,6 +44,7 @@ f('z-chat-message', ({ h, props }) => {
       this.keyboard$(keyboard)
       props.activeId$(props.message$().id)
     },
+    openError (event) { event.stopPropagation(); this.open(event.detail === 0) },
     key (event) {
       if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
       event.preventDefault()
@@ -108,10 +111,11 @@ f('z-chat-message', ({ h, props }) => {
           .message-reaction { display: inline-flex; padding: 2px 8px; border-radius: 14px; background: var(--z-bubble-quote); margin-top: 6px; font-size: 16rem; }
         }
         z-chat-message .message-actions {
-          z-index: 20; display: flex; flex-direction: column; gap: 4px; padding: 4px;
+          z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px;
           border-radius: 26px; background: var(--z-chat-overlay); backdrop-filter: blur(12px);
           border: 1px solid var(--z-border); box-shadow: 0 3px 14px var(--z-shadow);
           button { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+          .message-retry { color: var(--z-accent-text); }
           button:active { background: var(--z-pressed); }
           .message-delete { color: var(--z-error); }
           button.copied { background: var(--z-primary); color: var(--z-on-primary); }
@@ -127,12 +131,13 @@ f('z-chat-message', ({ h, props }) => {
         <div class="message-text">${message.real ? h`<z-chat-content props=${{ text$: view.content$ }} />` : t(message.text)}</div>
         ${message.url ? h`<a class="message-link" href=${message.url} title=${message.url} aria-label=${message.url} target="_blank" rel="noopener noreferrer">${shortUrlLabel(message.url)}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}
-        <div class="message-meta"><time datetime=${message.datetime ?? null} title=${message.date ?? null}>${message.time}</time>${message.outgoing && !message.real ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>
+        <div class="message-meta">${message.real ? h`<z-chat-message-status props=${{ message$: props.message$, onOpenError: view.openError }} />` : h`<time>${message.time}</time>`}${message.outgoing && !message.real ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>
         </div></div>
       </article>
       ${floating.isVisible$()
 ? h`
         <div class="message-actions" data-action-message=${message.id} role="menu" aria-label=${t('Message actions')} ref=${floating.floatingRef$} style=${floating.floatingStyle$()} onkeydown=${view.key}>
+          ${message.status === 'error' ? h`<button class="message-retry" type="button" role="menuitem" aria-label=${t('Retry')} title=${t('Retry')} onclick=${() => props.onRetry(message.id)}><icon-refresh-alert props=${{ size: '22px', weight: 'regular' }} /></button>` : null}
           <button type="button" role="menuitem" aria-label=${t('Reply')} aria-disabled=${String(!message.real)} onclick=${() => { if (message.real) props.onReply(message.id) }}><icon-bubble props=${{ size: '22px', weight: 'regular' }} /></button>
           <button class=${`message-share ${view.copied$() ? 'copied' : ''}`} type="button" role="menuitem" aria-label=${t(view.copied$() ? 'Copied' : canShare ? 'Share' : 'Copy')} ?disabled=${view.busy$()} onclick=${view.share}>
             ${view.copied$() ? h`<icon-check props=${{ size: '22px', weight: 'regular' }} />` : canShare ? h`<icon-share-2 props=${{ size: '22px', weight: 'regular' }} />` : h`<icon-copy props=${{ size: '22px', weight: 'regular' }} />`}

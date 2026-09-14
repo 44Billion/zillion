@@ -23,7 +23,7 @@ export function chatTimeline (events, { locale, now = Date.now(), t = value => v
     const key = dayKey(date)
     const label = key === dayKey(today) ? t('Today') : key === dayKey(yesterday) ? t('Yesterday') : date.toLocaleDateString(locale)
     const message = {
-      id: event.id, text: event.content, real: true, outgoing: true,
+      id: event.id, text: event.content, real: true, outgoing: true, status: event.status ?? 'saved',
       replyTo: event.tags.find(tag => tag[0] === 'q')?.[1],
       time: date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
       date: date.toLocaleDateString(locale), datetime: date.toISOString(),
