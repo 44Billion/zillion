@@ -12,6 +12,13 @@ Self chat now uses the logged-in account and persists NIP-C7 kind-9 messages as
 personal copies in the launcher event store, with live updates, replies and
 NIP-27 media rendering. Third-party conversations remain sample data.
 
+Self-chat text uses `libp2r2p/nip27.compactWhitespace` before sending and for
+displaying history, reply excerpts and conversation previews. Spaces and tabs
+collapse, runs of three or more line breaks become two, and only eight line
+breaks remain overall. Existing stored events are not rewritten. Bubbles keep
+`white-space: pre-wrap` for the remaining formatting; no original-text toggle
+is shown.
+
 Zillion will run as a SPA inside the **44billion launcher**, using its
 [committed injected API contract](https://github.com/44Billion/44billion/blob/main/APP_API.md).
 Startup identifies the instance's fixed user through `window.nostr.peekPublicKey()`.
@@ -290,7 +297,13 @@ Requests omit credentials/referrers and have size, timeout and concurrency limit
 No preview proxy is configured: CORS-blocked metadata cannot be rendered.
 Preview metadata is cached in memory; image bytes reuse the disposable media cache.
 Unsupported Nostr event pointers use njump.me where accessible, retaining their
-original destinations and app-routing suffixes. URLs and NIP-19 labels are shortened
+original destinations. Reference extraction uses libp2r2p 0.10.17 or newer;
+encoded and named app references, including `+apps`, render as accent-colored
+links to `44billion.net`, opening in a new tab. Named links omit the root author
+`_@44billion.net` (including its compact spelling), so `+example@44billion.net`
+opens `https://44billion.net/+example`. Other authors and channels are preserved.
+App references do not fetch previews or resolve authors while being displayed.
+URLs with `+` in their paths are also recognized. URLs, apps and NIP-19 labels are shortened
 to about 22 characters, without underlines; full references remain available in
 tooltips, accessible link names and copied/shared text. Reply quotes and the
 composer's reply summary use the same compact labels. The composer allows two

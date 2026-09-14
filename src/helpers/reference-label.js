@@ -23,6 +23,6 @@ export function shortQuotedText (text) {
     if (item.key === 'url') return shortUrlLabel(item.url.value, item.url.ext)
     const reference = item[item.key]
     const label = reference.original ?? (item.key === 'hashtag' ? `#${reference.value}` : reference.value)
-    return /^(?:nostr:)?(?:note|nevent|naddr|npub|nprofile|nrelay)1/i.test(label) ? shortNostrLabel(label) : label
+    return item.key === 'app' || /^(?:nostr:)?(?:note|nevent|naddr|npub|nprofile|nrelay)1/i.test(label) ? shortNostrLabel(label) : label
   }).join('')
 }

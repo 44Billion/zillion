@@ -1,6 +1,7 @@
 import { f, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import { parseChatContent } from '#helpers/chat-content.js'
+import { appReferenceUrl } from '#helpers/app-reference.js'
 import { shortNostrLabel, shortUrlLabel } from '#helpers/reference-label.js'
 import { isOnline, onOnline } from 'libp2r2p/network'
 import mediaCache from '#services/media-cache.js'
@@ -28,6 +29,7 @@ f('z-chat-content-item', ({ h, props }) => {
   if (item.key === 'url' || item.key === 'event') return h`<z-chat-link props=${{ item$: props.item$ }} />`
   const reference = item[item.key]
   const label = reference.original ?? (item.key === 'hashtag' ? `#${reference.value}` : reference.value)
+  if (item.key === 'app') return h`<a class="chat-reference" href=${appReferenceUrl(reference)} title=${label} aria-label=${label} target="_blank" rel="noopener noreferrer">${shortNostrLabel(label)}</a>`
   return h`<span class="chat-reference" title=${label}>${/^(?:nostr:)?(?:npub|nprofile|nrelay)1/i.test(label) ? shortNostrLabel(label) : label}</span>`
 })
 

@@ -1,6 +1,7 @@
 import { t } from '#i18n/messages.js'
 import { i18n } from '#i18n/index.js'
 import { f, useStore } from '#f'
+import { compactWhitespace } from 'libp2r2p/nip27'
 import '#f/components/f-to-signals.js'
 import data from './fixtures/home.json'
 import { useAccount } from '#hooks/use-account.js'
@@ -30,7 +31,7 @@ f('z-home', ({ h }) => {
         if (conversation.contactId === self.id) {
           return {
             ...conversation, contact: self, real: true, unread: 0,
-            message: latest?.content ?? '', lastMessageAt: date?.toISOString() ?? '',
+            message: compactWhitespace(latest?.content ?? ''), lastMessageAt: date?.toISOString() ?? '',
             timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
           }
         }

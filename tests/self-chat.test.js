@@ -123,6 +123,35 @@ test('concurrent sends and retries keep stable IDs, and live confirmation wins o
   f.chat.close()
 })
 
+test('sending compacts content before hashing, outbox acceptance and persistence, and retry keeps that event', async () => {
+  const f = fixture()
+  await f.chat.start()
+  const attempts = []
+  f.eventStore.addPersonalCopy = async event => {
+    attempts.push(event)
+    return { result: { ok: attempts.length > 1 } }
+  }
+  const id = f.chat.send('  Hello\t  world \r\n\n\n\n https://example.com/photo.png#dim=640x480  ')
+  const content = 'Hello world\n\nhttps://example.com/photo.png#dim=640x480'
+  assert.equal(f.messages[0].content, content)
+  assert.equal(f.messages[0].status, 'pending')
+  assert.equal(id, getEventHash(f.messages[0]))
+  await f.chat.retry(id)
+  assert.equal(attempts[0].content, content)
+  assert.equal(f.messages[0].status, 'error')
+  await f.chat.retry(id)
+  assert.equal(attempts[1], attempts[0])
+  assert.equal(f.messages[0].status, 'saved')
+  assert.equal(f.messages[0].id, id)
+  f.chat.close()
+
+  const reopened = fixture([wrapper(attempts[0])])
+  await reopened.chat.start()
+  assert.equal(reopened.messages[0].content, content)
+  assert.equal(reopened.messages[0].id, id)
+  reopened.chat.close()
+})
+
 test('closing suppresses late write results and rejects new drafts before accepting them', async () => {
   const f = fixture()
   await f.chat.start()

@@ -1,5 +1,6 @@
 import { getEventHash, isSerializableEvent, isValidEvent } from 'libp2r2p/event'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
+import { compactWhitespace } from 'libp2r2p/nip27'
 
 export const SELF_CHAT_KIND = 9
 
@@ -74,6 +75,8 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   function send (content, replyTo) {
     if (closed) throw new Error('Self chat is closed')
     if (typeof content !== 'string' || !content.trim()) return
+    content = compactWhitespace(content)
+    if (!content) return
     if (replyTo && !messages.has(replyTo)) throw new Error('Unknown reply target')
     const event = {
       kind: SELF_CHAT_KIND, created_at: Math.floor(Date.now() / 1000), content,

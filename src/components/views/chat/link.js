@@ -29,15 +29,14 @@ f('z-chat-link', ({ h, props }) => {
   const item = props.item$()
   const reference = item.key === 'event' ? item.event : null
   const label = reference ? reference.original.replace(/^nostr:/i, '') : item.url.value
-  const pointer = reference ? label.slice(0, reference.appSuffix ? -reference.appSuffix.length : undefined) : null
-  const url = reference ? `https://njump.me/${pointer}` : item.url.value
+  const url = reference ? `https://njump.me/${label}` : item.url.value
   useTask(({ track, cleanup }) => {
     const active = track(() => page.isActive$())
     const target = track(() => view.target$())
     const known = track(() => view.knownPrivate$())
     const item = props.item$()
     const reference = item.key === 'event' ? item.event : null
-    const pointer = reference?.original.replace(/^nostr:/i, '').slice(0, reference.appSuffix ? -reference.appSuffix.length : undefined)
+    const pointer = reference?.original.replace(/^nostr:/i, '')
     const url = reference ? `https://njump.me/${pointer}` : item.url.value
     const owner = track(() => account.pubkey$())
     const identity = JSON.stringify([owner, target])

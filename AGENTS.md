@@ -524,12 +524,35 @@ needed; empty folders mark the initial structure.
 - Own public profiles come only from the event store; the launcher imports their
   relay updates. `a-avatar` supports static `localOnly` to suppress relay work
   for this identity. Third-party profile caches retain stale-while-revalidate.
-- Render real text verbatim through escaped templates. Use public
+- Compact outgoing content with public `libp2r2p/nip27.compactWhitespace`
+  before building the unsigned event, hashing it or accepting it into the
+  outbox. Retries reuse that compacted event. Use the default total limit of
+  eight line breaks and threshold of three consecutive breaks collapsing to two.
+  `chatTimeline` derives compact display text for historical and live messages;
+  bubbles, copy/share, posted quotes and composer reply summaries consume it.
+  The home preview compacts the latest event separately. Never rewrite existing
+  stored events or change their IDs. Keep escaped templates and `pre-wrap` CSS
+  so surviving formatting works and presentation policy can change later; no
+  original-text toggle is provided. Do not compact draft text while typing.
+- Use public
   `libp2r2p/nip27.extractMedia` for links/media/references; images reuse the cache,
   videos render after connectivity confirmation, and unavailable media remains
   a link. Real messages share fixture bubble spacing and time/status metadata;
-  separate localized calendar-day rows group the timeline. Preserve user
-  whitespace without introducing template indentation into inline content.
+  separate localized calendar-day rows group the timeline. Preserve the
+  compacted whitespace without adding template indentation into inline content.
+  `parseChatContent` delegates reference extraction to libp2r2p 0.10.17 or newer,
+  including HTTPS URLs with literal `+` in their paths.
+  Its only adaptations are the MIME callback and converting njump event URLs
+  into event references for provenance checks. Do not concatenate event pointers
+  with app entities or implement a separate reference matcher in Zillion.
+  App items render as accent-colored compact links to `https://44billion.net/`,
+  opening in a new tab with `noopener noreferrer` and full original tooltips and
+  accessible names. `appReferenceUrl` uses the public URL codec, preserving
+  entities, channels and authors; only the root NIP-05 author `_@44billion.net`
+  is omitted from named destinations when the bare alias decodes as a name.
+  Bare names use that same default author.
+  Reply summaries remain plain compact text. App references never enter the
+  event-preview or reply-thumbnail lookup paths and cause no author/preview fetch.
 - Real-message HTTPS links use bounded, credential-free CORS head reads for OG
   cards and declared icons, with /favicon.ico as fallback. Metadata has a bounded
   in-memory cache; image bytes reuse media-cache. Never mount fetched page HTML.
@@ -558,8 +581,7 @@ needed; empty folders mark the initial structure.
 - Unsupported NIP-27 event references can use njump.me after checking local
   provenance. Known self-message IDs, kind-1006 wrappers and inner IDs with local
   personal copies never trigger external previews. Denied/unavailable provenance
-  checks also retain the plain Nostr link. Preserve validated app-entity suffixes;
-  njump receives only the Nostr pointer. Explicit njump URLs pass through the
+  checks also retain the plain Nostr link. Explicit njump URLs pass through the
   same provenance check. Address pointers conservatively stay local if copies
   of the same author/kind exist, since there is no personal-copy address index. Missing/unreadable njump pages keep the
   original pointer label and nostr: destination. No new persistent app store exists.

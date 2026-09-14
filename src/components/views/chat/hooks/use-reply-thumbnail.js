@@ -46,7 +46,7 @@ export function useReplyThumbnail (text$, { when = 'init' } = {}) {
             let url = item.url?.value
             if (reference) {
               if (!await canPreviewNostrReference(reference, { owner, knownMessages: account.messages$(), eventStore: window.napp.eventStore, signer: window.nostr })) continue
-              const pointer = reference.original.replace(/^nostr:/i, '').slice(0, reference.appSuffix ? -reference.appSuffix.length : undefined)
+              const pointer = reference.original.replace(/^nostr:/i, '')
               url = `https://njump.me/${pointer}`
             }
             if (signal.aborted || !safePreviewUrl(url)) continue

@@ -121,7 +121,9 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape"}))')
     const setText = text => evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.value = ${JSON.stringify(text)}; input.dispatchEvent(new Event('input', { bubbles: true })); })()`)
     const emptyComposerHeight = await evaluate('document.querySelector(".chat-composer textarea").clientHeight')
-    await setText('Today\nhttps://example.com/photo.png #private')
+    const rawDraft = '  Today \t\n \thttps://example.com/photo.png  #private  '
+    await setText(rawDraft)
+    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), rawDraft, 'typing preserves the unsubmitted draft')
     await browser.until(() => evaluate(`document.querySelector('.chat-composer textarea').clientHeight > ${emptyComposerHeight}`), 'multiline draft grows the composer')
     await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'enabled Send')
     await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.initialLoading === "false"'), 'initial history processed')
@@ -159,6 +161,8 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate(`document.querySelector('.chat-composer textarea').clientHeight === ${emptyComposerHeight} && getComputedStyle(document.querySelector('.chat-composer textarea')).overflowY === 'hidden'`), 'sent draft returns to one line without another input event', 3000)
     await browser.until(() => evaluate('Boolean(document.querySelector(".chat-media a"))'), 'media link')
     assert.equal(await evaluate('document.querySelector(".chat-media a").href'), 'https://example.com/photo.png')
+    assert.equal(await evaluate('document.querySelector(".chat-content").innerText'), 'Today\nexample.com/photo.png #private', 'pending bubble uses compact text and the existing short URL label')
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".chat-content")).whiteSpace'), 'pre-wrap', 'remaining line breaks retain their presentation')
     assert.equal(await evaluate('document.querySelector(".chat-media img")'), null, 'uncached offline image stays a link')
     const id = await evaluate('document.querySelector(".message-row").dataset.messageId')
     await browser.until(() => browser.evaluate('!!document.querySelector(".permission-button.deny-button:not(:disabled)")'), 'real write permission held')
@@ -235,6 +239,8 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     assert.equal(await evaluate('document.querySelector(".quote-text").title'), 'Today\nhttps://example.com/photo.png #private')
     const readMessages = `window.napp.eventStore.query({ kinds: [1006], '#k': ['9'] }).then(async ({ results }) => Promise.all(results.map(async wrapper => JSON.parse(new TextDecoder().decode(await window.nostr.nip44v3.decrypt(${JSON.stringify(pubkey)}, 9, '', wrapper.content))))))`
     const events = await evaluate(readMessages)
+    assert.equal(events.filter(event => event.content === 'Today\nhttps://example.com/photo.png #private').length, 1, 'the compacted event is persisted once after retry')
+    assert.equal(events.some(event => event.content === rawDraft), false, 'raw draft whitespace is not persisted')
     assert.deepEqual(await evaluate(`(async () => {
       const owner = ${JSON.stringify(pubkey)};
       const bytes = new Uint8Array([0, 255, 251, 128, 63]);
@@ -251,12 +257,17 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     })()`), [0, 255, 251, 128, 63], 'real vault preserves arbitrary bytes across default, persona, namespace and Double DH APIs')
     assert.deepEqual(events.find(event => event.content === 'Reply to my note').tags.find(tag => tag[0] === 'q'), ['q', id, '', pubkey])
     assert.equal((await evaluate('window.napp.eventStore.query({ kinds: [9] })')).results.length, 0, 'no public chat copies')
-    await evaluate(`window.napp.eventStore.addPersonalCopy({ kind: 9, created_at: Math.floor(Date.now()/1000), tags: [], content: 'Arrived through the store' }, { context: ${JSON.stringify(`dm:${pubkey}`)} })`)
+    const rawHistory = '  Arrived \tthrough the store \n\n\n\n with paragraphs  '
+    const compactHistory = 'Arrived through the store\n\nwith paragraphs'
+    await evaluate(`window.napp.eventStore.addPersonalCopy({ kind: 9, created_at: Math.floor(Date.now()/1000), tags: [], content: ${JSON.stringify(rawHistory)} }, { context: ${JSON.stringify(`dm:${pubkey}`)} })`)
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 3'), 'live store message')
+    await browser.until(() => evaluate(`[...document.querySelectorAll('.chat-content')].some(el => el.innerText === ${JSON.stringify(compactHistory)})`), 'live imported text is compacted')
     await evaluate('window.napp.eventStore.addPersonalCopy({ kind: 9, created_at: Math.floor(Date.now()/1000), tags: [], content: \'Generic private data\' }, { context: \'\' })')
     assert.equal(await evaluate('document.querySelectorAll(".chat-bubble").length'), 3)
     await evaluate('location.reload()')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 3'), 'offline history after reload', 45000)
+    assert.equal(await evaluate(`[...document.querySelectorAll('.chat-content')].some(el => el.innerText === ${JSON.stringify(compactHistory)})`), true, 'history renders compactly after reload')
+    assert.equal((await evaluate(readMessages)).some(event => event.content === rawHistory), true, 'display compaction does not rewrite imported events')
     assert.ok(await evaluate('document.querySelector(".chat-timeline").innerText.includes("Today")'))
     assert.equal(await evaluate('document.querySelectorAll(".message-quote").length'), 1)
     offline = false
@@ -315,7 +326,29 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     assert.deepEqual(await evaluate('window.previewStability.changes'), [], 'existing previews never collapse while another message is added or enriched')
     assert.equal(await evaluate('window.previewStability.nodes.every(node => node.isConnected)'), true)
     await evaluate('window.previewStability.observer.disconnect(); delete window.previewStability')
-    const privatePointer = noteEncode(id) + appEncode({ pubkey, dTag: 'zillion', channel: 'main' })
+    const privatePointer = noteEncode(id)
+    const appEntity = appEncode({ pubkey, dTag: 'zillion', channel: 'main' })
+    const appReferences = [
+      ['+apps', '+apps'],
+      ['+example@_@44billion.net', '+example'],
+      ['nostr:+++example@44billion.net', '+++example'],
+      ['nostr:++myapp@bob@example.com', '++myapp@bob.example.com'],
+      [`nostr:${appEntity}`, appEntity]
+    ]
+    const appRequestStart = requests.length
+    for (const [reference, segment] of appReferences) {
+      await addNote(reference)
+      await browser.until(() => evaluate(`[...document.querySelectorAll('.chat-reference')].some(el => el.title === ${JSON.stringify(reference)})`), 'app reference rendered')
+      const label = reference.replace(/^nostr:/, '')
+      assert.deepEqual(await evaluate(`(() => {
+        const element = [...document.querySelectorAll('.chat-reference')].find(el => el.title === ${JSON.stringify(reference)});
+        return { text: element.textContent, tag: element.tagName, href: element.href, target: element.target, rel: element.rel, accessibleName: element.getAttribute('aria-label') };
+      })()`), { text: label.length > 22 ? label.slice(0, 22) + '…' : label, tag: 'A', href: `https://44billion.net/${segment}`, target: '_blank', rel: 'noopener noreferrer', accessibleName: reference })
+    }
+    const concatenated = privatePointer + appEntity
+    await addNote(concatenated)
+    await browser.until(() => evaluate(`[...document.querySelectorAll('.chat-content')].some(el => el.innerText === ${JSON.stringify(concatenated)} && !el.querySelector('.chat-reference, .chat-link'))`), 'concatenated event and app remain plain text')
+    assert.equal(requests.slice(appRequestStart).some(url => url.includes(appEntity) || url.includes('/.well-known/nostr.json')), false, 'app references do not start preview or author lookups')
     const requestStart = requests.length
     await addNote(privatePointer)
     await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`), 'private Nostr link retained')
@@ -338,9 +371,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       await evaluate('document.querySelector(".message-actions [aria-label=Reply]").click()')
       await browser.until(() => evaluate(`document.querySelector('.reply-text')?.title === ${JSON.stringify(title)}`), 'selected reply')
     }
+    await startReply('[...document.querySelectorAll(".chat-reference")].find(el => el.title === "+apps")', '+apps')
+    assert.equal(await evaluate('document.querySelector(".reply-text").textContent'), 'Reply: +apps')
+    assert.equal(await evaluate('document.querySelector(".reply-thumbnail")'), null, 'replying to an app reference keeps a text summary')
     await startReply(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`, privatePointer)
     assert.equal(await evaluate('document.querySelector(".reply-thumbnail")'), null)
     assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false, 'reply thumbnails keep personal pointers local')
+    await startReply(`[...document.querySelectorAll('.chat-content')].find(el => el.innerText === ${JSON.stringify(compactHistory)})`, compactHistory)
+    assert.equal(await evaluate('document.querySelector(".reply-text").textContent'), `Reply: ${compactHistory}`, 'composer reply uses the same compact historical text')
     await startReply('document.querySelector(\'.reference-link[href="https://example.com/article"]\')', 'https://example.com/article')
     await browser.until(() => evaluate('document.querySelector(".reply-thumbnail")?.naturalWidth > 0'), 'OG reply thumbnail')
     assert.equal(await evaluate('document.querySelectorAll(".reply-thumbnail").length'), 1)
