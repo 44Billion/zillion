@@ -629,10 +629,29 @@ needed; empty folders mark the initial structure.
 
 ## Self-chat attachments
 
-- Preparation hashes sequential 51,000-byte slices and retains the MMR hashes
-  and File reference, not a full byte copy. Image/video decoding has a separate
-  browser-managed memory cost; the 100px ThumbHash canvas does not bound decoding
-  memory. The compact preparation cancel control precedes a separate live status.
+- Preparation uses `media-preparation/` before hashing sequential 51,000-byte
+  slices. `artifact.js` currently preserves the original File identity. A future
+  compression stage must finalize its output before BOTH preview and IRFS hashing;
+  never upload a thumbnail or the experimental DC-only JPEG reconstruction.
+  The compact preparation cancel control precedes a separate live status.
+- One shared queue serializes local preview work. Read File slices or validated
+  local nfile HEAD/ranges in bounded pieces; never materialize a whole local
+  response on the main thread. Local previews have a cancellable 120s watchdog,
+  separate from the 15s HTTP preview timeout.
+- Images use a disposable Worker bundled by the `?worker` build plugin. PNG
+  reduction retains two scanlines and target-sized accumulators, checks CRCs and
+  limits ancillary/profile allocations. JPEG requests native 1/2/4/8 scaling.
+  Other formats retain native decoder costs; a Worker does not cap codec memory.
+  Video uses MediaBunny with a small CanvasSink, one canvas and a bounded source
+  cache; native video is a compatibility fallback when WebCodecs is unavailable.
+  Workers are allowed after verification in the launcher (including alpha merge).
+- `attachment-previews.js` keeps at most 8 MiB/128 small compressed thumbnails in
+  an in-memory FIFO, separate from HTTP/avatar caches. Share in-flight work;
+  cancel it when its last consumer leaves. Each consumer owns and revokes its
+  own URL. Reuse selected thumbnails in pending/confirmed bubbles, gallery and
+  replies; do not reopen the original just to display the composer thumbnail.
+  Local video players use preload=none and a reduced poster. After-render tasks
+  own video src setup/cleanup so retained elements restore it after confirmation.
 - The composer owns one raw preparation outside useStore until Send transfers it
   to the memory-only outbox. Selection/removal never writes events. Close the
   preparation and revoke temporary visual URLs on replacement/removal/unmount or
@@ -705,3 +724,18 @@ needed; empty folders mark the initial structure.
   hints and localOnly; never rewrite received events or use a SHA hash as a root.
   Limit the encoded name to 255 UTF-8 bytes by shortening its basename, without
   visual ellipses. The launcher API and streaming behavior remain unchanged.
+
+- Preview memory experiments in `docs/media-memory-experiments.md` are research,
+  not production decoder guarantees. The local `tmp/media-memory-lab` is ignored
+  by Git; never import its incomplete codecs into app code. Preserve previews
+  rather than imposing resolution cutoffs. The user now permits Workers that
+  work inside 44billion; this supersedes the research's earlier no-Worker constraint.
+
+- Follow-up research in `docs/media-memory-variants-and-plan.md` separates preview
+  pixels from a future transformed upload File. The hardened PNG row reducer
+  and MediaBunny preview path are now integrated; see
+  `docs/media-preparation-validation.md`. MediaBunny alpha merging and its MP3
+  extension can create Workers; do not assume the whole library is Worker-free.
+  Streaming encoded output alone does not bound native codec memory. Compression
+  is not enabled, and incomplete DC JPEG previews must not become compression
+  input. Preserve the reported format/platform gaps when planning integration.

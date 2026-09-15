@@ -2,9 +2,9 @@ import { prepareIrfsFile } from 'libp2r2p/irfs'
 import { encodedFileName } from '#helpers/attachment-presentation.js'
 import { nfileEncode } from 'libp2r2p/nip19'
 import { decodeFileMetadata } from 'libp2r2p/nip94'
-import { rgbaToThumbHash } from 'thumbhash'
-import { bytesToBase64 } from 'libp2r2p/base64'
-import { abortable, preparationSignal } from '#helpers/media-dimensions.js'
+import { prepareMediaPreview } from './media-preparation/index.js'
+import { createUploadArtifact } from './media-preparation/artifact.js'
+import { rememberAttachmentPreview } from './attachment-previews.js'
 
 export function messageAttachment (event) {
   if (event?.kind !== 1063) return null
@@ -22,61 +22,27 @@ export function attachmentCatalog (events) {
   })
 }
 
-async function visualMetadata (source, mime, signal) {
-  if (!/^(image|video)\//.test(mime)) return {}
-  const video = mime.startsWith('video/')
-  const element = video ? document.createElement('video') : new Image()
-  try {
-    if (video) {
-      element.muted = true
-      element.preload = 'auto'
-      await abortable(new Promise((resolve, reject) => {
-        element.onloadeddata = resolve
-        element.onerror = () => reject(new Error('INVALID_VIDEO'))
-        element.src = source
-      }), signal)
-    } else {
-      element.src = source
-      await abortable(element.decode(), signal)
-    }
-    const width = video ? element.videoWidth : element.naturalWidth
-    const height = video ? element.videoHeight : element.naturalHeight
-    if (!(width > 0 && height > 0)) return {}
-    const canvas = document.createElement('canvas')
-    const scale = Math.min(1, 100 / Math.max(width, height))
-    canvas.width = Math.max(1, Math.round(width * scale))
-    canvas.height = Math.max(1, Math.round(height * scale))
-    try {
-      const context = canvas.getContext('2d', { willReadFrequently: true })
-      context.drawImage(element, 0, 0, canvas.width, canvas.height)
-      const { data } = context.getImageData(0, 0, canvas.width, canvas.height)
-      return { width, height, thumbhash: bytesToBase64(rgbaToThumbHash(canvas.width, canvas.height, data)) }
-    } catch { return { width, height } }
-  } finally {
-    element.onloadeddata = element.onerror = null
-    element.removeAttribute('src')
-    if (video) element.load()
-  }
-}
-
-export async function prepareAttachment (file, { signal } = {}) {
-  if (!file.size) throw new Error('EMPTY_IRFS_FILE')
+export async function prepareAttachment (file, { signal, onProgress } = {}) {
   const controller = new AbortController()
   const combined = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])])
-  const source = URL.createObjectURL(file)
-  let prepared
-  const close = () => { controller.abort(); prepared?.close(); URL.revokeObjectURL(source) }
+  let prepared, artifact, source
+  const close = () => { controller.abort(); prepared?.close(); artifact?.close(); if (source) URL.revokeObjectURL(source) }
   try {
-    // A failed preview does not discard a valid file. Hashing has no arbitrary
-    // time limit; decoding a preview does, independently of preparation.
-    const visual = visualMetadata(source, file.type, preparationSignal(combined)).catch(() => ({}))
-    prepared = await prepareIrfsFile(file, { signal: combined })
-    const dimensions = await visual
+    artifact = createUploadArtifact(file, { signal: combined })
+    const upload = artifact.file
+    const mime = upload.type || 'application/octet-stream'
+    // Compression is disabled. If enabled later, the finalized artifact must
+    // precede BOTH the preview and the IRFS root, never the other way around.
+    let preview
+    try { preview = await prepareMediaPreview(upload, mime, { signal: combined, onProgress }) } catch { combined.throwIfAborted() }
+    prepared = await prepareIrfsFile(upload, { signal: combined, onProgress: value => onProgress?.({ phase: 'hash', ...value }) })
     combined.throwIfAborted()
-    const mime = file.type || 'application/octet-stream'
-    const filename = encodedFileName({ filename: file.name, root: prepared.root, mime })
+    const filename = encodedFileName({ filename: upload.name, root: prepared.root, mime })
     const entity = nfileEncode({ root: prepared.root, mime, filename })
-    return { prepared, source, close, metadata: { root: prepared.root, size: file.size, mime, filename, url: `https://nostr.alt/${entity}?localOnly=1`, service: 'irfs', ...dimensions } }
+    const metadata = { root: prepared.root, size: upload.size, mime, filename, url: `https://nostr.alt/${entity}?localOnly=1`, service: 'irfs', ...(preview ? { width: preview.width, height: preview.height, thumbhash: preview.thumbhash } : {}) }
+    rememberAttachmentPreview(metadata, preview)
+    source = preview ? URL.createObjectURL(preview.blob) : null
+    return { prepared, source, close, metadata }
   } catch (error) { close(); throw error }
 }
 

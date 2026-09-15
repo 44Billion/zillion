@@ -3,6 +3,7 @@ import { nfileEncode } from 'libp2r2p/nip19'
 import { mkdtemp, mkdir, open, writeFile, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import { crc32 } from 'node:zlib'
 import { checkAttachmentPresentation } from './attachment-presentation-scenarios.js'
 import { checkDownloadIntent } from './download-intent-scenarios.js'
 
@@ -27,6 +28,16 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
       await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
       await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false" && !!document.querySelector(".composer-attachment .attachment-remove") && !document.querySelector(".preparing-file")'), 'attachment prepared', 30000)
     }
+    await evaluate('window.previewWorkers = new Set(); window.previewWorkerCount = 0; window.NativePreviewWorker = Worker; window.Worker = class extends NativePreviewWorker { constructor(...args) { super(...args); previewWorkers.add(this); previewWorkerCount++ } terminate() { previewWorkers.delete(this); super.terminate() } }')
+    const alpha = await readFile(new URL('./fixtures/media/vp9-alpha.webm', import.meta.url))
+    await select('alpha-preview.webm', alpha)
+    await browser.until(() => evaluate('document.querySelector(".composer-attachment img:not(.attachment-placeholder)")?.naturalWidth === 320'), 'MediaBunny alpha preview inside launcher')
+    assert.ok(await evaluate('previewWorkerCount > 0'), 'MediaBunny alpha uses working blob Workers in launcher')
+    assert.equal(await evaluate('previewWorkers.size'), 0, 'MediaBunny releases alpha workers')
+    const temporarySource = await evaluate('document.querySelector(".composer-attachment img:not(.attachment-placeholder)").src')
+    await evaluate('document.querySelector(".composer-attachment .attachment-remove").click()')
+    assert.equal(await evaluate(`fetch(${JSON.stringify(temporarySource)}).then(() => false, () => true)`), true, 'removal revokes its temporary image URL')
+    console.log('Attachments: MediaBunny Workers and temporary preview disposal verified inside launcher')
     const picker = await findInput()
     await browser.send('Runtime.releaseObject', { objectId: picker.objectId }, picker.sessionId)
     await browser.send('Page.setInterceptFileChooserDialog', { enabled: true }, picker.sessionId)
@@ -127,10 +138,15 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     console.log('Attachments: worker restart verified')
     await evaluate(`(async () => { const response = await fetch(${JSON.stringify(url)}); const reader = response.body.getReader(); await reader.read(); await reader.cancel(); })()`)
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII=', 'base64')
+    for (let offset = 8; offset < png.length;) {
+      const length = png.readUInt32BE(offset)
+      png.writeUInt32BE(crc32(png.subarray(offset + 4, offset + 8 + length)), offset + 8 + length)
+      offset += length + 12
+    }
     await select('photo.png', png)
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].some(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved")'), 'image saved', 60000)
-    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row .attachment-frame img")].some(img => img.src.startsWith("https://nostr.alt/") && img.naturalWidth === 1)'), 'local image rendered without HTTP cache')
+    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row .attachment-frame img")].some(img => img.src.startsWith("blob:") && img.naturalWidth === 1)'), 'local image rendered without HTTP cache')
     const photoId = await evaluate('[...document.querySelectorAll(".message-row")].find(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png")).dataset.messageId')
     await evaluate(`document.querySelector('[data-message-id="${photoId}"] .chat-bubble').dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true}))`)
     await browser.until(() => evaluate('!!document.querySelector(".message-actions [aria-label=Reply]")'), 'file reply menu')
@@ -139,6 +155,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.value = ${JSON.stringify('  Caption   file\n\n\nx  ')}; input.dispatchEvent(new Event('input', {bubbles:true})); })()`)
     await evaluate('document.querySelector(".chat-composer .attach").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".attachment-gallery button").length === 2'), 'gallery contains picker and one image')
+    assert.equal(await evaluate('previewWorkers.size'), 0, 'gallery/replies reuse completed thumbnails')
     assert.equal(await evaluate('document.querySelector(".chat-composer .attach").getAttribute("aria-expanded")'), 'true')
     await evaluate('document.querySelector(".chat-composer .attach").click()')
     await browser.until(() => evaluate('document.querySelector(".chat-composer .attach").getAttribute("aria-expanded") === "false"'), 'paperclip closes gallery')
@@ -194,7 +211,11 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     // Equal-second IDs can sort a new send above a tall image. Only visible
     // attachments prepare their playback element, so bring the video into view.
     await evaluate('document.querySelector(".chat-timeline").dispatchEvent(new WheelEvent("wheel", {deltaY:-100,bubbles:true})); [...document.querySelectorAll(".message-row")].find(row => row.querySelector(".attachment-name")?.textContent.includes("clip.webm")).scrollIntoView({block:"center"})')
-    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row video")].some(video => video.videoWidth === 32)'), 'visible local video decoded')
+    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row video")].some(video => video.poster.startsWith("blob:") && video.preload === "none")'), 'local video uses a prepared poster')
+    assert.equal(await evaluate('[...document.querySelectorAll(".message-row video")].find(video => video.poster.startsWith("blob:")).readyState'), 0, 'video does not decode again before playback')
+    await evaluate('void [...document.querySelectorAll(".message-row video")].find(video => video.poster.startsWith("blob:")).play().catch(() => {})')
+    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row video")].some(video => video.videoWidth === 32)'), 'user playback still decodes local video')
+    await evaluate('document.querySelectorAll(".message-row video").forEach(video => video.pause())')
     await evaluate('document.querySelector(".chat-composer .attach").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".attachment-gallery button").length === 3'), 'gallery includes image and video')
     assert.equal(await evaluate('document.querySelectorAll(".attachment-gallery button")[1].getAttribute("title")'), 'clip.webm', 'latest media is first')
@@ -218,7 +239,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     const route = await evaluate('location.pathname + location.search')
     await browser.evaluate(`(() => { const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)}); const url = new URL(frame.src); const route = new URL(${JSON.stringify(route)}, url); url.pathname = route.pathname; frame.src = url.href; })()`)
     await browser.until(() => evaluate('document.querySelectorAll(".chat-composer").length === 1 && [...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'confirmed file metadata reopens offline', 60000)
-    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row .attachment-frame img")].some(img => img.src.startsWith("https://nostr.alt/") && img.naturalWidth === 1)'), 'image bytes survive reload offline')
+    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row .attachment-frame img")].some(img => img.src.startsWith("blob:") && img.naturalWidth === 1)'), 'image bytes survive reload offline')
     await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'complete history processed after file reload')
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     await checkDownloadIntent({ browser, evaluate, origin, downloads, photo: reply, videoTags, png, videoBytes })

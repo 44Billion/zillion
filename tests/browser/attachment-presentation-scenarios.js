@@ -91,7 +91,7 @@ export async function checkAttachmentPresentation ({ browser, evaluate, origin, 
       const row = `[...document.querySelectorAll('.message-row')].find(row => row.querySelector('.file-name')?.getAttribute('aria-label') === '${filename}')`
       await browser.until(() => evaluate(`(${row})?.querySelector('.message-status')?.dataset.status === 'saved'`), 'extreme-ratio attachment saved')
       await evaluate(`document.querySelector('.chat-timeline').dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true})); (${row}).scrollIntoView({block:'center'})`)
-      await browser.until(() => evaluate(`(${row}).querySelector('img:not(.attachment-placeholder)')?.naturalWidth === ${width}`), 'extreme image decoded')
+      await browser.until(() => evaluate(`(${row}).querySelector('img:not(.attachment-placeholder)')?.naturalWidth === ${Math.min(width, 320)}`), 'reduced extreme image decoded')
       await settle()
       const geometry = await evaluate(`(() => { const r=${row}; const frame=r.querySelector('.attachment-frame').getBoundingClientRect(); const card=r.querySelector('.chat-attachment').getBoundingClientRect(); const line=r.querySelector('.attachment-download').getBoundingClientRect(); return {width:frame.width,height:frame.height,card:card.width,line:line.width}; })()`)
       assert.ok(geometry.width >= 160 && geometry.width <= 320 && geometry.height <= 360)

@@ -351,8 +351,15 @@ are rejected; files with failed/unsupported previews remain sendable/downloadabl
 Drafts and failed outbox entries remain memory-only and disappear on reload.
 Confirmed attachments survive according to launcher storage retention.
 
-Images/videos and reply thumbnails use nostr.alt directly, outside the HTTP image
-cache and connectivity probes. Native downloads use the instance-bound URL from
+Local attachments read original bytes from nostr.alt outside the HTTP image cache
+and connectivity probes. Composer, bubbles, gallery and replies reuse reduced
+previews (at most 320px) instead of decoding the original again. Video players
+use the small poster and load the original only for playback. Preview preparation
+runs serially: PNGs are reduced scanline by scanline, JPEGs request native scaled
+decoding, and videos use MediaBunny. Disposable image Workers and MediaBunny's
+Workers run inside the launcher; cancellation releases their resources. Other
+native image decoders still have format-dependent memory costs. Compression is
+not enabled; the original File supplies both upload bytes and the MMR root. Native downloads use the instance-bound URL from
 `window.napp.getFileDownloadUrl`, streamed by the launcher without a file-sized
 Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
@@ -365,7 +372,8 @@ sibling source imports are required.
 The local Chrome validation and remaining device coverage are recorded in
 [docs/local-attachments-validation.md](docs/local-attachments-validation.md).
 Run `npm run test:browser:attachments` for the focused integration checks, or
-`node --test tests/browser/self-chat.browser.js` for the full self-chat regression.
+`node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js`
+for the full self-chat regression.
 
 Incoming kind-1063 `download` intent is honored: a bare tag or value `1` makes
 image/video thumbnails download links; absence or `0` keeps normal media behavior.
@@ -387,3 +395,9 @@ for the measured browser peak, audit-log correction and coverage limits.
 
 Attachment presentation checks and browser/memory limitations are recorded in
 [docs/attachment-presentation-validation.md](docs/attachment-presentation-validation.md).
+
+Implementation, measured memory bounds and remaining limitations are recorded in
+[docs/media-preparation-validation.md](docs/media-preparation-validation.md).
+The preceding preview memory research is recorded in
+[docs/media-memory-experiments.md](docs/media-memory-experiments.md), with the
+[follow-up variant tests and future compression plan](docs/media-memory-variants-and-plan.md).

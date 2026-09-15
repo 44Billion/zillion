@@ -45,7 +45,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
           return {
             responseCode: 200,
             responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Content-Disposition', value: 'attachment; filename="external.png"' }],
-            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
           }
         }
         if (offline) return false
@@ -53,14 +53,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
           if (media.reject) return false
           const response = {
             responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
-            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
           }
           return media.hold ? new Promise(resolve => held.push(() => resolve(response))) : media.stagger ? new Promise(resolve => setTimeout(() => resolve(response), 150 + (Number(url.pathname.match(/\d+/)?.[0]) % 3 || 0) * 75)) : response
         }
         if (url.pathname.endsWith('/favicon.ico') || url.pathname === '/brand.png') {
           return {
             responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
-            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
           }
         }
         if (['/article', '/plain'].includes(url.pathname) || (url.hostname === 'njump.me' && !url.pathname.includes('missing'))) {
@@ -72,7 +72,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
         if (request.url === 'https://example.com/photo.png') {
           return {
             responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
-            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='
           }
         }
         if (['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(url.hostname)) {
@@ -445,13 +445,13 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
           const text = [...document.querySelectorAll('.quote-text')].find(el => el.title === ${JSON.stringify(longReply)});
           const quote = text.closest('.message-quote');
           const thumbnail = document.querySelector('.quote-thumbnail');
-          const copy = thumbnail.parentElement.querySelector('.quote-copy').getBoundingClientRect();
+          const copy = thumbnail.closest('.message-quote').querySelector('.quote-copy').getBoundingClientRect();
           const image = thumbnail.getBoundingClientRect();
           return text.scrollWidth > text.clientWidth && getComputedStyle(text).textOverflow === 'ellipsis'
             && getComputedStyle(text).whiteSpace === 'nowrap' && Math.abs(text.getBoundingClientRect().height - 18.9) < 1
             && quote.scrollWidth === quote.clientWidth && image.width === 38 && image.height === 38
             && Math.abs(copy.height - image.height) < 1 && image.right < copy.left
-            && thumbnail.parentElement.querySelectorAll('.quote-thumbnail').length === 1;
+            && thumbnail.closest('.message-quote').querySelectorAll('.quote-thumbnail').length === 1;
         })()`), true, 'posted quotes ellipsize one text line and size the thumbnail to author plus excerpt')
         await writeFile(path.join(root, `tmp/browser-failures/self-chat-${width}-${theme}.png`), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' }, session)).data, 'base64'))
         await startReply('[...document.querySelectorAll(".chat-content")].find(el => el.innerText === "Hi")', 'Hi')

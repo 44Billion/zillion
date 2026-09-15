@@ -26,6 +26,11 @@ export function buildOptions ({ development = false, futureFeatures = process.en
           metadata = new TextEncoder().encode(JSON.stringify(value, null, 2) + '\n')
           return { contents: '', loader: 'js', watchFiles: [filename] }
         })
+        build.onResolve({ filter: /\?worker$/ }, args => ({ path: path.resolve(args.resolveDir, args.path.replace(/\?worker$/, '')), namespace: 'media-worker' }))
+        build.onLoad({ filter: /.*/, namespace: 'media-worker' }, async args => {
+          const result = await esbuild.build({ entryPoints: [args.path], bundle: true, platform: 'browser', format: 'iife', target: 'es2022', minify: !development, write: false, metafile: true })
+          return { contents: `export default ${JSON.stringify(result.outputFiles[0].text)}`, loader: 'js', watchFiles: Object.keys(result.metafile.inputs).map(file => path.resolve(file)) }
+        })
         build.onLoad({ filter: /\.icon\.svg$/ }, async args => ({
           contents: await readFile(args.path), loader: 'copy', watchFiles: [args.path]
         }))

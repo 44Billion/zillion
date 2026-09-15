@@ -4,6 +4,7 @@ import { useAccount } from '#hooks/use-account.js'
 import { useRoutePage } from '#shared/route-page.js'
 import { parseChatContent } from '#helpers/chat-content.js'
 import previews, { canPreviewNostrReference, safePreviewUrl } from '#services/link-preview.js'
+import { acquireAttachmentPreview } from '#services/attachment-previews.js'
 import mediaCache from '#services/media-cache.js'
 
 export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
@@ -37,6 +38,7 @@ export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
     const controller = new AbortController()
     const { signal } = controller
     let pending = false
+    let localPreview = false
     const resolve = async () => {
       if (pending || signal.aborted || view.visible$()) return
       pending = true
@@ -55,10 +57,15 @@ export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
             // A local binary document has no web page to enrich or HTTP image
             // to cache. Its filename remains the reply's representation.
             if (item.url?.nfile && !/^(image|video)\//.test(item.url.m ?? '')) continue
-            const type = item.url?.m?.startsWith('video/') ? 'video' : 'image'
+            let type = item.url?.m?.startsWith('video/') ? 'video' : 'image'
             let source
             if (/^(image|video)\//.test(item.url?.m ?? '')) {
-              source = item.url?.nfile ? url : type === 'video' ? await isOnline({ signal }) ? url : null : (await mediaCache.resolveImage(url, { signal }))?.source
+              if (item.url?.nfile) {
+                const preview = await acquireAttachmentPreview(attachment$?.() || { url, mime: item.url.m }, { signal })
+                source = preview?.source
+                type = 'image'
+                localPreview = !!source
+              } else source = type === 'video' ? await isOnline({ signal }) ? url : null : (await mediaCache.resolveImage(url, { signal }))?.source
             } else {
               const metadata = await previews.load(url, { signal })
               if (signal.aborted || !metadata || (reference && !metadata.found)) continue
@@ -76,7 +83,7 @@ export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
     }
     const stop = onOnline(resolve)
     resolve()
-    cleanup(() => { controller.abort(); stop() })
+    cleanup(() => { controller.abort(); stop(); if (localPreview) view.media$(null) })
   }, { when })
   return view
 }
