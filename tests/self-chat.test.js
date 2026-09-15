@@ -1,3 +1,7 @@
+import { prepareIrfsFile, decodeIrfsChunk } from 'libp2r2p/irfs'
+import { nfileEncode } from 'libp2r2p/nip19'
+import { createFileMetadata } from 'libp2r2p/nip94'
+import { attachmentCatalog } from '#services/chat-attachments.js'
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { finalizeEvent, getEventHash } from 'libp2r2p/event'
@@ -11,7 +15,7 @@ const inner = (text, at = 10) => ({ kind: 9, created_at: at, content: text, tags
 function wrapper (event, context = `dm:${pubkey}`, provenance = '1') {
   return finalizeEvent({ kind: 1006, created_at: event.created_at, tags: [['k', String(event.kind)], ['c', context], ['v', provenance]], content: bytesToBase64(new TextEncoder().encode(JSON.stringify(event))) }, secret)
 }
-function fixture (history = []) {
+function fixture (history = [], options = {}) {
   let deliver
   let returned = false
   const writes = []
@@ -26,13 +30,13 @@ function fixture (history = []) {
   const eventStore = {
     subscribe (filter, options) {
       assert.deepEqual(options, { initial: true })
-      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
+      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9', '1063'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
       return subscription
     },
     query: async () => ({ results: history }),
     addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true, stored: true } } }
   }
-  const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => base64ToBytes(content).buffer } }, onMessages: value => { messages = value }, onError: error => errors.push(error), onInitialLoad: () => { initialMessages = messages } })
+  const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => base64ToBytes(content).buffer } }, onMessages: value => { messages = value }, onError: error => errors.push(error), onInitialLoad: () => { initialMessages = messages }, ...options })
   return { chat, writes, errors, eventStore, get initialMessages () { return initialMessages }, get messages () { return messages }, get returned () { return returned }, deliver: event => deliver({ done: false, value: { result: event } }) }
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
@@ -176,4 +180,62 @@ test('NIP-27 preserves text and distinguishes images, videos, links and hashtags
   assert.equal(parts.at(-1).key, 'hashtag')
   assert.equal(parseChatContent('<script>alert(1)</script>')[0].text.value, '<script>alert(1)</script>')
   assert.equal(parseChatContent('https://example.com/file#m=image%2Fpng')[0].url.m, 'image/png')
+})
+
+test('files are prepared without writes, chunks settle before metadata, and retry retains the exact event', async () => {
+  const prepared = await prepareIrfsFile(new Uint8Array(102001).fill(23))
+  const metadata = { root: prepared.root, size: prepared.size, mime: 'image/png', filename: 'test.png', width: 2, height: 1, thumbhash: 'AQID', service: 'irfs', url: `https://nostr.alt/${nfileEncode({ root: prepared.root, mime: 'image/png', filename: 'test.png' })}?localOnly=1` }
+  let verified = 0
+  let released = 0
+  const f = fixture([], { verifyFile: async file => { assert.equal(file.url, metadata.url); verified++ } })
+  await f.chat.start()
+  assert.equal(f.writes.length, 0)
+  const chunks = new Map()
+  let fail = true
+  f.eventStore.query = async filter => ({ results: filter.kinds[0] === 34601 ? [chunks.get(filter['#d'][0])].filter(Boolean) : [] })
+  f.eventStore.addPersonalCopy = async (event, options) => {
+    f.writes.push({ event, options })
+    if (event.kind === 34601) {
+      const chunk = decodeIrfsChunk(event)
+      if (fail && chunk.index === 1) return { result: { ok: false, code: 'QUOTA' } }
+      chunks.set(event.tags[0][1], event)
+    } else { assert.equal(chunks.size, 3); assert.equal(verified, 1) }
+    return { result: { ok: true } }
+  }
+  const id = f.chat.send('', null, { prepared, metadata, close: () => { released++; prepared.close() } })
+  await f.chat.retry(id)
+  assert.equal(f.messages[0].status, 'error')
+  assert.equal(f.messages[0].kind, 1063)
+  assert.equal(f.writes.filter(({ event }) => event.kind === 1063).length, 0)
+  const original = { ...f.messages[0] }
+  fail = false
+  await f.chat.retry(id)
+  assert.equal(f.messages[0].status, 'saved')
+  assert.equal(f.messages[0].id, original.id)
+  assert.equal(f.messages[0].created_at, original.created_at)
+  assert.deepEqual(f.messages[0].tags, original.tags)
+  assert.equal(released, 1)
+  assert.equal(f.writes.filter(({ event }) => event.kind === 34601).length, 4, 'only the missing chunk is retried')
+  const before = f.writes.length
+  verified = 0
+  f.chat.send('  reuse   caption ', id, { metadata: { ...metadata, download: '1' } })
+  await f.chat.retry(f.messages.find(message => message.id !== id).id)
+  assert.equal(f.writes.length, before + 1, 'reuse writes metadata only')
+  assert.equal(f.writes.at(-1).event.content, 'reuse caption')
+  assert.equal(f.writes.at(-1).event.tags.some(tag => tag[0] === 'download'), false, 'sending does not propagate received download intent')
+  f.chat.close()
+})
+
+test('1063 history decrypts in its own kind and the catalog uses latest confirmed distinct roots', async () => {
+  const metadata = { root: 'ab'.repeat(32), size: 1, mime: 'image/png', filename: 'one.png', width: 1, height: 1, service: 'irfs', url: `https://nostr.alt/${nfileEncode({ root: 'ab'.repeat(32), mime: 'image/png', filename: 'one.png' })}?localOnly=1` }
+  const first = createFileMetadata({ ...metadata, created_at: 1 })
+  const recent = createFileMetadata({ ...metadata, caption: 'Recent', created_at: 2 })
+  const f = fixture([wrapper(first), wrapper(recent)])
+  await f.chat.start()
+  assert.equal(f.messages.length, 2)
+  const catalog = attachmentCatalog(f.messages)
+  assert.equal(catalog.length, 1)
+  assert.equal(catalog[0].caption, 'Recent')
+  assert.equal(attachmentCatalog(f.messages.map(message => ({ ...message, status: 'error' }))).length, 0)
+  f.chat.close()
 })

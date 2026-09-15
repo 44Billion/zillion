@@ -312,9 +312,10 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   failures fall back to `copy-text.js`, which tries Clipboard then legacy copy
   and restores focus/selection. Show an icon-only green check for 1600ms after
   successful copy; failures use the reactive toast. Clean up pending UI work.
-- The header menu, Delete actions, attention, attachments and camera are
-  presentation only; Reply and Send work in self chat. With future-feature previews enabled, typing hides
-  Attach and swaps Camera for Send. Preserve
+- The header menu, Delete actions, attention and camera are presentation only.
+  Reply, Send and Attach work in self chat; its paperclip stays available while
+  typing, independently of future-feature previews. Other chats retain the
+  fixture controls: typing hides Attach and swaps Camera for Send. Preserve
   Enter/newlines, grow to five text lines, then scroll inside the textarea; align
   icons to the bottom line. Drafts are local component state. Send synchronously
   accepts a self-chat message into the service outbox, clears the draft/reply,
@@ -482,12 +483,12 @@ needed; empty folders mark the initial structure.
 - `useInitAccount` runs once in `z-app`, calls `peekPublicKey` early and owns
   profile/history subscriptions. `useAccount` readers do not start subscriptions.
   `/chat/user` never falls back to fixture messages, including when signed out.
-- `src/services/self-chat.js` uses kind-9 unsigned templates, explicit context
+- `src/services/self-chat.js` uses unsigned kind-9 text and kind-1063 file templates, explicit context
   `dm:<own hex pubkey>`, `addPersonalCopy` and query/subscribe. No relay sends or
   private-messenger transport are involved. Only owner-authored direct/signed
   copies in that exact context are rendered; hearsay/other authors are excluded.
 - The launcher owns wrapper encryption/signing. Read kind-1006 wrappers with
-  obfuscated `c` and inner `k=9`; decrypt through the documented NIP-44 v3 signer
+  obfuscated `c` and inner `k=9` or `k=1063`; decrypt through the documented NIP-44 v3 signer
   extension's `ArrayBuffer` result directly with `TextDecoder`; never Base64
   decode the injected v3 API result. The local launcher/vault channel also stays
   binary; remote bunker and encrypted-log encoding belong to the vault. This
@@ -586,7 +587,7 @@ needed; empty folders mark the initial structure.
   of the same author/kind exist, since there is no personal-copy address index. Missing/unreadable njump pages keep the
   original pointer label and nostr: destination. No new persistent app store exists.
 - Generic private contact/follow events will use context `''`, outside chat.
-  Deletion/reactions/uploads, paginated history and third-party messaging remain
+  Deletion/reactions, paginated history and third-party messaging remain
   unimplemented. All user-facing status/error/reply labels cover 11 locales.
 
 
@@ -619,9 +620,53 @@ needed; empty folders mark the initial structure.
   box. Viewport/keyboard changes and reduced motion never trigger growth animation.
 - Direct media reserves validated NIP-27 URL `#dim` proportions immediately.
   Otherwise images decode and videos obtain metadata outside the layout before
-  insertion. Decoded dimensions take precedence over URL hints. Videos remain
-  online-only and are not byte-cached. Preview metadata/icon/image still arrive
+  insertion. Decoded dimensions take precedence over URL hints. External videos remain
+  online-only and are not byte-cached; local nfile videos use launcher storage. Preview metadata/icon/image still arrive
   independently; privacy checks remain ahead of external Nostr previews.
 - Browser scroll regressions must sample the bottom throughout staged resource
   delivery and preserve a visible reading anchor during offscreen growth, in
   addition to checking final offsets and retained navigation.
+
+## Self-chat attachments
+
+- The composer owns one raw preparation outside useStore until Send transfers it
+  to the memory-only outbox. Selection/removal never writes events. Close the
+  preparation and revoke temporary visual URLs on replacement/removal/unmount or
+  confirmation. Cancel superseded work so old selections cannot update the draft.
+- Query/decrypt personal copies for inner kinds 9 and 1063 with their respective
+  scopes, retaining owner/context/provenance validation. File messages have no
+  companion kind 9. Consume nip94 tags directly; copy/share includes caption+URL.
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.18`
+  package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
+  Hash/previews at selection; batches of at most three chunk writes on Send;
+  confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
+  skips existing chunks. Do not delete partial chunks or add quotas/encryption.
+- The confirmed attachment catalog is latest-first and unique by root. Only
+  image/video metadata with verified dimensions qualifies; defer thumbnail loads.
+  Keep photo-plus duotone first and file-download cards for unsupported previews.
+- Local nfile rendering bypasses HTTP caches and connectivity gates. Keep geometry,
+  ThumbHash placeholders, active-route cleanup and the existing growth controller.
+  Downloads are precomputed native links from getFileDownloadUrl; never file-sized
+  Blob downloads. Selection object URLs are temporary previews only.
+
+- Native file download links target the document-owned hidden iframe from
+  `file-download.js`; prepare the URL before the click. The attachment response
+  initiates the browser download without navigating the chat or opening a popup.
+  Keep the real Chrome download-manager test, worker restart and offline reload
+  assertions in `tests/browser/attachment-scenarios.js`. Run the focused suite
+  with `npm run test:browser:attachments`; see the validation report for coverage.
+
+- Read download intent from nip94/nip27 as the strings '0'/'1'. A flagged image
+  or video thumbnail (including reply/quote thumbnails) uses a native download
+  link, with no play/fullscreen action or video controls. Gallery selection and
+  outgoing metadata stay unchanged: do not emit/propagate the download tag yet.
+- `useMediaDownload` strips presentation fragments before calling the launcher's
+  nfile download API. Keep instance-bound streaming for local files; external
+  links depend on the server's Content-Disposition. Never introduce Blob
+  downloads to bypass cross-origin browser restrictions.
+
+- Browser npm scripts use the launcher's `bin/run-browser-tests.js`: one Linux
+  user-systemd group for Node, Chrome, build watchers and vault, capped at 3 GiB,
+  no swap, 15-minute maximum and descendant cleanup. Stop an existing runtime
+  before testing; run one suite at a time. Do not replace this with a V8-only
+  heap limit or bypass the guard when investigating memory pressure.

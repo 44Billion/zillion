@@ -6,7 +6,7 @@ import { parseChatContent } from '#helpers/chat-content.js'
 import previews, { canPreviewNostrReference, safePreviewUrl } from '#services/link-preview.js'
 import mediaCache from '#services/media-cache.js'
 
-export function useReplyThumbnail (text$, { when = 'init' } = {}) {
+export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
   const account = useAccount()
   const page = useRoutePage()
   const view = useStore({
@@ -14,6 +14,8 @@ export function useReplyThumbnail (text$, { when = 'init' } = {}) {
     failed$: false,
     loadedFor: null,
     candidates$ () {
+      const attachment = attachment$?.()
+      if (attachment) return [{ key: 'url', url: { value: attachment.url, m: attachment.mime, nfile: new URL(attachment.url).origin === 'https://nostr.alt', download: attachment.download } }]
       return parseChatContent(text$()).filter(item => item.key === 'url' || item.key === 'event')
     },
     identity$ () {
@@ -49,11 +51,14 @@ export function useReplyThumbnail (text$, { when = 'init' } = {}) {
               const pointer = reference.original.replace(/^nostr:/i, '')
               url = `https://njump.me/${pointer}`
             }
-            if (signal.aborted || !safePreviewUrl(url)) continue
+            if (signal.aborted || (!item.url?.nfile && !safePreviewUrl(url))) continue
+            // A local binary document has no web page to enrich or HTTP image
+            // to cache. Its filename remains the reply's representation.
+            if (item.url?.nfile && !/^(image|video)\//.test(item.url.m ?? '')) continue
             const type = item.url?.m?.startsWith('video/') ? 'video' : 'image'
             let source
             if (/^(image|video)\//.test(item.url?.m ?? '')) {
-              source = type === 'video' ? await isOnline({ signal }) ? url : null : (await mediaCache.resolveImage(url, { signal }))?.source
+              source = item.url?.nfile ? url : type === 'video' ? await isOnline({ signal }) ? url : null : (await mediaCache.resolveImage(url, { signal }))?.source
             } else {
               const metadata = await previews.load(url, { signal })
               if (signal.aborted || !metadata || (reference && !metadata.found)) continue
@@ -61,7 +66,7 @@ export function useReplyThumbnail (text$, { when = 'init' } = {}) {
             }
             if (signal.aborted) return
             if (source) {
-              view.media$({ source, type })
+              view.media$({ source, type, url, download: item.url?.download })
               view.failed$(false)
               return
             }

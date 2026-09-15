@@ -37,7 +37,7 @@
     "// upload:draft": "Build and publish once to the draft channel.",
     "upload:draft": "node bin/upload.js draft",
     "// test:browser": "Run Chrome tests against the real local runtime in disposable profiles.",
-    "test:browser": "node --test --test-concurrency=1 'tests/browser/*.browser.js'",
+    "test:browser": "node ../../44billion/bin/run-browser-tests.js -- node --test --test-concurrency=1 'tests/browser/*.browser.js'",
     "// serve": "Preview dist/zillion/ on port 4000 without injected runtime APIs.",
     "serve": "python3 server.py",
     "// test": "Run the Node test suite.",
@@ -45,7 +45,8 @@
     "// test:only": "Run only Node tests marked with only.",
     "test:only": "node --test --test-only 'tests/**/*.test.js'",
     "// lint": "Check code style with ESLint.",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:browser:attachments": "ZILLION_FILES_ONLY=1 node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js"
   },
   "imports": {
     "#f": "thenameisf",
@@ -70,8 +71,9 @@
     "@dicebear/core": "^10.7.0",
     "@dicebear/styles": "^10.6.0",
     "@floating-ui/dom": "^1.8.0",
-    "libp2r2p": "^0.10.17",
+    "libp2r2p": "^0.10.18",
     "thenameisf": "^1.2.10",
+    "thumbhash": "0.1.1",
     "url-router": "^13.0.0"
   },
   "devDependencies": {

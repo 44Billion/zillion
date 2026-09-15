@@ -8,9 +8,9 @@ channels (`private-channel`). The entire front-end uses **thenameisf**.
 The project is just getting started: this repository contains documentation,
 tooling, localized home and conversation previews with fixed sample DMs, a reactive toast, and
 reusable avatar/cache foundations.
-Self chat now uses the logged-in account and persists NIP-C7 kind-9 messages as
-personal copies in the launcher event store, with live updates, replies and
-NIP-27 media rendering. Third-party conversations remain sample data.
+Self chat uses the logged-in account and persists text (kind 9) and local file
+metadata (kind 1063) as personal copies in the launcher event store, with live
+updates, replies and NIP-27 media rendering. Third-party conversations remain sample data.
 
 Self-chat text uses `libp2r2p/nip27.compactWhitespace` before sending and for
 displaying history, reply excerpts and conversation previews. Spaces and tabs
@@ -35,9 +35,9 @@ uncached avatars use a generated fallback. HTTPS images need a successful
 CORS download to be reliably available offline. Avatars have a dedicated 16 MiB
 FIFO cache; chat images, previews and thumbnails share a separate 64 MiB FIFO
 cache. Both store decoded dimensions. Conversation media cannot evict avatars
-from their reserved budget. Videos render online and remain links offline.
-Self messages persist through the launcher; uploads and third-party messaging
-remain planned.
+from their reserved budget. External videos render online and remain links offline. Local attachments,
+including videos, use launcher storage instead of these HTTP caches.
+Remote uploads and third-party messaging remain planned.
 
 ## Home preview
 
@@ -91,10 +91,11 @@ unchanged text bubbles from shifting by a pixel as history grows.
 
 The text area grows up to five lines, then scrolls internally. Sending immediately
 clears the accepted draft and returns the field to one line. Enter inserts a
-newline. With future-feature previews enabled, typing hides Attach and replaces
-Camera with Send. Otherwise Attach and Camera are absent and Send is always
-shown, including with an empty draft. Sending and replying work in self chat;
-deletion, attachments, camera capture and paid attention remain unimplemented;
+newline. Self chat always exposes Attach, including while typing a caption;
+Send accepts either text or a prepared file. Other chats retain the future-feature
+preview controls, where typing hides Attach and replaces Camera with Send.
+Sending, attachments and replying work in self chat;
+deletion, camera capture and paid attention remain unimplemented;
 drafts are temporary component state. The three-dot menu displays the future
 content-deletion action without performing it. Paid attention (the bolt button
 and menu option) is available only in third-party fixture chats with the
@@ -287,8 +288,9 @@ APIs were verified against upstream. The launcher's vault handles eventual
 device synchronization; Zillion consumes the resulting local updates.
 Generic private account lists will use context `''`; self chat never queries it.
 Third-party profile caches retain local-first reads and relay refreshes.
-Deletion, reactions, uploads, history pagination and third-party transport are
-not implemented. Video bytes are not persisted for offline playback.
+Deletion, reactions, remote uploads, history pagination and third-party transport
+are not implemented. External video bytes are not cached for offline playback;
+local video attachments are stored by the launcher.
 
 Real messages use the same bubble spacing as fixtures, with clock-only timestamps
 and localized day separators. HTTPS links show Open Graph cards when the remote
@@ -316,3 +318,58 @@ become inactive.
 Known personal-copy references never go
 to njump; an unavailable local provenance check or missing remote page also keeps
 the plain Nostr link. Sample-chat link cards remain static fixtures.
+
+## Local self-chat attachments
+
+The paperclip selects one file. With previously confirmed images/videos it opens
+an ordered gallery first; its first tile opens the native file picker. A selection
+prepares a preview and MMR tree, shown above an optional caption. **Nothing is
+stored until Send.** Changing/removing the selection preserves caption and reply.
+
+Text uses kind 9. Files use a single kind-1063 personal copy in `dm:<own pubkey>`:
+caption in content; `url`, `r`, `m`, `size`, `service=irfs`, and verified `dim` /
+Base64 `thumbhash` when available. The URL is `https://nostr.alt/nfile1…?localOnly=1`.
+Chunks use the launcher's existing public-local 34601 model with separated bytes;
+the personal copy's `r` retains them. They are not uploaded to relays or encrypted.
+
+Pending/error bubbles use the existing outbox and Retry. Each attempt preserves
+the same metadata event and timestamp, skips existing chunks, confirms local
+bytes, then saves metadata. Gallery reuse writes new metadata without duplicating
+bytes. Partial chunks remain under the launcher's normal cleanup. Empty files
+are rejected; files with failed/unsupported previews remain sendable/downloadable.
+Drafts and failed outbox entries remain memory-only and disappear on reload.
+Confirmed attachments survive according to launcher storage retention.
+
+Images/videos and reply thumbnails use nostr.alt directly, outside the HTTP image
+cache and connectivity probes. Native downloads use the instance-bound URL from
+`window.napp.getFileDownloadUrl`, streamed by the launcher without a file-sized
+Blob. Closing that instance may interrupt downloads; these local downloads are
+not promised outside the launcher. Copy/share includes caption and full nostr.alt
+URL. No file-specific quota policy is added in this release.
+
+This checkout consumes the public APIs from the published `libp2r2p@^0.10.18`
+range, with the resolved release recorded in package-lock.json. No vendored tarball or
+sibling source imports are required.
+
+The local Chrome validation and remaining device coverage are recorded in
+[docs/local-attachments-validation.md](docs/local-attachments-validation.md).
+Run `npm run test:browser:attachments` for the focused integration checks, or
+`node --test tests/browser/self-chat.browser.js` for the full self-chat regression.
+
+Incoming kind-1063 `download` intent is honored: a bare tag or value `1` makes
+image/video thumbnails download links; absence or `0` keeps normal media behavior.
+Inline URLs accept explicit `#download=1`, including nfile URLs. Reply/quote
+thumbnails follow the same intent. Videos in download links expose no player
+controls. Gallery tiles still select an attachment for composition. Zillion
+omits the tag on sends and gallery reuse for now.
+Local downloads use the launcher stream. External URLs use native links and
+require server `Content-Disposition: attachment` to guarantee a cross-origin
+download; the app does not fetch files into Blobs or force playback/fullscreen.
+
+Browser npm scripts require Linux user systemd and run the complete test tree
+under a 3 GiB memory limit, without swap. Stop existing local runtime processes
+first and run only one suite at a time. The runner reports its observed peak
+and terminates descendants after failure/timeout; it has no unbounded fallback.
+
+See [download intent and memory validation](docs/download-intent-and-memory-validation.md)
+for the measured browser peak, audit-log correction and coverage limits.

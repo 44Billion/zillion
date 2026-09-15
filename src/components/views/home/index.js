@@ -1,3 +1,4 @@
+import { messageAttachment } from '#services/chat-attachments.js'
 import { t } from '#i18n/messages.js'
 import { i18n } from '#i18n/index.js'
 import { f, useStore } from '#f'
@@ -31,7 +32,7 @@ f('z-home', ({ h }) => {
         if (conversation.contactId === self.id) {
           return {
             ...conversation, contact: self, real: true, unread: 0,
-            message: compactWhitespace(latest?.content ?? ''), lastMessageAt: date?.toISOString() ?? '',
+            message: compactWhitespace(latest?.content ?? '') || messageAttachment(latest)?.filename || '', lastMessageAt: date?.toISOString() ?? '',
             timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
           }
         }

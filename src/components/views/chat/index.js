@@ -55,7 +55,7 @@ f('z-chat', ({ h, props }) => {
     reply$ () { return this.messages$().find(message => message.id === this.replyTo$()) },
     historyLoaded$ () { return !this.real$() || account.historyLoaded$() || !!account.error$() },
     canSend$ () { return this.real$() && account.ready$() && !!account.pubkey$() },
-    send (text) { return account.send(text, this.replyTo$()) }
+    send (text, attachment) { return account.send(text, this.replyTo$(), attachment) }
   }))
   useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null))
   useTask(({ track, cleanup }) => {
@@ -122,7 +122,7 @@ f('z-chat', ({ h, props }) => {
         }
       `}</style>
       <z-chat-header props=${{ person$: props.person$, entry$: props.entry$, route$: props.route$ }} />
-      <div class="chat-timeline" ref=${view.timelineRef$}><div class="timeline-content">
+      <div class="chat-timeline" ref=${view.timelineRef$} data-history-loaded=${String(!view.real$() || account.historyLoaded$())}><div class="timeline-content">
         ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!account.error$() && account.ready$() && !!account.pubkey$() && view.messages$().length > 0}>${account.error$() ? t('Could not load conversation') : !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t('Notes to yourself') : ''}${account.error$() ? h` <button type="button" class="retry-btn" onclick=${() => account.retry$(value => value + 1)}>${t('Retry')}</button>` : null}</div>` : h`<div class="chat-date">${t('Today')}</div>`}
         <ol class="message-list" aria-label=${t('Messages')}>
           <span hidden></span>
@@ -134,7 +134,7 @@ f('z-chat', ({ h, props }) => {
           `)}
         </ol>
       </div></div>
-      <z-chat-composer props=${{ canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null) }} />
+      <z-chat-composer props=${{ messages$: account.messages$, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null) }} />
     </main>
   `
 })

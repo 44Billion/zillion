@@ -1,10 +1,11 @@
+import './media-thumbnail.js'
 import { f, useStore } from '#f'
 import { shortQuotedText } from '#helpers/reference-label.js'
 import { useReplyThumbnail } from './hooks/use-reply-thumbnail.js'
 
 f('z-chat-quote', ({ h, props }) => {
   const view = useStore({ text$ () { return shortQuotedText(props.text$()) } })
-  const thumbnail = useReplyThumbnail(props.mediaText$, { when: 'visible' })
+  const thumbnail = useReplyThumbnail(props.mediaText$, { when: 'visible', attachment$: props.attachment$ })
   const media = thumbnail.visible$() ? thumbnail.media$() : null
   return h`<blockquote class="message-quote"><style>${`
     z-chat-quote .message-quote {
@@ -17,8 +18,6 @@ f('z-chat-quote', ({ h, props }) => {
       .quote-thumbnail { display: block; flex: none; width: 38px; height: 38px; border-radius: 5px; object-fit: cover; background: var(--z-control); }
     }
   `}</style>${media
-? media.type === 'video'
-    ? h`<video class="quote-thumbnail" src=${media.source} muted playsinline preload="metadata" aria-hidden="true" tabindex="-1" onerror=${() => thumbnail.failed$(true)}></video>`
-    : h`<img class="quote-thumbnail" src=${media.source} alt="" referrerpolicy="no-referrer" onerror=${() => thumbnail.failed$(true)}>`
+? h`<z-media-thumbnail props=${{ media$: thumbnail.media$, className: 'quote-thumbnail', onError: () => thumbnail.failed$(true) }} />`
     : null}<div class="quote-copy"><span class="quote-name" title=${props.author$()}>${props.author$()}</span><span class="quote-text" title=${props.text$()}>${view.text$()}</span></div></blockquote>`
 })

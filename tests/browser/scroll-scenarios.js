@@ -3,13 +3,16 @@ import assert from 'node:assert/strict'
 // Runs in the real self-chat document. Only the media HTTP responses are held;
 // history, encryption, permissions, routing and component updates remain real.
 export async function checkScrollScenarios ({ browser, evaluate, addNote, media }) {
-  const count = await evaluate('document.querySelectorAll(".message-row").length')
+  const previousIds = await evaluate('[...document.querySelectorAll(".message-row")].map(row => row.dataset.messageId)')
   const timestamp = Math.floor(Date.now() / 1000) + 60
   await evaluate('window.savedChatDates = [...document.querySelectorAll(".message-list .chat-date")]')
   media.reject = true
   for (let i = 0; i < 24; i++) await addNote(`Scroll fixture ${i}\nhttps://example.com/scroll-${i}.png${i === 23 ? '#dim=1x1' : ''}`, timestamp + i)
   await addNote('Scroll fixture final marker', timestamp + 25)
-  await browser.until(() => evaluate(`document.querySelectorAll('.message-row').length === ${count + 25}`), 'scroll history persisted')
+  await browser.until(() => evaluate('[...document.querySelectorAll(".message-row .chat-content")].filter(content => content.innerText.startsWith("Scroll fixture ")).length === 25'), 'scroll history persisted', 60000)
+  const expectedIds = await evaluate('[...document.querySelectorAll(".message-row")].map(row => row.dataset.messageId)')
+  assert.ok(previousIds.every(id => expectedIds.includes(id)), 'history remains present while scroll fixtures arrive')
+  assert.equal(new Set(expectedIds).size, expectedIds.length, 'history and live delivery have no duplicate bubbles')
   assert.ok(await evaluate('savedChatDates.every(date => date.isConnected)'), 'new messages preserve existing date nodes')
   // A document reload retains the app version and real event store. No restore.
   media.reject = false
@@ -41,7 +44,7 @@ export async function checkScrollScenarios ({ browser, evaluate, addNote, media 
     };
     requestAnimationFrame(sample);
   })()`)
-  await browser.until(() => evaluate(`document.querySelectorAll('.message-row').length === ${count + 25}`), 'scroll history recovered', 45000)
+  await browser.until(() => evaluate(`document.querySelector('.chat-timeline').dataset.historyLoaded === 'true' && ${JSON.stringify(expectedIds)}.every(id => document.querySelector('[data-message-id="' + id + '"]'))`), 'scroll history recovered', 60000)
   const reserved = await evaluate('document.querySelector(\'.chat-media a[href$="#dim=1x1"]\').nextElementSibling.getBoundingClientRect().height')
   assert.ok(reserved > 0, '#dim has a bounded media box')
   media.stagger = false
@@ -51,6 +54,8 @@ export async function checkScrollScenarios ({ browser, evaluate, addNote, media 
   assert.equal(await evaluate('scrollProbe.animations'), 0, 'initial history never animates')
   assert.equal(await evaluate('scrollProbe.dateReplacements'), 0, 'date separators retain their DOM identity throughout initial loading')
   assert.ok(await evaluate('scrollProbe.gaps.every(gap => Math.abs(gap) <= 2)'), `bottom stays pinned throughout enrichment: ${JSON.stringify(await evaluate('scrollProbe.gaps.filter(gap => Math.abs(gap) > 2).slice(0, 10)'))}`)
+
+  console.log('Scroll: initial history remains pinned without growth animation')
 
   // A newly inserted resource animates while staying pinned to the bottom.
   media.hold = true
@@ -125,6 +130,7 @@ export async function checkScrollScenarios ({ browser, evaluate, addNote, media 
   assert.equal(await evaluate('scrollProbe.animations'), beforeReduced, 'reduced motion suppresses growth')
   await browser.send('Emulation.setEmulatedMedia', { features: [] }, context.sessionId)
 
+  console.log('Scroll: reading anchor, overlapping growth and reduced motion verified')
   const beforeNavigation = await evaluate('document.querySelector(".chat-timeline").scrollTop')
   await evaluate('document.querySelector(".chat-back").click()')
   await browser.until(() => evaluate('location.pathname === "/"'), 'leave chat')
@@ -133,4 +139,5 @@ export async function checkScrollScenarios ({ browser, evaluate, addNote, media 
   assert.equal(await evaluate('document.querySelector(".chat-timeline").dataset.initialLoading'), 'false')
   assert.ok(Math.abs(await evaluate('document.querySelector(".chat-timeline").scrollTop') - beforeNavigation) <= 2)
   await evaluate('scrollProbe.restore()')
+  console.log('Scroll: retained route and position verified')
 }

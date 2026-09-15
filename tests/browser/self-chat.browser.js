@@ -9,12 +9,13 @@ import { compile, root } from '../../bin/build-options.js'
 import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
 import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
+import { checkAttachmentScenarios } from './attachment-scenarios.js'
 import { checkScrollScenarios } from './scroll-scenarios.js'
 
 const launcherOrigin = 'http://localhost:10000'
 const vaultOrigin = 'http://localhost:4000'
 
-test('real self chat persists offline, quotes inner IDs and receives event-store updates', { timeout: 300000 }, async () => {
+test('real self chat persists offline, quotes inner IDs and receives event-store updates', { timeout: 450000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
@@ -32,12 +33,21 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     }
   }
   try {
-    const app = await prepareTestApp(await compile({ development: true, futureFeatures: true }), { identifier: 'self-chat-test', name: 'Self chat test' })
+    const app = await prepareTestApp(await compile({ development: process.env.ZILLION_FILES_ONLY !== '1', futureFeatures: true }), { identifier: 'self-chat-test', name: 'Self chat test' })
     browser = await launchChrome({
       intercept: request => {
         const url = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(url.hostname)) return null
         requests.push(request.url)
+        // A controlled external server explicitly opts into native downloads;
+        // all unrelated traffic remains blocked by the offline fixture.
+        if (url.hostname === 'download.example.com' && url.pathname === '/photo.png') {
+          return {
+            responseCode: 200,
+            responseHeaders: [{ name: 'Content-Type', value: 'image/png' }, { name: 'Content-Disposition', value: 'attachment; filename="external.png"' }],
+            body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+          }
+        }
         if (offline) return false
         if (url.pathname.startsWith('/scroll-')) {
           if (media.reject) return false
@@ -75,7 +85,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => browser.evaluate('Boolean(localStorage.getItem("session_workspaceKeys"))'), 'launcher initialization')
     // The test account is imported through the real vault UI below.
     const secret = generateSecretKey()
-    const pubkey = getPublicKey(secret)
+    let pubkey = getPublicKey(secret)
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("#toolbar-active-avatar-button"))'), 'launcher toolbar')
     await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("account-add input") && document.querySelector("#vault").style.visibility === "visible")', vaultOrigin), 'vault UI')
@@ -110,9 +120,19 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("vault-lock-button") && !document.querySelector("vault-lock-button").hidden)', vaultOrigin), 'unlocked vault')
 
+    // The app can receive a persona-scoped identity; use its actual own key
+    // for context/decryption assertions instead of assuming the imported key.
+    pubkey = await evaluate('window.nostr.peekPublicKey()')
     await browser.until(() => evaluate('Boolean(document.querySelector(".conversation [data-contact-id=user]"))'), 'self conversation')
     await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
     await browser.until(() => evaluate('document.querySelector(".chat-header h1")?.textContent === "You"'), 'real self chat')
+    // Opening the vault can dismiss an initial permission card. Recover via
+    // the app's real retry control before testing write permission separately.
+    await browser.until(() => evaluate('document.querySelector(".chat-date .retry-btn")?.click(); document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial history before menu interactions')
+    if (process.env.ZILLION_FILES_ONLY === '1') {
+      await checkAttachmentScenarios({ browser, evaluate, origin, requests })
+      return
+    }
     assert.equal(await evaluate('document.querySelectorAll(".chat-bubble").length'), 0)
     assert.equal(await evaluate('document.querySelector(".chat-attention")'), null)
     await evaluate('document.querySelector(".chat-more").click()')
@@ -127,6 +147,10 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate(`document.querySelector('.chat-composer textarea').clientHeight > ${emptyComposerHeight}`), 'multiline draft grows the composer')
     await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'enabled Send')
     await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.initialLoading === "false"'), 'initial history processed')
+    // Settle both explicit read grants before revoking kind 9 for the write test.
+    await evaluate("window.napp.eventStore.query({ kinds: [1006], '#k': ['9', '1063'] })")
+    await browser.until(() => browser.evaluate('!document.querySelector(".permission-button.allow-button:not(:disabled)")'), 'initial permission dialogs settled')
+    await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial query and decryption completed')
     allowPermissions = false
     // Reading history already grants kind-9 access. Revoke that real grant in
     // this disposable profile so the next write waits on the actual dialog.
@@ -351,13 +375,13 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     assert.equal(requests.slice(appRequestStart).some(url => url.includes(appEntity) || url.includes('/.well-known/nostr.json')), false, 'app references do not start preview or author lookups')
     const requestStart = requests.length
     await addNote(privatePointer)
-    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`), 'private Nostr link retained')
+    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`), 'private Nostr link retained', 60000)
     assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false, 'private pointer never reaches njump')
     assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').textContent`), privatePointer.slice(0, 22) + '…')
     assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').getAttribute('aria-label')`), privatePointer)
     assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').title`), privatePointer)
     await addNote(`https://njump.me/${noteEncode(id)}`)
-    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${noteEncode(id)}"]')`), 'private njump URL stays local')
+    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${noteEncode(id)}"]')`), 'private njump URL stays local', 60000)
     assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false)
 
     const startReply = async (target, title) => {
@@ -464,11 +488,22 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
         offline = false
       }
     }
+    offline = true
+    await checkAttachmentScenarios({ browser, evaluate, origin, requests })
+    offline = false
+    // The attachment reload opens a direct route. Establish a real home -> chat
+    // entry before the scroll suite exercises Back/Forward retention.
+    await evaluate('document.querySelector(".chat-back").click()')
+    await browser.until(() => evaluate('location.pathname === "/" && !!document.querySelector(".conversation [data-contact-id=user]")'), 'home after direct file reload')
+    await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
+    await browser.until(() => evaluate('location.pathname === "/chat/user" && document.querySelector(".route-page[data-active=true] .chat-timeline")?.dataset.historyLoaded === "true"'), 'chat entered from home for retention')
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     await checkScrollScenarios({ browser, evaluate, addNote, media })
     await evaluate('document.querySelector(".chat-back").click()')
     await browser.until(() => evaluate('location.pathname === "/"'), 'home navigation')
     await browser.until(() => evaluate('document.querySelector(".conversation [data-contact-id=user] .preview").textContent.length > 0'), 'real self preview')
   } catch (error) {
+    console.error('Self chat browser failure:', error.message)
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/self-chat'))
     throw error
   } finally {

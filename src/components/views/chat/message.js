@@ -13,6 +13,7 @@ import '#shared/icons/icon-check.js'
 import '#shared/icons/icon-trash.js'
 import '#shared/icons/icon-refresh-alert.js'
 import './content.js'
+import './attachment.js'
 import { useMessageGrowth } from './hooks/use-message-growth.js'
 import './quote.js'
 import './message-status.js'
@@ -21,6 +22,9 @@ f('z-chat-message', ({ h, props }) => {
   const page = useRoutePage()
   const growth = useMessageGrowth()
   const view = useStore(() => ({
+    attachment$ () { return props.message$().attachment },
+    source$ () { return props.message$().localSource },
+    quoteAttachment$ () { return this.quoted$()?.attachment },
     copied$: false,
     busy$: false,
     keyboard$: false,
@@ -29,7 +33,7 @@ f('z-chat-message', ({ h, props }) => {
     quoted$ () { return props.messages$().find(item => item.id === props.message$().replyTo) },
     quoteContent$ () {
       const quoted = this.quoted$()
-      return quoted ? quoted.real ? quoted.text : t(quoted.text) : ''
+      return quoted ? quoted.real ? quoted.text || quoted.attachment?.filename || t('File') : t(quoted.text) : ''
     },
     quoteMedia$ () { return this.quoted$()?.real ? this.quoteContent$() : '' },
     quoteAuthor$ () { return this.quoted$()?.outgoing || props.person$().self ? t('You') : props.person$().name },
@@ -37,7 +41,7 @@ f('z-chat-message', ({ h, props }) => {
     placement$ () { return props.message$().outgoing ? 'left-end' : 'right-end' },
     text$ () {
       const message = props.message$()
-      return [message.real ? message.text : t(message.text), message.url].filter(Boolean).join('\n')
+      return [message.real ? message.text : t(message.text), message.attachment?.url || message.url].filter(Boolean).join('\n')
     },
     open (keyboard) {
       if (!page.isActive$()) return
@@ -127,7 +131,8 @@ f('z-chat-message', ({ h, props }) => {
         onpointerup=${press.cancel} onpointercancel=${press.cancel} onpointerleave=${press.cancel}
         oncontextmenu=${press.context} onkeydown=${press.key} onclick=${press.click}>
         <div class="message-growth" ref=${growth.outerRef$}><div class="message-growth-inner" ref=${growth.innerRef$}>
-        ${quoted ? h`<z-chat-quote props=${{ text$: view.quoteContent$, author$: view.quoteAuthor$, mediaText$: view.quoteMedia$ }} />` : null}
+        ${quoted ? h`<z-chat-quote props=${{ text$: view.quoteContent$, author$: view.quoteAuthor$, mediaText$: view.quoteMedia$, attachment$: view.quoteAttachment$ }} />` : null}
+        ${message.attachment ? h`<z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$ }} />` : null}
         <div class="message-text">${message.real ? h`<z-chat-content props=${{ text$: view.content$ }} />` : t(message.text)}</div>
         ${message.url ? h`<a class="message-link" href=${message.url} title=${message.url} aria-label=${message.url} target="_blank" rel="noopener noreferrer">${shortUrlLabel(message.url)}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}
