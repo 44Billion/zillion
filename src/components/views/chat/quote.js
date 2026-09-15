@@ -1,4 +1,5 @@
 import './media-thumbnail.js'
+import './file-reply.js'
 import { f, useStore } from '#f'
 import { shortQuotedText } from '#helpers/reference-label.js'
 import { useReplyThumbnail } from './hooks/use-reply-thumbnail.js'
@@ -19,5 +20,5 @@ f('z-chat-quote', ({ h, props }) => {
     }
   `}</style>${media
 ? h`<z-media-thumbnail props=${{ media$: thumbnail.media$, className: 'quote-thumbnail', onError: () => thumbnail.failed$(true) }} />`
-    : null}<div class="quote-copy"><span class="quote-name" title=${props.author$()}>${props.author$()}</span><span class="quote-text" title=${props.text$()}>${view.text$()}</span></div></blockquote>`
+    : null}<div class="quote-copy"><span class="quote-name" title=${props.author$()}>${props.author$()}</span><span class="quote-text" title=${props.text$()}>${props.attachment$?.() && !media ? h`<z-file-reply props=${{ file$: props.attachment$, caption$: props.text$ }} />` : view.text$()}</span></div></blockquote>`
 })

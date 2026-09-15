@@ -72,6 +72,7 @@
     "@dicebear/styles": "^10.6.0",
     "@floating-ui/dom": "^1.8.0",
     "libp2r2p": "^0.10.18",
+    "mime": "^4.1.0",
     "thenameisf": "^1.2.10",
     "thumbhash": "0.1.1",
     "url-router": "^13.0.0"

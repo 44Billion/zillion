@@ -1,3 +1,4 @@
+import { encodedFileName } from '#helpers/attachment-presentation.js'
 import { nfileEncode } from 'libp2r2p/nip19'
 import { decodeIrfsChunk } from 'libp2r2p/irfs'
 import { getEventHash, isSerializableEvent, isValidEvent } from 'libp2r2p/event'
@@ -123,7 +124,8 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
       tags: [...(replyTo ? [['q', replyTo, '', pubkey]] : []), ['zillion', crypto.randomUUID()]]
     }
     if (attachment) {
-      const { root, mime, size, width, height, thumbhash, filename = 'file' } = attachment.metadata
+      const { root, mime, size, width, height, thumbhash } = attachment.metadata
+      const filename = encodedFileName(attachment.metadata)
       const url = `https://nostr.alt/${nfileEncode({ root, mime, filename })}?localOnly=1`
       attachment = { ...attachment, metadata: { root, mime, size, width, height, thumbhash, filename, url, service: 'irfs' } }
     }

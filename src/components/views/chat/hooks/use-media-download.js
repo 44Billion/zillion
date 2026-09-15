@@ -1,8 +1,10 @@
 import { useStore, useTask } from '#f'
+import { fileDownloadSource } from '#helpers/attachment-presentation.js'
+import { t } from '#i18n/messages.js'
 import { fileDownloadTarget } from '#helpers/file-download.js'
 import { useRoutePage } from '#shared/route-page.js'
 
-export function useMediaDownload (url$, enabled$ = () => true, filename$ = () => '') {
+export function useMediaDownload (url$, enabled$ = () => true, filename$ = () => '', metadata$ = () => ({})) {
   const page = useRoutePage()
   const view = useStore({
     href$: null, local$: false,
@@ -14,7 +16,7 @@ export function useMediaDownload (url$, enabled$ = () => true, filename$ = () =>
     }
   })
   useTask(({ track, cleanup }) => {
-    const [value, enabled, active] = track(() => [url$(), enabled$(), page.isActive$()])
+    const [value, enabled, active, metadata, unnamed] = track(() => [url$(), enabled$(), page.isActive$(), metadata$(), t('unnamed-file')])
     view.href$(null)
     if (!value || !enabled || !active) return
     const controller = new AbortController()
@@ -28,7 +30,9 @@ export function useMediaDownload (url$, enabled$ = () => true, filename$ = () =>
     // Cross-origin HTTP servers must supply Content-Disposition: attachment.
     // Do not fetch the file into a Blob or navigate the conversation to it.
     if (!view.local$()) { view.href$(url.href); return }
-    window.napp?.getFileDownloadUrl?.(url.href).then(href => {
+    let source
+    try { source = fileDownloadSource(url.href, metadata, unnamed) } catch { return }
+    window.napp?.getFileDownloadUrl?.(source).then(href => {
       if (!controller.signal.aborted) view.href$(href)
     }).catch(() => {})
   })

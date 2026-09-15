@@ -1,4 +1,5 @@
 import './media-thumbnail.js'
+import './file-reply.js'
 import { f, useStore, useTask, useMemo } from '#f'
 import { attachmentCatalog, prepareAttachment } from '#services/chat-attachments.js'
 import { useRoutePage } from '#shared/route-page.js'
@@ -18,6 +19,7 @@ f('z-chat-composer', ({ h, props }) => {
   const page = useRoutePage()
   const runtime = useMemo(() => ({ attachment: null, controller: null }))
   const view = useStore({
+    galleryId: `attachment-gallery-${crypto.randomUUID()}`,
     attachment$: null, source$: null, preparing$: false, gallery$: false, pickerRef$: null,
     catalog$ () { return attachmentCatalog(props.messages$?.() || []) },
     replyAttachment$ () { return props.reply$?.()?.attachment },
@@ -53,7 +55,7 @@ f('z-chat-composer', ({ h, props }) => {
     text$: '', fieldRef$: null, inputRef$: null,
     replyContent$ () {
       const reply = props.reply$?.()
-      return reply ? reply.real ? reply.text || reply.attachment?.filename || t('File') : t(reply.text) : ''
+      return reply ? reply.real ? reply.attachment ? reply.text || '' : reply.text : t(reply.text) : ''
     },
     replyText$ () { return shortQuotedText(this.replyContent$()) },
     send () {
@@ -107,6 +109,7 @@ f('z-chat-composer', ({ h, props }) => {
     <footer class="chat-composer">
       <style>${`
         z-chat-composer .chat-composer {
+          --attachment-tile-gap: 6px; --attachment-tile-radius: 8px;
           display: flex; flex-wrap: wrap; align-items: end; gap: 8px;
           padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
           background: var(--z-chat-canvas); flex: none;
@@ -115,12 +118,12 @@ f('z-chat-composer', ({ h, props }) => {
           .reply-summary.has-thumbnail { align-items: start; }
           .reply-text { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: normal; line-height: 22px; max-height: 44px; }
           .reply-thumbnail { display: block; flex: none; width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--z-control); }
-          .composer-attachment { flex: 0 0 100%; display: flex; gap: 8px; align-items: start; max-height: 260px; overflow: auto; }
-          .composer-attachment > z-chat-attachment { flex: 1; }
-          .attachment-gallery { flex: 0 0 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; max-height: 230px; overflow: auto; }
-          .attachment-gallery button { border-radius: 8px; width: 100%; height: auto; aspect-ratio: 1; background: var(--z-surface); color: var(--z-accent-text); overflow: hidden; cursor: pointer; }
+          .composer-attachment { flex: 0 0 100%; min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--attachment-tile-gap); }
+          .attachment-gallery { flex: 0 0 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--attachment-tile-gap); max-height: 230px; overflow: auto; }
+          .attachment-gallery button { border-radius: var(--attachment-tile-radius); width: 100%; height: auto; aspect-ratio: 1; background: var(--z-surface); color: var(--z-accent-text); overflow: hidden; cursor: pointer; }
           .attachment-gallery img, .attachment-gallery video { width: 100%; height: 100%; object-fit: cover; }
-          .preparing-file { flex: 0 0 100%; color: var(--z-muted); font-size: 14rem; }
+          .preparing-file { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; color: var(--z-muted); font-size: 14rem; line-height: 20px; }
+          .preparing-file .preparing-cancel { width: 24px; height: 24px; border-radius: 5px; color: var(--z-muted); background: var(--z-control); cursor: pointer; }
           .compose-action:disabled { opacity: .5; }
           .composer-field { flex: 1; min-width: 0; display: flex; align-items: end; border-radius: 24px; background: var(--z-surface); border: 1px solid var(--z-border); }
           .composer-field:focus-within { outline: 2px solid var(--z-accent-text); outline-offset: -2px; }
@@ -133,6 +136,9 @@ f('z-chat-composer', ({ h, props }) => {
           textarea:focus { outline: none; }
           button { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; }
           .attach { color: var(--z-muted); background: transparent; }
+          .attach[aria-expanded="true"] { color: var(--z-accent-text); }
+          button:focus-visible { outline: 2px solid var(--z-accent-text); outline-offset: -2px; }
+          .reply-text.file-reply-text { display: block; }
           .compose-action { background: var(--z-primary); color: var(--z-on-primary); }
           .cancel-reply { background: var(--z-surface); color: var(--z-muted); border: 1px solid var(--z-border); cursor: pointer; }
           .cancel-reply:active { background: var(--z-pressed); }
@@ -142,16 +148,16 @@ f('z-chat-composer', ({ h, props }) => {
       ${props.reply$?.()
 ? h`<div class="composer-reply"><div class=${`reply-summary ${thumbnail.visible$() ? 'has-thumbnail' : ''}`}>${thumbnail.visible$()
 ? h`<z-media-thumbnail props=${{ media$: thumbnail.media$, className: 'reply-thumbnail', onError: () => thumbnail.failed$(true) }} />`
-        : null}<span class="reply-text" title=${view.replyContent$()}>${t('Reply')}: ${view.replyText$()}</span></div><button class="cancel-reply" type="button" aria-label=${t('Cancel reply')} onclick=${props.clearReply}><icon-x props=${{ size: '24px', weight: 'regular' }} /></button></div>`
+        : null}<span class=${`reply-text ${view.replyAttachment$() && !thumbnail.visible$() ? 'file-reply-text' : ''}`} title=${view.replyContent$()} aria-label=${t('Reply')}>${view.replyAttachment$() && !thumbnail.visible$() ? h`<z-file-reply props=${{ file$: view.replyAttachment$, caption$: view.replyContent$ }} />` : h`${t('Reply')}: ${view.replyText$()}`}</span></div><button class="cancel-reply" type="button" aria-label=${t('Cancel reply')} onclick=${props.clearReply}><icon-x props=${{ size: '24px', weight: 'regular' }} /></button></div>`
 : null}
       <input type="file" hidden ref=${view.pickerRef$} onchange=${view.select}>
-      ${view.gallery$() ? h`<div class="attachment-gallery"><button type="button" aria-label=${t('Attach file')} onclick=${view.picker}><icon-photo-plus props=${{ size: '36px', weight: 'duotone' }} /></button>${view.catalog$().map(file => h({ key: file.root })`<f-to-signals props=${{ from: { file }, render: ({ h, props: data }) => h`<z-chat-attachment-tile props=${{ file$: data.file$, select: view.reuse }} />` }} />`)}</div>` : null}
-      ${view.preparing$() ? h`<div class="preparing-file" role="status">${t('Preparing file…')}<button type="button" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '24px' }} /></button></div>` : null}
-      ${view.attachment$() ? h`<div class="composer-attachment"><z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, preview: true }} /><button type="button" class="cancel-reply" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '24px', weight: 'regular' }} /></button></div>` : null}
+      ${view.preparing$() ? h`<div class="preparing-file"><button class="preparing-cancel" type="button" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '16px' }} /></button><span role="status">${t('Preparing file…')}</span></div>` : null}
+      ${view.attachment$() ? h`<div class="composer-attachment"><z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, preview: true, remove: view.remove }} /></div>` : null}
+      ${view.gallery$() ? h`<div class="attachment-gallery" id=${view.galleryId}><button type="button" aria-label=${t('Attach file')} onclick=${view.picker}><icon-photo-plus props=${{ size: '36px', weight: 'duotone' }} /></button>${view.catalog$().map(file => h({ key: file.root })`<f-to-signals props=${{ from: { file }, render: ({ h, props: data }) => h`<z-chat-attachment-tile props=${{ file$: data.file$, select: view.reuse }} />` }} />`)}</div>` : null}
       <div class="composer-field" ref=${view.fieldRef$}>
         <textarea ref=${view.inputRef$} rows="1" placeholder=${t(view.attachment$() ? 'Caption' : 'Message')} aria-label=${t('Message')}
           enterkeyhint="enter" oninput=${event => view.text$(event.target.value)}></textarea>
-        ${props.canAttach$?.() || showMediaControls ? h`<button class="attach" type="button" aria-label=${t('Attach file')} aria-disabled=${String(!props.canAttach$?.())} onclick=${() => { if (props.canAttach$?.()) view.attach() }}><icon-paperclip props=${{ size: '24px', weight: 'light' }} /></button>` : null}
+        ${props.canAttach$?.() || showMediaControls ? h`<button class="attach" type="button" aria-expanded=${String(view.gallery$())} aria-controls=${view.gallery$() ? view.galleryId : null} aria-label=${t('Attach file')} aria-disabled=${String(!props.canAttach$?.())} onclick=${() => { if (props.canAttach$?.()) view.attach() }}><icon-paperclip props=${{ size: '24px', weight: 'light' }} /></button>` : null}
       </div>
       <button class="compose-action" type="button" aria-label=${t(showMediaControls ? 'Camera' : 'Send message')} aria-disabled=${String(!view.canSend$())} ?disabled=${view.preparing$()} onclick=${view.send}>
         ${showMediaControls ? h`<icon-camera props=${{ size: '24px', weight: 'regular' }} />` : h`<icon-send-2 props=${{ size: '24px', weight: 'regular' }} />`}

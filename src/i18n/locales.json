@@ -982,5 +982,18 @@
     "zh-TW": "檔案",
     "ja": "ファイル",
     "ko": "파일"
+  },
+  "unnamed-file": {
+    "en": "unnamed-file",
+    "fr": "fichier-sans-nom",
+    "it": "file-senza-nome",
+    "de": "unbenannte-datei",
+    "es": "archivo-sin-nombre",
+    "pt-BR": "arquivo-sem-nome",
+    "ru": "файл-без-имени",
+    "zh-CN": "未命名文件",
+    "zh-TW": "未命名檔案",
+    "ja": "名前のないファイル",
+    "ko": "이름-없는-파일"
   }
 }

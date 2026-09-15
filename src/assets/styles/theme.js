@@ -23,6 +23,12 @@ export const colors = {
   bubbleIncoming: ['#ffffff', '#26332d'],
   bubbleOutgoing: ['#d6edcf', '#235139'],
   bubbleQuote: ['#00000008', '#ffffff0d'],
+  fileMedia: ['#e0eee7', '#223b30'],
+  fileAudio: ['#ece5f3', '#352b43'],
+  fileDocument: ['#e2ecf5', '#243747'],
+  fileArchive: ['#f1e9d9', '#403727'],
+  fileOther: ['#e9ede7', '#2a332d'],
+  fileOverlay: ['#f7f8f5f2', '#1a201ef2'],
   chatOverlay: ['#f7f8f5ed', '#1a201eed']
 }
 

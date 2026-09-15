@@ -33,7 +33,7 @@ f('z-chat-message', ({ h, props }) => {
     quoted$ () { return props.messages$().find(item => item.id === props.message$().replyTo) },
     quoteContent$ () {
       const quoted = this.quoted$()
-      return quoted ? quoted.real ? quoted.text || quoted.attachment?.filename || t('File') : t(quoted.text) : ''
+      return quoted ? quoted.real ? quoted.attachment ? quoted.text || '' : quoted.text : t(quoted.text) : ''
     },
     quoteMedia$ () { return this.quoted$()?.real ? this.quoteContent$() : '' },
     quoteAuthor$ () { return this.quoted$()?.outgoing || props.person$().self ? t('You') : props.person$().name },

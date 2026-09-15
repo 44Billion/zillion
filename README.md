@@ -325,6 +325,17 @@ The paperclip selects one file. With previously confirmed images/videos it opens
 an ordered gallery first; its first tile opens the native file picker. A selection
 prepares a preview and MMR tree, shown above an optional caption. **Nothing is
 stored until Send.** Changing/removing the selection preserves caption and reply.
+While preparing, a compact opaque cancel button sits to the left of the status.
+The open gallery highlights its paperclip. The selected attachment uses a square
+preview matching one gallery tile, with an internal remove control, localized
+size and an extension-preserving filename. Truncated labels show `name…pdf`;
+full labels keep `name.pdf`. Each label is a single text run, so the extension
+follows the ellipsis directly. File replies flow filename and caption inline, with
+subsequent caption lines returning to the same left edge. The composer stacks
+reply, selected attachment, and open gallery in that order. Unsupported previews use a soft
+category-colored file icon in the composer; bubbles retain download cards.
+Attachment bubbles fit the available width (160–320 px when possible) and cap
+media height at 360 px without cropping.
 
 Text uses kind 9. Files use a single kind-1063 personal copy in `dm:<own pubkey>`:
 caption in content; `url`, `r`, `m`, `size`, `service=irfs`, and verified `dim` /
@@ -373,3 +384,6 @@ and terminates descendants after failure/timeout; it has no unbounded fallback.
 
 See [download intent and memory validation](docs/download-intent-and-memory-validation.md)
 for the measured browser peak, audit-log correction and coverage limits.
+
+Attachment presentation checks and browser/memory limitations are recorded in
+[docs/attachment-presentation-validation.md](docs/attachment-presentation-validation.md).

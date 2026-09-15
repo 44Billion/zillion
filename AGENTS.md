@@ -629,6 +629,10 @@ needed; empty folders mark the initial structure.
 
 ## Self-chat attachments
 
+- Preparation hashes sequential 51,000-byte slices and retains the MMR hashes
+  and File reference, not a full byte copy. Image/video decoding has a separate
+  browser-managed memory cost; the 100px ThumbHash canvas does not bound decoding
+  memory. The compact preparation cancel control precedes a separate live status.
 - The composer owns one raw preparation outside useStore until Send transfers it
   to the memory-only outbox. Selection/removal never writes events. Close the
   preparation and revoke temporary visual URLs on replacement/removal/unmount or
@@ -670,3 +674,34 @@ needed; empty folders mark the initial structure.
   no swap, 15-minute maximum and descendant cleanup. Stop an existing runtime
   before testing; run one suite at a time. Do not replace this with a V8-only
   heap limit or bypass the guard when investigating memory pressure.
+
+
+## Attachment presentation
+
+- `attachment-presentation.js` centralizes filenames, byte labels, file categories
+  and attachment geometry. Use the explicit name, then `r`, `ox`, `x`, and finally
+  the translated unnamed-file label; only the generic name is italic. Infer
+  missing extensions using the direct `mime` dependency, falling back to `.bin`.
+- Filename components ellipsize the basename against available width, retaining
+  the extension and full accessible title. Replies without thumbnails prepend
+  the filename to the caption in normal inline flow, separated only when the
+  caption is nonempty. Explicit and wrapped caption lines restart at the left
+  edge of the reply. Never put filename and caption in separate flex columns.
+  Render a fitted label as one text run (`name…pdf`), preserving graphemes;
+  separate text-overflow and extension boxes leave a visible gap. Measure against
+  the full name's stable layout box to avoid threshold oscillation. The full
+  accessible name and download filename are unchanged.
+  Disconnect filename size observers on unmount.
+- Bytes use decimal units and the current reactive launcher locale, at most one
+  decimal without trailing zero. Unknown/invalid sizes are not displayed.
+- Composer previews share the gallery's four-column cell sizing and radius, with
+  contained media, themed category fallback and an internal remove button. Stack
+  the reply first, then the selected/preparing attachment, then the open gallery. The
+  paperclip highlights only while its gallery is expanded. Bubble attachments
+  retain file-download cards, 160px desired minimum/320px maximum constrained by
+  available width, and 360px media-height maximum, with letterboxing when needed.
+- Set the nfile filename on outgoing attachments and derive a download-only URL
+  for existing references needing a name/extension. Preserve root, relay/author
+  hints and localOnly; never rewrite received events or use a SHA hash as a root.
+  Limit the encoded name to 255 UTF-8 bytes by shortening its basename, without
+  visual ellipses. The launcher API and streaming behavior remain unchanged.

@@ -1,4 +1,5 @@
 import { prepareIrfsFile } from 'libp2r2p/irfs'
+import { encodedFileName } from '#helpers/attachment-presentation.js'
 import { nfileEncode } from 'libp2r2p/nip19'
 import { decodeFileMetadata } from 'libp2r2p/nip94'
 import { rgbaToThumbHash } from 'thumbhash'
@@ -73,8 +74,7 @@ export async function prepareAttachment (file, { signal } = {}) {
     const dimensions = await visual
     combined.throwIfAborted()
     const mime = file.type || 'application/octet-stream'
-    let filename = file.name || 'file'
-    while (new TextEncoder().encode(filename).length > 255) filename = [...filename].slice(0, -1).join('')
+    const filename = encodedFileName({ filename: file.name, root: prepared.root, mime })
     const entity = nfileEncode({ root: prepared.root, mime, filename })
     return { prepared, source, close, metadata: { root: prepared.root, size: file.size, mime, filename, url: `https://nostr.alt/${entity}?localOnly=1`, service: 'irfs', ...dimensions } }
   } catch (error) { close(); throw error }

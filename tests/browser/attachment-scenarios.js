@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import { nfileEncode } from 'libp2r2p/nip19'
-import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, open, writeFile, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
+import { checkAttachmentPresentation } from './attachment-presentation-scenarios.js'
 import { checkDownloadIntent } from './download-intent-scenarios.js'
 
 export async function checkAttachmentScenarios ({ browser, evaluate, origin, requests = [] }) {
@@ -24,7 +25,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
       const input = await findInput()
       try { await browser.send('DOM.setFileInputFiles', { files: [file], objectId: input.objectId }, input.sessionId) } finally { await browser.send('Runtime.releaseObject', { objectId: input.objectId }, input.sessionId) }
       await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-      await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false" && !!document.querySelector(".composer-attachment") && !document.querySelector(".preparing-file")'), 'attachment prepared', 30000)
+      await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false" && !!document.querySelector(".composer-attachment .attachment-remove") && !document.querySelector(".preparing-file")'), 'attachment prepared', 30000)
     }
     const picker = await findInput()
     await browser.send('Runtime.releaseObject', { objectId: picker.objectId }, picker.sessionId)
@@ -34,11 +35,45 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     assert.equal(browser.fileChoosers.at(-1).mode, 'selectSingle')
     const count = () => evaluate('document.querySelectorAll(".message-row").length')
     const before = await count()
+    // A sparse fixture exercises cancellation without a file-sized RAM allocation.
+    const largePath = path.join(directory, 'preparing.bin')
+    const largeFile = await open(largePath, 'w')
+    try { await largeFile.truncate(128 * 1024 * 1024) } finally { await largeFile.close() }
+    await evaluate('(() => { const input = document.querySelector(\'.chat-composer textarea\'); input.value = \'Keep caption\'; input.dispatchEvent(new Event(\'input\', {bubbles:true})); })()')
+    const preparingInput = await findInput()
+    try { await browser.send('DOM.setFileInputFiles', { files: [largePath], objectId: preparingInput.objectId }, preparingInput.sessionId) } finally { await browser.send('Runtime.releaseObject', { objectId: preparingInput.objectId }, preparingInput.sessionId) }
+    await browser.until(() => evaluate('!!document.querySelector(".preparing-cancel svg")'), 'preparation cancel control')
+    const preparation = await evaluate(`(() => {
+      const button = document.querySelector('.preparing-cancel');
+      const label = document.querySelector('.preparing-file [role=status]');
+      const rect = button.getBoundingClientRect(), text = label.getBoundingClientRect();
+      const style = getComputedStyle(button);
+      button.focus();
+      return {width:rect.width,height:rect.height,radius:style.borderRadius,background:style.backgroundColor,
+        gap:text.left-rect.right,centerDelta:Math.abs((rect.top+rect.bottom-text.top-text.bottom)/2),
+        icon:button.querySelector('svg').getBoundingClientRect().width,
+        focused:document.activeElement===button,disabled:document.querySelector('.compose-action').disabled};
+    })()`)
+    assert.equal(preparation.width, 24)
+    assert.equal(preparation.height, 24)
+    assert.equal(preparation.radius, '5px')
+    assert.match(preparation.background, /^rgb\(/, 'cancel background is opaque')
+    assert.equal(preparation.gap, 8)
+    assert.ok(preparation.centerDelta < 1, 'cancel aligns with status text')
+    assert.equal(preparation.icon, 16)
+    assert.equal(preparation.focused, true)
+    assert.equal(preparation.disabled, true)
+    await evaluate('document.querySelector(".preparing-cancel").click()')
+    await browser.until(() => evaluate('!document.querySelector(".preparing-file") && !document.querySelector(".composer-attachment")'), 'preparation canceled')
+    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), 'Keep caption')
+    assert.equal(await count(), before, 'canceled preparation does not send')
+    await evaluate('(() => { const input = document.querySelector(\'.chat-composer textarea\'); input.value = \'\'; input.dispatchEvent(new Event(\'input\', {bubbles:true})); })()')
+    console.log('Attachments: compact preparation control and cancellation verified')
     const bytes = Buffer.alloc(102003, 37)
     await select('document.bin', bytes)
     assert.equal(await evaluate('document.querySelector("input[type=file]").multiple'), false)
     assert.equal(await count(), before, 'selection does not send')
-    await evaluate('document.querySelector(".composer-attachment .cancel-reply").click()')
+    await evaluate('document.querySelector(".composer-attachment .attachment-remove").click()')
     assert.equal(await count(), before, 'removal does not send')
     await select('document.bin', bytes)
     await browser.until(() => evaluate('!document.querySelector(".compose-action").disabled'), 'file-only Send')
@@ -104,8 +139,19 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.value = ${JSON.stringify('  Caption   file\n\n\nx  ')}; input.dispatchEvent(new Event('input', {bubbles:true})); })()`)
     await evaluate('document.querySelector(".chat-composer .attach").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".attachment-gallery button").length === 2'), 'gallery contains picker and one image')
+    assert.equal(await evaluate('document.querySelector(".chat-composer .attach").getAttribute("aria-expanded")'), 'true')
+    await evaluate('document.querySelector(".chat-composer .attach").click()')
+    await browser.until(() => evaluate('document.querySelector(".chat-composer .attach").getAttribute("aria-expanded") === "false"'), 'paperclip closes gallery')
+    await evaluate('document.querySelector(".chat-composer .attach").click()')
+    await browser.until(() => evaluate('document.querySelectorAll(".attachment-gallery button").length === 2'), 'gallery reopened')
     await evaluate('document.querySelectorAll(".attachment-gallery button")[1].click()')
     assert.equal(await evaluate('!!document.querySelector(".composer-reply") && document.querySelector(".chat-composer textarea").value.includes("Caption")'), true, 'selection preserves caption and reply')
+    await browser.until(() => evaluate('!!document.querySelector(".composer-attachment .attachment-remove")'), 'reused attachment rendered')
+    await evaluate('document.querySelector(".chat-composer .attach").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".attachment-gallery")'), 'gallery opens alongside selected attachment')
+    assert.deepEqual(await evaluate('[...document.querySelector(".chat-composer").children].filter(el => ["composer-reply","composer-attachment","attachment-gallery"].includes(el.className)).map(el => el.className)'), ['composer-reply', 'composer-attachment', 'attachment-gallery'])
+    await evaluate('document.querySelector(".chat-composer .attach").click()')
+    await browser.until(() => evaluate('!document.querySelector(".attachment-gallery")'), 'gallery closed before sending')
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'reuse saved', 60000)
     await evaluate('document.querySelector(".chat-composer .attach").click()')
@@ -176,5 +222,6 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'complete history processed after file reload')
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     await checkDownloadIntent({ browser, evaluate, origin, downloads, photo: reply, videoTags, png, videoBytes })
+    await checkAttachmentPresentation({ browser, evaluate, origin, select, url, bytes, downloads, directory })
   } finally { await rm(directory, { recursive: true, force: true }) }
 }

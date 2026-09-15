@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { getEventHash } from 'libp2r2p/event'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -16,12 +17,12 @@ export async function checkDownloadIntent ({ browser, evaluate, origin, download
   }
   let timestamp = Math.floor(Date.now() / 1000) + 60
   const insert = async (content, tags, kind = 1063) => {
-    const previous = await evaluate('[...document.querySelectorAll(".message-row")].map(row => row.dataset.messageId)')
     const event = { kind, content, tags, created_at: timestamp++ }
     const saved = await evaluate(`(async () => window.napp.eventStore.addPersonalCopy(${JSON.stringify(event)}, {context:'dm:' + await window.nostr.peekPublicKey()}))()`)
     assert.equal(saved.result.ok, true)
-    const id = await browser.until(() => evaluate(`[...document.querySelectorAll('.message-row')].find(row => !${JSON.stringify(previous)}.includes(row.dataset.messageId))?.dataset.messageId`), 'received download metadata')
+    const id = getEventHash({ ...event, pubkey: await evaluate('window.nostr.peekPublicKey()') })
     const row = `document.querySelector('[data-message-id="${id}"]')`
+    await browser.until(() => evaluate(`!!(${row})`), 'received download metadata by exact ID')
     await reveal(row)
     return row
   }
