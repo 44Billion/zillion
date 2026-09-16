@@ -44,11 +44,24 @@ composer and outbox. Retry retains the same final bytes/chunks/event. Confirmati
 removal and cancellation explicitly close writers and remove files. Source
 replacement cancels stale jobs. Compression and previews share the serial queue.
 
-The first preparation in a document sweeps abandoned artifacts and Chrome's
-`.crswap` siblings only when it acquires their owner lock. Other tabs' live
-files are preserved. A crash leaves cleanup for the next preparation. No draft
-or outbox persistence is introduced. Storage failures that prevent removal may
-also defer removal to a later sweep; no persistent attachment quota was added.
+Maintenance begins two elapsed minutes after the app root mounts, independent
+of account, route and file selection. Hidden documents wait until visible;
+returning before the initial deadline never advances it. Later visible returns
+and 30-minute visible intervals request scans. Preparing a file no longer sweeps.
+
+A nonwaiting maintenance Web Lock prevents concurrent cross-document scans;
+per-artifact locks protect active composer/outbox owners. Only recognized
+artifact names and Chrome swap siblings in the existing compression directory
+are considered. Missing directories are not created. Missing OPFS/Web Locks
+silently disable maintenance.
+
+Deletion failures return an aggregate count and first error internally. They
+retry after 10s, 1min, 5min, then every 30min. Visibility changes respect backoff;
+hidden periods pause scheduling and resume overdue work on return. Unmount
+clears timers/listeners and aborts between storage operations. A power loss
+therefore leaves work for the next app opening, without requiring another upload.
+No draft/outbox persistence or persistent attachment quota is introduced.
+
 
 ## Verified cases
 
@@ -162,3 +175,29 @@ do not use publish/upload scripts.
 
 The final build was registered with the local watcher (`npm start`), without
 remote publication; the real launcher installation was exercised by the browser suite. README, AGENTS and all eleven locale catalogs were updated.
+
+
+## Delayed-maintenance follow-up (September 16, 2026)
+
+Five clock/storage unit tests cover the two-minute boundary, hidden startup and
+return, periodic scans, retry intervals and recovery, overlapping requests,
+unsupported APIs, unmount cancellation, active owners, missing directories,
+unknown names and deletion refusal. The compression browser regression explicitly
+asserts that creating another output does not remove an orphan; repeatable scans
+then clean it while preserving live owners, including after document reload.
+A dedicated launcher test mounts the real app without an account/chat/file
+selection and waits its original two-minute deadline before checking OPFS cleanup.
+
+Reproduce sequentially under the 3 GiB no-swap runner:
+
+```sh
+node --test tests/helpers/temporary-maintenance.test.js
+node ../../44billion/bin/run-browser-tests.js -- node --test --test-concurrency=1 tests/browser/compression.browser.js tests/browser/temporary-maintenance.browser.js
+```
+
+Follow-up results: all 73 Node tests, ESLint and production build passed. The
+sequential compression/maintenance Chrome suites passed with a whole-cgroup
+peak of 1,417 MiB and zero swap. The real launcher preserved all fixture files
+through 119 seconds of document lifetime, then removed the abandoned artifact
+and swap after the root task's two-minute delay. A held owner and unknown name
+remained. The local watcher was restored after validation; no remote publication.

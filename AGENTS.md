@@ -769,7 +769,19 @@ needed; empty folders mark the initial structure.
   Sweep abandoned files and Chrome swap siblings only when the owner's lock can
   be acquired. Never delete another tab's live artifact. Explicit close waits
   for pending writes/finalization and removes the file. Reload does not persist
-  drafts/outbox. Next preparation sweeps abandoned sessions.
+  drafts/outbox. `maintenance.js` is initialized once by the root `useTask`:
+  first scan two elapsed minutes after mount, deferred while hidden; later scans
+  on visible return and every 30 minutes while visible. Route/account changes do
+  not restart this lifetime. Never sweep from `createTemporaryOutput`.
+- Sweep only existing compression directories and recognized artifact/swap names.
+  A nonwaiting maintenance Web Lock serializes tabs; per-artifact locks protect
+  live owners. Share only the in-flight scan, not its completed Promise. Missing
+  directories are normal; missing APIs stop maintenance silently. Return deletion
+  failure counts and the first error internally, without UI notifications.
+- Failed scans retry after 10s, 1min, 5min, then 30min; visible returns cannot bypass
+  backoff. Clear timers/listeners and abort between storage operations on root
+  unmount. Use injected time for schedule tests; browser coverage also waits the
+  real two minutes in the launcher without an account or upload.
 - Any unsupported/failed/non-smaller attempt keeps the exact original; storage
   refusal also falls back. Explicit abort always cancels selection. Unavailable
   compression gets a translated info toast; no-benefit fallback stays quiet.

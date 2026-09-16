@@ -1,3 +1,4 @@
+import { startTemporaryOutputMaintenance } from '#services/media-preparation/maintenance.js'
 import { fileDownloadTarget } from '#helpers/file-download.js'
 import { f, useTask } from '#f'
 import { themeCss } from '#assets/styles/theme.js'
@@ -15,6 +16,7 @@ document.head.append(style)
 f('z-app', ({ h }) => {
   useInitI18n()
   useInitAccount()
+  useTask(({ cleanup }) => cleanup(startTemporaryOutputMaintenance()))
   useTask(({ track }) => {
     const description = track(() => t('Zillion — private conversations'))
     document.querySelector('meta[name="description"]')?.setAttribute('content', description)

@@ -1,23 +1,59 @@
 const directoryName = 'zillion-compression-v1'
 const lockName = name => `${directoryName}:${name}`
-let sweep
+let sweeping
+
+// Only in-flight work is shared; later calls must be able to retry failures.
+export function sweepTemporaryOutputs ({ signal, storage = globalThis.navigator?.storage, locks = globalThis.navigator?.locks } = {}) {
+  if (sweeping) return sweeping
+  sweeping = sweep({ signal, storage, locks }).finally(() => { sweeping = null })
+  return sweeping
+}
+
+async function sweep ({ signal, storage, locks }) {
+  const result = { status: 'complete', removed: 0, retained: 0, failed: 0, error: null }
+  const canceled = () => {
+    if (!signal?.aborted) return false
+    result.status = 'aborted'
+    return true
+  }
+  const failure = error => { result.failed++; result.error ||= error }
+  if (canceled()) return result
+  if (!storage?.getDirectory || !locks?.request) return { ...result, status: 'unsupported' }
+  try {
+    await locks.request(lockName('maintenance'), { ifAvailable: true }, async maintenance => {
+      if (canceled()) return
+      if (!maintenance) { result.status = 'busy'; return }
+      const root = await storage.getDirectory()
+      if (canceled()) return
+      let dir
+      try { dir = await root.getDirectoryHandle(directoryName) } catch (error) {
+        if (error.name === 'NotFoundError') return
+        throw error
+      }
+      if (canceled()) return
+      for await (const name of dir.keys()) {
+        if (canceled()) break
+        const owner = /^(artifact-[\da-f-]+)(?:\.crswap(?:\.\d+)?)?$/.exec(name)?.[1]
+        if (!owner) continue
+        try {
+          await locks.request(lockName(owner), { ifAvailable: true }, async lock => {
+            if (canceled()) return
+            if (!lock) { result.retained++; return }
+            try { await dir.removeEntry(name); result.removed++ } catch (error) {
+              if (error.name !== 'NotFoundError') failure(error)
+            }
+          })
+        } catch (error) { failure(error) }
+      }
+    })
+  } catch (error) { if (!canceled()) failure(error) }
+  return result
+}
 
 async function directory () {
   if (!navigator.storage?.getDirectory || !navigator.locks) throw new Error('COMPRESSION_STORAGE_UNAVAILABLE')
   const root = await navigator.storage.getDirectory()
-  const dir = await root.getDirectoryHandle(directoryName, { create: true })
-  // A held lock identifies a live owner in ANY tab. Never sweep its output.
-  sweep ||= (async () => {
-    for await (const name of dir.keys()) {
-      const owner = /^(artifact-[\da-f-]+)(?:\.crswap(?:\.\d+)?)?$/.exec(name)?.[1]
-      if (!owner) continue
-      await navigator.locks.request(lockName(owner), { ifAvailable: true }, async lock => {
-        if (lock) await dir.removeEntry(name).catch(() => {})
-      })
-    }
-  })().catch(error => { sweep = null; throw error })
-  await sweep
-  return dir
+  return root.getDirectoryHandle(directoryName, { create: true })
 }
 
 export async function createTemporaryOutput (maximumSize, { signal } = {}) {

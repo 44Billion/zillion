@@ -413,7 +413,13 @@ outputs keep the original. Cancel stops the whole selection.
 
 Encoded outputs stream to temporary OPFS files with explicit ownership through
 composer/outbox and retry. They are removed on cancellation, removal or confirmed
-send; Web Locks protect other tabs during abandoned-session cleanup. Only final
+send. Abandoned-session cleanup starts two minutes after mounting the app,
+without requiring a chat or a new upload. If hidden, it waits until visible.
+Subsequent visible returns and 30-minute intervals request maintenance; failed
+removals retry after 10s, 1min, 5min, then every 30min, respecting visibility.
+Web Locks protect live files and prevent simultaneous scans across tabs.
+Preparing an attachment does not trigger a scan; closing the app defers cleanup
+to its next opening. Only final
 bytes determine the filename, MIME, dimensions, ThumbHash and nfile root. History
 reuse does not recompress. `prepareAttachment(file, { compress: false })` is the
 internal opt-out; there is no user-facing switch yet. Downloads remain native.

@@ -1,8 +1,9 @@
 import { createUploadArtifact } from '../../../src/services/media-preparation/artifact.js'
-import { createTemporaryOutput } from '../../../src/services/media-preparation/temporary-output.js'
+import { createTemporaryOutput, sweepTemporaryOutputs } from '../../../src/services/media-preparation/temporary-output.js'
 import { prepareAttachment } from '../../../src/services/chat-attachments.js'
 import { decodeIrfsChunk } from 'libp2r2p/irfs'
 
+window.sweepOutputs = sweepTemporaryOutputs
 window.listOutputs = async () => {
   try { const root = await navigator.storage.getDirectory(); const dir = await root.getDirectoryHandle('zillion-compression-v1'); return Array.fromAsync(dir.keys()) } catch { return [] }
 }
