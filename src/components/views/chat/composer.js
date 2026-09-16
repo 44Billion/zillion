@@ -4,7 +4,6 @@ import { f, useStore, useTask, useMemo } from '#f'
 import { attachmentCatalog, prepareAttachment } from '#services/chat-attachments.js'
 import { useRoutePage } from '#shared/route-page.js'
 import './attachment.js'
-import '#f/components/f-to-signals.js'
 import '#shared/icons/icon-photo-plus.js'
 import '#shared/icons/icon-refresh-alert.js'
 import { error, info } from '#shared/toast.js'
@@ -23,6 +22,7 @@ f('z-chat-composer', ({ h, props }) => {
     galleryId: `attachment-gallery-${crypto.randomUUID()}`,
     attachment$: null, source$: null, preparing$: false, progress$: null, gallery$: false, galleryRef$: null, pickerRef$: null,
     catalog$ () { return props.historyLoaded$?.() === false ? [] : attachmentCatalog(props.messages$?.() || []) },
+    catalogByRoot$ () { return Object.fromEntries(this.catalog$().map(file => [file.root, file])) },
     catalogState$ () { return props.historyState$?.() || 'loaded' },
     loadingHold$: false, loadingAttempt$: 0,
     catalogLoading$ () { return this.loadingHold$() || (!this.catalog$().length && this.catalogState$() === 'loading') },
@@ -154,6 +154,7 @@ f('z-chat-composer', ({ h, props }) => {
           .reply-thumbnail { display: block; flex: none; width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--z-control); }
           .composer-attachment { flex: 0 0 100%; min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--attachment-tile-gap); }
           .attachment-gallery { flex: 0 0 100%; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--attachment-tile-gap); max-height: 230px; overflow: auto; }
+          .gallery-cell { min-width: 0; width: 100%; aspect-ratio: 1; border-radius: var(--attachment-tile-radius); overflow: hidden; background: var(--z-surface); }
           .attachment-gallery button { border-radius: var(--attachment-tile-radius); width: 100%; height: auto; aspect-ratio: 1; background: var(--z-surface); color: var(--z-accent-text); overflow: hidden; cursor: pointer; }
           .attachment-gallery .gallery-retry { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 13rem; }
           .gallery-placeholder { aspect-ratio: 1; border-radius: var(--attachment-tile-radius); background: var(--z-control); position: relative; overflow: hidden; }
@@ -192,7 +193,7 @@ f('z-chat-composer', ({ h, props }) => {
       <input type="file" hidden ref=${view.pickerRef$} onchange=${view.select}>
       ${view.preparing$() ? h`<div class="preparing-file"><button class="preparing-cancel" type="button" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '16px' }} /></button><span role="status">${view.progress$()?.phase === 'compress' ? t('Compressing file…') : t('Preparing file…')}${view.progress$()?.phase === 'compress' && Number.isFinite(view.progress$().progress) ? ` ${Math.floor(view.progress$().progress * 100)}%` : ''}</span></div>` : null}
       ${view.attachment$() ? h`<div class="composer-attachment"><z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, preview: true, remove: view.remove }} /></div>` : null}
-      ${view.gallery$() ? h`<div class="attachment-gallery" ref=${view.galleryRef$} role="group" id=${view.galleryId} aria-label=${t('Attachments')} aria-busy=${String(view.catalogLoading$())}><button type="button" aria-label=${t('Attach file')} onclick=${view.picker}><icon-photo-plus props=${{ size: '36px', weight: 'duotone' }} /></button>${view.catalogLoading$() ? Array.from({ length: 3 }, () => h`<div class="gallery-placeholder" aria-hidden="true"></div>`) : []}${!view.catalogLoading$() && view.catalogState$() === 'unavailable' && !view.catalog$().length ? h`<button class="gallery-retry" type="button" onclick=${view.recover}><icon-refresh-alert props=${{ size: '28px', weight: 'regular' }} /><span>${t('Retry')}</span></button>` : null}${view.catalogLoading$() ? [] : view.catalog$().map(file => h({ key: file.root })`<f-to-signals props=${{ from: { file }, render: ({ h, props: data }) => h`<z-chat-attachment-tile props=${{ file$: data.file$, select: view.reuse }} />` }} />`)}</div>` : null}
+      ${view.gallery$() ? h`<div class="attachment-gallery" ref=${view.galleryRef$} role="group" id=${view.galleryId} aria-label=${t('Attachments')} aria-busy=${String(view.catalogLoading$())}><button type="button" aria-label=${t('Attach file')} onclick=${view.picker}><icon-photo-plus props=${{ size: '36px', weight: 'duotone' }} /></button>${view.catalogLoading$() ? Array.from({ length: 3 }, () => h`<div class="gallery-placeholder" aria-hidden="true"></div>`) : []}${!view.catalogLoading$() && view.catalogState$() === 'unavailable' && !view.catalog$().length ? h`<button class="gallery-retry" type="button" onclick=${view.recover}><icon-refresh-alert props=${{ size: '28px', weight: 'regular' }} /><span>${t('Retry')}</span></button>` : null}${view.catalogLoading$() ? [] : view.catalog$().map(file => h({ key: file.root })`<div class="gallery-cell"><z-chat-attachment-tile props=${{ root: file.root, files$: view.catalogByRoot$, select: view.reuse }} /></div>`)}</div>` : null}
       <div class="composer-field" ref=${view.fieldRef$}>
         <textarea ref=${view.inputRef$} rows="1" placeholder=${t(view.attachment$() ? 'Caption' : 'Message')} aria-label=${t('Message')}
           enterkeyhint="enter" oninput=${event => view.text$(event.target.value)}></textarea>

@@ -1,4 +1,7 @@
 import '#components/app.js'
+import { nfileEncode } from 'libp2r2p/nip19'
+import { createFileMetadata } from 'libp2r2p/nip94'
+import { rememberAttachmentPreview } from '#services/attachment-previews.js'
 import { f, useStore, useClosestStore, useMemo } from '#f'
 import { useAccount } from '#hooks/use-account.js'
 
@@ -23,6 +26,19 @@ f('z-gallery-ui-fixture', ({ h }) => {
       this.historyState$('loading')
       runtime.work = Promise.withResolvers()
       return runtime.work.promise
+    },
+    async seedGallery (count) {
+      const canvas = document.createElement('canvas'); canvas.width = 8; canvas.height = 8
+      const ctx = canvas.getContext('2d'); ctx.fillStyle = 'green'; ctx.fillRect(0, 0, 8, 8)
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
+      this.messages$(Array.from({ length: count }, (_, index) => {
+        const root = (index + 1).toString(16).padStart(64, '0')
+        const mime = 'image/png'; const filename = `gallery-${index}.png`
+        const file = { root, mime, filename, width: 8, height: 8, size: blob.size, service: 'irfs', url: `https://nostr.alt/${nfileEncode({ root, mime, filename })}?localOnly=1` }
+        rememberAttachmentPreview(file, { blob, width: 8, height: 8 })
+        return { ...createFileMetadata(file), id: root, status: 'saved' }
+      }))
+      this.historyState$('loaded')
     },
     settle (state) { this.historyState$(state); runtime.work?.resolve(); runtime.work = null }
   })

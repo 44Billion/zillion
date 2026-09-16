@@ -161,9 +161,39 @@ export async function checkGalleryUI ({ browser, evaluate, origin }) {
     await browser.until(() => evaluate('!document.querySelector(".gallery-fixture .attachment-gallery")'), 'late empty result stays closed')
     await evaluate('new Promise(resolve => setTimeout(resolve, 2100))')
     assert.equal(await evaluate('!!document.querySelector(".gallery-fixture .attachment-gallery")'), false, 'expired hold never reopens panel')
+    await checkGalleryGeometry({ browser, evaluate })
+    await browser.send('Emulation.setCPUThrottlingRate', { rate: 20 }, context.sessionId)
+    try { await checkGalleryGeometry({ browser, evaluate }) } finally { await browser.send('Emulation.setCPUThrottlingRate', { rate: 1 }, context.sessionId) }
     console.log('Gallery: two-second retry display, stable height, reduced motion, keyboard and empty result verified')
   } finally {
     await evaluate('window.galleryDwellObserver?.disconnect(); galleryUI.settle("loaded"); selfChatFixture.galleryFixture$(false)')
     await browser.until(() => evaluate('!document.querySelector(".gallery-fixture")'), 'controlled gallery disposed')
   }
+}
+
+async function checkGalleryGeometry ({ browser, evaluate }) {
+  await evaluate('document.querySelector(".gallery-fixture").style.width = "718px"; galleryUI.seedGallery(8)')
+  await evaluate('document.querySelector(".gallery-fixture .attach").click()')
+  await browser.until(() => evaluate('document.querySelectorAll(".gallery-fixture .attachment-gallery img").length === 8 && [...document.querySelectorAll(".gallery-fixture .attachment-gallery img")].every(img => img.complete && img.naturalWidth)'), 'cached multirow gallery')
+  const result = await evaluate(`(async () => {
+    const frames = [], readyHeight = document.querySelector('.gallery-fixture .attachment-gallery').getBoundingClientRect().height;
+    for (let cycle = 0; cycle < 3; cycle++) {
+      document.querySelector('.gallery-fixture .attach').click();
+      for (let n = 0; n < 6; n++) await new Promise(requestAnimationFrame);
+      document.querySelector('.gallery-fixture .attach').click();
+      for (let n = 0; n < 20; n++) {
+        await new Promise(requestAnimationFrame);
+        const gallery = document.querySelector('.gallery-fixture .attachment-gallery');
+        if (gallery) frames.push({ cycle, height: gallery.getBoundingClientRect().height, images: gallery.querySelectorAll('img').length, buttons: gallery.querySelectorAll('button').length, scrollHeight: gallery.scrollHeight });
+      }
+    }
+    return { readyHeight, frames };
+  })()`)
+  console.log('Gallery multirow frames:', { readyHeight: result.readyHeight, frames: result.frames.length, heights: [...new Set(result.frames.map(frame => frame.height))], imageCounts: [...new Set(result.frames.map(frame => frame.images))] })
+  assert.equal(result.readyHeight, 230, 'second row is partially visible')
+  assert.ok(result.frames.length >= 40)
+  assert.ok(result.frames.every(frame => Math.abs(frame.height - result.readyHeight) < 1), 'gallery height is final from its first mounted frame')
+  assert.ok(result.frames.every(frame => frame.images === 8), 'cached thumbnails never disappear during reopening')
+  await evaluate('document.querySelector(".gallery-fixture .attach").click()')
+  await browser.until(() => evaluate('!document.querySelector(".gallery-fixture .attachment-gallery")'), 'multirow gallery closes')
 }

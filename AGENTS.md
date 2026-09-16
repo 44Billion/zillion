@@ -689,6 +689,12 @@ needed; empty folders mark the initial structure.
   a late empty result keeps the panel open with add-file only. Close/reopen retries
   unavailable history; completion never changes panel visibility. Cached tiles
   acquire before first paint; cold tiles retain visibility-gated preparation.
+  Gallery cells reserve square geometry in the parent render. Keyed thumbnail
+  components receive an immutable root plus the shared reactive metadata index;
+  avoid intermediate item adapters that remount in stages and briefly remove
+  entire rows/images when reconnecting. Keep index lookup O(1) per tile. Frame
+  regressions must include multirow galleries from the first mounted frame,
+  including frames where no thumbnail child has rendered yet.
 - Local nfile rendering bypasses HTTP caches and connectivity gates. Keep geometry,
   ThumbHash placeholders, active-route cleanup and the existing growth controller.
   Downloads are precomputed native links from getFileDownloadUrl; never file-sized

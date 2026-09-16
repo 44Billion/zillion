@@ -120,8 +120,10 @@ f('z-chat-attachment', ({ h, props }) => {
 f('z-chat-attachment-tile', ({ h, props }) => {
   const page = useRoutePage()
   const runtime = useMemo(() => ({ preview: null, key: null }))
-  const view = useStore({ revision$: 0 })
-  const file = props.file$()
+  // The root is immutable for this keyed tile. Metadata stays reactive through
+  // the shared catalog signal, without remounting intermediate item adapters.
+  const view = useStore({ revision$: 0, file$ () { return props.files$()[props.root] || {} } })
+  const file = view.file$()
   const key = `${file.root || file.url}:${file.mime}`
   const active = page.isActive$()
   // Render from a live lease, never from a restored signal holding a revoked
@@ -134,8 +136,8 @@ f('z-chat-attachment-tile', ({ h, props }) => {
   useTask(({ cleanup }) => cleanup(() => { runtime.preview?.close(); runtime.preview = null }))
   useTask(({ track, cleanup }) => {
     const active = track(() => page.isActive$())
-    track(() => `${props.file$().root || props.file$().url}:${props.file$().mime}`)
-    const file = props.file$()
+    track(() => `${view.file$().root || view.file$().url}:${view.file$().mime}`)
+    const file = view.file$()
     const controller = new AbortController()
     cleanup(() => controller.abort())
     if (!active || (runtime.preview && !runtime.preview.closed)) return

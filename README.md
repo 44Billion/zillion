@@ -368,7 +368,9 @@ previews (at most 320px) instead of decoding the original again. The 8 MiB / 128
 FIFO supplies cached gallery previews synchronously with a stable shared URL;
 eviction/replacement revokes it only after every consumer releases it. Reopening
 a cached tile therefore needs neither a placeholder transition nor another read
-of the original. Video players
+of the original. Gallery cells reserve their squares in the parent layout and
+read reactive metadata directly by root, so reopening does not briefly lose
+its rows or cached thumbnails during item-adapter remounts. Video players
 use the small poster and load the original only for playback. Preview preparation
 runs serially: PNGs are reduced scanline by scanline, JPEGs request native scaled
 decoding, and videos use MediaBunny. Disposable image Workers and MediaBunny's
