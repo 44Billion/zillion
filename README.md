@@ -401,3 +401,20 @@ Implementation, measured memory bounds and remaining limitations are recorded in
 The preceding preview memory research is recorded in
 [docs/media-memory-experiments.md](docs/media-memory-experiments.md), with the
 [follow-up variant tests and future compression plan](docs/media-memory-variants-and-plan.md).
+
+
+New picked images, audio and video are compressed automatically before preview
+and IRFS preparation. The shorter oriented side selects 1080/720/480px, without
+upscaling or cropping. Opaque images use JPEG .7, transparent images and
+animations use WebP .7, mono/stereo audio uses MP3 128 kbps, and video uses
+MediaBunny medium-quality H.264/AAC in MP4. Animation timing/looping is retained;
+video alpha/HDR follows MediaBunny defaults. Unsupported, unsuccessful or larger
+outputs keep the original. Cancel stops the whole selection.
+
+Encoded outputs stream to temporary OPFS files with explicit ownership through
+composer/outbox and retry. They are removed on cancellation, removal or confirmed
+send; Web Locks protect other tabs during abandoned-session cleanup. Only final
+bytes determine the filename, MIME, dimensions, ThumbHash and nfile root. History
+reuse does not recompress. `prepareAttachment(file, { compress: false })` is the
+internal opt-out; there is no user-facing switch yet. Downloads remain native.
+See [compression validation and limitations](docs/media-compression-validation.md).

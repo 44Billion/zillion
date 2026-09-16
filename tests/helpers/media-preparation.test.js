@@ -66,12 +66,12 @@ test('media queue serializes jobs and canceled waiters never start', async () =>
 
 test('upload artifact preserves original bytes and identity with compression disabled', async () => {
   const original = new File(['original bytes'], 'file.txt', { type: 'text/plain' })
-  const artifact = createUploadArtifact(original)
+  const artifact = await createUploadArtifact(original, { compress: false })
   assert.equal(artifact.file, original)
   assert.equal(await artifact.file.text(), 'original bytes')
-  artifact.close()
-  artifact.close()
-  assert.throws(() => artifact.file, /CLOSED/)
+  await artifact.close()
+  await artifact.close()
+  assert.throws(() => artifact.file, { name: 'AbortError' })
 })
 
 test('local reader refuses unrelated URLs before fetching', async () => {

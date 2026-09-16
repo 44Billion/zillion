@@ -6,7 +6,7 @@ import { useRoutePage } from '#shared/route-page.js'
 import './attachment.js'
 import '#f/components/f-to-signals.js'
 import '#shared/icons/icon-photo-plus.js'
-import { error } from '#shared/toast.js'
+import { error, info } from '#shared/toast.js'
 import { t } from '#i18n/messages.js'
 import { shortQuotedText } from '#helpers/reference-label.js'
 import { useReplyThumbnail } from './hooks/use-reply-thumbnail.js'
@@ -20,14 +20,14 @@ f('z-chat-composer', ({ h, props }) => {
   const runtime = useMemo(() => ({ attachment: null, controller: null }))
   const view = useStore({
     galleryId: `attachment-gallery-${crypto.randomUUID()}`,
-    attachment$: null, source$: null, preparing$: false, gallery$: false, pickerRef$: null,
+    attachment$: null, source$: null, preparing$: false, progress$: null, gallery$: false, pickerRef$: null,
     catalog$ () { return attachmentCatalog(props.messages$?.() || []) },
     replyAttachment$ () { return props.reply$?.()?.attachment },
     canSend$ () { return props.canSend$?.() && !this.preparing$() && (!!this.attachment$() || !!this.text$().trim()) },
     remove () {
       runtime.controller?.abort(); runtime.controller = null
       runtime.attachment?.close?.(); runtime.attachment = null
-      this.attachment$(null); this.source$(null); this.preparing$(false)
+      this.attachment$(null); this.source$(null); this.preparing$(false); this.progress$(null)
     },
     picker () { this.gallery$(false); this.pickerRef$()?.click() },
     attach () { if (this.catalog$().length) this.gallery$(!this.gallery$()); else this.picker() },
@@ -44,9 +44,10 @@ f('z-chat-composer', ({ h, props }) => {
       const controller = new AbortController()
       runtime.controller = controller
       try {
-        const attachment = await prepareAttachment(file, { signal: controller.signal })
+        const attachment = await prepareAttachment(file, { signal: controller.signal, onProgress: progress => { if (!controller.signal.aborted) this.progress$(progress) } })
         if (controller.signal.aborted) { attachment.close(); return }
         runtime.attachment = attachment
+        if (attachment.compression.reason === 'unavailable') info(() => t('Compression unavailable; using original file'))
         this.attachment$(attachment.metadata); this.source$(attachment.source)
       } catch (cause) {
         if (!controller.signal.aborted) error(() => t(cause.message === 'EMPTY_IRFS_FILE' ? 'Empty files cannot be sent' : 'Could not prepare file'))
@@ -151,7 +152,7 @@ f('z-chat-composer', ({ h, props }) => {
         : null}<span class=${`reply-text ${view.replyAttachment$() && !thumbnail.visible$() ? 'file-reply-text' : ''}`} title=${view.replyContent$()} aria-label=${t('Reply')}>${view.replyAttachment$() && !thumbnail.visible$() ? h`<z-file-reply props=${{ file$: view.replyAttachment$, caption$: view.replyContent$ }} />` : h`${t('Reply')}: ${view.replyText$()}`}</span></div><button class="cancel-reply" type="button" aria-label=${t('Cancel reply')} onclick=${props.clearReply}><icon-x props=${{ size: '24px', weight: 'regular' }} /></button></div>`
 : null}
       <input type="file" hidden ref=${view.pickerRef$} onchange=${view.select}>
-      ${view.preparing$() ? h`<div class="preparing-file"><button class="preparing-cancel" type="button" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '16px' }} /></button><span role="status">${t('Preparing file…')}</span></div>` : null}
+      ${view.preparing$() ? h`<div class="preparing-file"><button class="preparing-cancel" type="button" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '16px' }} /></button><span role="status">${view.progress$()?.phase === 'compress' ? t('Compressing file…') : t('Preparing file…')}${view.progress$()?.phase === 'compress' && Number.isFinite(view.progress$().progress) ? ` ${Math.floor(view.progress$().progress * 100)}%` : ''}</span></div>` : null}
       ${view.attachment$() ? h`<div class="composer-attachment"><z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, preview: true, remove: view.remove }} /></div>` : null}
       ${view.gallery$() ? h`<div class="attachment-gallery" id=${view.galleryId}><button type="button" aria-label=${t('Attach file')} onclick=${view.picker}><icon-photo-plus props=${{ size: '36px', weight: 'duotone' }} /></button>${view.catalog$().map(file => h({ key: file.root })`<f-to-signals props=${{ from: { file }, render: ({ h, props: data }) => h`<z-chat-attachment-tile props=${{ file$: data.file$, select: view.reuse }} />` }} />`)}</div>` : null}
       <div class="composer-field" ref=${view.fieldRef$}>

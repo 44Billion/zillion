@@ -33,7 +33,10 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     }
   }
   try {
-    const app = await prepareTestApp(await compile({ development: process.env.ZILLION_FILES_ONLY !== '1', futureFeatures: true }), { identifier: 'self-chat-test', name: 'Self chat test' })
+    // Source maps are not exercised here. Installing their multi-MiB JSON via
+    // the fixture CDP expression needlessly multiplies startup memory. Keep
+    // development UI flags, but omit maps from this disposable installation.
+    const app = await prepareTestApp(await compile({ development: process.env.ZILLION_FILES_ONLY !== '1', sourceMaps: false, futureFeatures: true }), { identifier: 'self-chat-test', name: 'Self chat test' })
     browser = await launchChrome({
       intercept: request => {
         const url = new URL(request.url)
@@ -105,7 +108,9 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       return browser.evaluate(`Boolean(document.querySelector('account-avatar[pubkey="${pubkey}"]'))`, vaultOrigin)
     }, 'imported test account', 45000)
 
+    console.log('Self chat: installing test app without source maps')
     await browser.evaluate(app.installExpression)
+    app.installExpression = null
     await browser.navigate(`${launcherOrigin}/${app.app}`)
     const appUrl = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app iframe')
     const origin = new URL(appUrl).origin

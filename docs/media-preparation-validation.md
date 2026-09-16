@@ -1,5 +1,8 @@
 # Local media preparation and validation
 
+> Historical preview-stage report. Automatic compression now precedes this
+> stage; see [current compression contract and validation](media-compression-validation.md).
+
 ## Implemented flow
 
 Selection now creates an explicitly disposable upload artifact. Its File is

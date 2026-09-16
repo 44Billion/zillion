@@ -1,7 +1,7 @@
 // PNG row reduction: two scanlines and target-sized accumulators, including
-// Adam7, palette and transparency. This preview backend averages encoded color
-// values with premultiplied alpha; full-quality compression needs its own
-// color-managed resampler rather than reusing this thumbnail.
+// Adam7, palette and transparency. Previews average encoded color; compression
+// requests a separate linear-sRGB reduction at the final upload resolution.
+// Unrecognized profiles use native color management or keep the original.
 import { Inflate, deflate } from 'pako'
 function readIHDR (head) {
   if (head.length !== 33 || ![137, 80, 78, 71, 13, 10, 26, 10].every((v2, i) => head[i] === v2) || String.fromCharCode(...head.subarray(12, 16)) !== 'IHDR') throw Error('INVALID_PNG')
@@ -34,7 +34,7 @@ function chunk (type, data) {
   v.setUint32(data.length + 8, (crc(b.subarray(4, data.length + 8)) ^ 4294967295) >>> 0)
   return b
 }
-async function pngPreview (file, signal, maxDimension = 320) {
+async function pngPreview (file, signal, maxDimension = 320, { linear = false, onProgress } = {}) {
   const head = await file.read(0, 33)
   const { width, height, depth, colorType, interlace } = readIHDR(head)
   const channels = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 }[colorType]
@@ -42,6 +42,8 @@ async function pngPreview (file, signal, maxDimension = 320) {
   const scale = Math.min(1, maxDimension / Math.max(width, height))
   const tw = Math.max(1, Math.round(width * scale))
   const th = Math.max(1, Math.round(height * scale))
+  const toLinear = value => { const c = value / 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4 }
+  const toEncoded = value => 255 * (value <= 0.0031308 ? value * 12.92 : 1.055 * value ** (1 / 2.4) - 0.055)
   const sums = new Float64Array(tw * th * 5)
   const pixels = new Uint8ClampedArray(tw * th * 4)
   const colorChunks = []
@@ -117,9 +119,9 @@ async function pngPreview (file, signal, maxDimension = 320) {
       }
       const tx = Math.min(tw - 1, Math.floor((x0 + x * dx) * tw / width))
       const p = (ty * tw + tx) * 5
-      sums[p] += r * a
-      sums[p + 1] += g * a
-      sums[p + 2] += b * a
+      sums[p] += (linear ? toLinear(r) : r) * a
+      sums[p + 1] += (linear ? toLinear(g) : g) * a
+      sums[p + 2] += (linear ? toLinear(b) : b) * a
       sums[p + 3] += a
       sums[p + 4]++
     }
@@ -168,6 +170,7 @@ async function pngPreview (file, signal, maxDimension = 320) {
       if (closedData || (colorType === 3 && !palette)) throw Error('INVALID_PNG_IDAT')
       seenData = true
     } else if (seenData) closedData = true
+    if (linear && ['iCCP', 'cHRM'].includes(type)) throw Error('UNSUPPORTED_COMPRESSION_COLOR_PROFILE')
     if (type === 'PLTE' && (seenData || palette || length % 3 || !length || length > 768)) throw Error('INVALID_PNG_PALETTE')
     if (type === 'tRNS' && (seenData || transparency || ![0, 2, 3].includes(colorType) || (colorType === 0 && length !== 2) || (colorType === 2 && length !== 6) || (colorType === 3 && (!palette || length > palette.length / 3)))) throw Error('INVALID_PNG_TRANSPARENCY')
     if (type === 'IEND' && length !== 0) throw Error('INVALID_PNG_END')
@@ -189,6 +192,7 @@ async function pngPreview (file, signal, maxDimension = 320) {
       }
       if (keep) parts.push(bytes)
       n += size
+      onProgress?.((offset + n) / file.size)
       if (++chunks % 8 === 0) await new Promise((resolve) => setTimeout(resolve, 0))
     }
     const expected = new DataView((await file.read(offset + length, offset + length + 4)).buffer).getUint32(0)
@@ -212,7 +216,8 @@ async function pngPreview (file, signal, maxDimension = 320) {
           profile.push(data.subarray(separator + 2), true)
           if (profile.err || !profile.ended) throw Error('INVALID_PNG_PROFILE')
         }
-        colorChunks.push(chunk(type, data))
+        if (linear && type === 'gAMA' && (data.length !== 4 || new DataView(data.buffer).getUint32(0) !== 45455)) throw Error('UNSUPPORTED_COMPRESSION_COLOR_PROFILE')
+        if (!linear || type === 'eXIf') colorChunks.push(chunk(type, data))
       }
     }
     offset += length + 4
@@ -229,9 +234,9 @@ async function pngPreview (file, signal, maxDimension = 320) {
     const q = i * 4
     const a = sums[p + 3]
     if (a) {
-      pixels[q] = sums[p] / a
-      pixels[q + 1] = sums[p + 1] / a
-      pixels[q + 2] = sums[p + 2] / a
+      pixels[q] = linear ? toEncoded(sums[p] / a) : sums[p] / a
+      pixels[q + 1] = linear ? toEncoded(sums[p + 1] / a) : sums[p + 1] / a
+      pixels[q + 2] = linear ? toEncoded(sums[p + 2] / a) : sums[p + 2] / a
     }
     pixels[q + 3] = a / sums[p + 4]
   }
@@ -242,7 +247,7 @@ async function pngPreview (file, signal, maxDimension = 320) {
   ihdr.set([8, 6, 0, 0, 0], 8)
   const raw = new Uint8Array(th * (tw * 4 + 1))
   for (let y2 = 0; y2 < th; y2++) raw.set(pixels.subarray(y2 * tw * 4, (y2 + 1) * tw * 4), y2 * (tw * 4 + 1) + 1)
-  const blob = new Blob([head.subarray(0, 8), chunk('IHDR', ihdr), ...colorChunks, chunk('IDAT', deflate(raw)), chunk('IEND', new Uint8Array())], { type: 'image/png' })
+  const blob = new Blob([head.subarray(0, 8), chunk('IHDR', ihdr), ...(linear ? [chunk('sRGB', Uint8Array.of(0))] : []), ...colorChunks, chunk('IDAT', deflate(raw)), chunk('IEND', new Uint8Array())], { type: 'image/png' })
   return { blob, width, height, thumbnailWidth: tw, thumbnailHeight: th }
 }
 export {

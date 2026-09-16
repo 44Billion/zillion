@@ -44,7 +44,7 @@ window.cancelMediaPreview = async () => {
 }
 window.checkPreparedBytes = async () => {
   const file = document.querySelector('input').files[0]
-  const attachment = await prepareAttachment(file)
+  const attachment = await prepareAttachment(file, { compress: false })
   const img = new Image()
   try {
     img.src = attachment.source

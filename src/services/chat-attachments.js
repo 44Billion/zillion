@@ -22,17 +22,16 @@ export function attachmentCatalog (events) {
   })
 }
 
-export async function prepareAttachment (file, { signal, onProgress } = {}) {
+export async function prepareAttachment (file, { signal, onProgress, compress = true } = {}) {
   const controller = new AbortController()
   const combined = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])])
   let prepared, artifact, source
-  const close = () => { controller.abort(); prepared?.close(); artifact?.close(); if (source) URL.revokeObjectURL(source) }
+  const close = () => { controller.abort(); prepared?.close(); if (source) URL.revokeObjectURL(source); return artifact?.close() || Promise.resolve() }
   try {
-    artifact = createUploadArtifact(file, { signal: combined })
+    artifact = await createUploadArtifact(file, { signal: combined, onProgress, compress })
     const upload = artifact.file
     const mime = upload.type || 'application/octet-stream'
-    // Compression is disabled. If enabled later, the finalized artifact must
-    // precede BOTH the preview and the IRFS root, never the other way around.
+    // Preview and IRFS consume the SAME finalized artifact, including fallback.
     let preview
     try { preview = await prepareMediaPreview(upload, mime, { signal: combined, onProgress }) } catch { combined.throwIfAborted() }
     prepared = await prepareIrfsFile(upload, { signal: combined, onProgress: value => onProgress?.({ phase: 'hash', ...value }) })
@@ -42,8 +41,8 @@ export async function prepareAttachment (file, { signal, onProgress } = {}) {
     const metadata = { root: prepared.root, size: upload.size, mime, filename, url: `https://nostr.alt/${entity}?localOnly=1`, service: 'irfs', ...(preview ? { width: preview.width, height: preview.height, thumbhash: preview.thumbhash } : {}) }
     rememberAttachmentPreview(metadata, preview)
     source = preview ? URL.createObjectURL(preview.blob) : null
-    return { prepared, source, close, metadata }
-  } catch (error) { close(); throw error }
+    return { prepared, source, close, metadata, compression: { changed: artifact.changed, reason: artifact.reason } }
+  } catch (error) { await close(); throw error }
 }
 
 // Consume the stream with bounded memory, confirming every byte is available

@@ -13,3 +13,16 @@ ICC, separate DC scans and truncation. Profiles come from the host's colord ICC
 profiles used in the original investigation. Animated fixtures test first/default
 frame preview, not animation playback. See docs/media-memory-variants-and-plan.md
 and the locally preserved tmp/media-memory-variants generators for provenance.
+
+
+Compression fixtures added in September 2026 are synthetic. `compression.mp4`
+uses FFmpeg 7.0.2 testsrc2 at 1600x900/24fps for 2s, H.264 ultrafast/crf5 and a
+440Hz AAC track. `compression.wav` is stereo 48kHz PCM. `compression-hdr.webm`
+uses 640x360/12fps, 10-bit VP9 with BT.2020/PQ tags (not a reference HDR master).
+`compression-rotated.jpg` uses Pillow, deterministic random RGB 1600x900,
+quality 95, EXIF orientation 6 and a synthetic Artist field. GIF/APNG fixtures
+have 12 frames 400x300, transparent pixels, differing disposal/blend modes,
+50/100ms durations and finite loops. The APNG includes disposable textual
+metadata to exercise successful recompression and metadata removal. Long audio,
+video and animation variants are generated at test time in temporary storage;
+no long original or ffmpeg executable enters the application bundle.

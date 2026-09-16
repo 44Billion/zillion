@@ -995,5 +995,31 @@
     "zh-TW": "未命名檔案",
     "ja": "名前のないファイル",
     "ko": "이름-없는-파일"
+  },
+  "Compressing file…": {
+    "en": "Compressing file…",
+    "fr": "Compression du fichier…",
+    "it": "Compressione del file…",
+    "de": "Datei wird komprimiert…",
+    "es": "Comprimiendo archivo…",
+    "pt-BR": "Comprimindo arquivo…",
+    "ru": "Сжатие файла…",
+    "zh-CN": "正在压缩文件…",
+    "zh-TW": "正在壓縮檔案…",
+    "ja": "ファイルを圧縮中…",
+    "ko": "파일 압축 중…"
+  },
+  "Compression unavailable; using original file": {
+    "en": "Compression unavailable; using original file",
+    "fr": "Compression indisponible ; fichier original conservé",
+    "it": "Compressione non disponibile; uso del file originale",
+    "de": "Komprimierung nicht verfügbar; Originaldatei wird verwendet",
+    "es": "Compresión no disponible; se usará el archivo original",
+    "pt-BR": "Compressão indisponível; usando o arquivo original",
+    "ru": "Сжатие недоступно; используется исходный файл",
+    "zh-CN": "无法压缩，将使用原始文件",
+    "zh-TW": "無法壓縮，將使用原始檔案",
+    "ja": "圧縮できないため、元のファイルを使用します",
+    "ko": "압축할 수 없어 원본 파일을 사용합니다"
   }
 }

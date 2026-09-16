@@ -26,7 +26,7 @@ export async function jpegDimensions (source) {
   return { width, height, progressive, orientation }
 }
 
-function exifOrientation (bytes) {
+export function exifOrientation (bytes) {
   try {
     if (String.fromCharCode(...bytes.subarray(0, 6)) !== 'Exif\0\0') return
     const view = new DataView(bytes.buffer, bytes.byteOffset + 6, bytes.length - 6)

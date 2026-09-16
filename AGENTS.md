@@ -630,11 +630,11 @@ needed; empty folders mark the initial structure.
 ## Self-chat attachments
 
 - Preparation uses `media-preparation/` before hashing sequential 51,000-byte
-  slices. `artifact.js` currently preserves the original File identity. A future
-  compression stage must finalize its output before BOTH preview and IRFS hashing;
+  slices. `artifact.js` is asynchronous and compresses new media by default. Its
+  finalized File must supply BOTH preview and IRFS hashing;
   never upload a thumbnail or the experimental DC-only JPEG reconstruction.
   The compact preparation cancel control precedes a separate live status.
-- One shared queue serializes local preview work. Read File slices or validated
+- One shared queue serializes compression and local preview work. Read File slices or validated
   local nfile HEAD/ranges in bounded pieces; never materialize a whole local
   response on the main thread. Local previews have a cancellable 120s watchdog,
   separate from the 15s HTTP preview timeout.
@@ -737,5 +737,47 @@ needed; empty folders mark the initial structure.
   `docs/media-preparation-validation.md`. MediaBunny alpha merging and its MP3
   extension can create Workers; do not assume the whole library is Worker-free.
   Streaming encoded output alone does not bound native codec memory. Compression
-  is not enabled, and incomplete DC JPEG previews must not become compression
-  input. Preserve the reported format/platform gaps when planning integration.
+  is now enabled; see `docs/media-compression-validation.md`. Incomplete DC JPEG
+  previews must never become compression input. Preserve reported platform gaps.
+
+
+## Automatic attachment compression
+
+- `createUploadArtifact` is async, returns `{ file, changed, reason, close }` and
+  owns a disk-backed final File. `prepareAttachment(..., { compress: false })`
+  disables transformation internally; the composer defaults to enabled. Do not
+  recompress retries or catalog reuse. Derive all metadata/root/URL from final bytes.
+- Resize the shorter display side (rotation/SAR applied): >=1080 ->1080,
+  >=720 ->720, otherwise 480. Never upscale/crop; round only for the codec.
+  Static opaque JPEG .7; alpha WebP .7; animation WebP .7 with full composited
+  frames, original cadence/duration/loop. MP3 128 kbps mono/stereo; video
+  MP4 AVC medium quality, AAC 128 kbps, two-second keyframes, original cadence.
+  Video uses MediaBunny default alpha/HDR treatment. Do not silently drop tracks
+  or downmix multichannel audio. Reopen and validate outputs before accepting.
+- Bundle MediaBunny and official AAC/MP3 extensions locally, never CDN. Image
+  Worker writes <=64KiB pieces with acknowledgment; MediaBunny StreamTarget uses
+  bounded 1MiB chunks. Never use BufferTarget, whole PCM or a file-sized output
+  array. Static native canvas encoding holds only a bounded output surface.
+- PNG compression requests linear-sRGB reduction at upload resolution, separate
+  from the 320px preview. Unsupported color profiles use bounded native color
+  management or original fallback. Memory guards currently retain originals
+  above 8 Mi output pixels, 16 Mi native-image pixels, 32 MiB native image input, or
+  10,000 animation frames. These are compression safeguards, not upload quotas
+  or preview cutoffs. JPEG baseline uses native scaled decoding.
+- `temporary-output.js` owns `zillion-compression-v1/artifact-<uuid>` OPFS files.
+  Acquire a Web Lock before creating each file; retain it through outbox/retry.
+  Sweep abandoned files and Chrome swap siblings only when the owner's lock can
+  be acquired. Never delete another tab's live artifact. Explicit close waits
+  for pending writes/finalization and removes the file. Reload does not persist
+  drafts/outbox. Next preparation sweeps abandoned sessions.
+- Any unsupported/failed/non-smaller attempt keeps the exact original; storage
+  refusal also falls back. Explicit abort always cancels selection. Unavailable
+  compression gets a translated info toast; no-benefit fallback stays quiet.
+  Preserve caption/reply, disable Send while preparing, retain accessible cancel.
+- Run compression matrix/memory tests sequentially with the existing 3 GiB
+  runner, then self-chat integration in the real launcher. Report native memory
+  costs, codec gaps and unavailable mobile/other-browser coverage separately.
+
+- Self-chat integration keeps development feature flags but sets
+  `sourceMaps: false` for its disposable installation. Installing unused multi-MiB maps via
+  a CDP expression exceeded the 3 GiB test budget. Normal development keeps maps.
