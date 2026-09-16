@@ -482,6 +482,14 @@ needed; empty folders mark the initial structure.
 
 - `useInitAccount` runs once in `z-app`, calls `peekPublicKey` early and owns
   profile/history subscriptions. `useAccount` readers do not start subscriptions.
+  Its internal `recover()` coalesces identity/history recovery across the clip,
+  gallery Retry and conversation Retry. Never recreate a same-account service
+  just to retry reads: that would discard its outbox and prepared attachments.
+  Replace subscriptions with generation guards, including after decryption;
+  account teardown/change closes the old service and suppresses late results.
+  `historyState$` distinguishes loading/loaded/unavailable. `historyLoaded$`
+  becomes true only after initial query processing and stays true during
+  same-account recovery, so scroll initialization does not restart.
   `/chat/user` never falls back to fixture messages, including when signed out.
 - `src/services/self-chat.js` uses unsigned kind-9 text and kind-1063 file templates, explicit context
   `dm:<own hex pubkey>`, `addPersonalCopy` and query/subscribe. No relay sends or
@@ -501,7 +509,7 @@ needed; empty folders mark the initial structure.
   unsigned template, ID, timestamp and reply, and coalesce in-flight attempts.
   Either an acknowledged successful write or a verified live copy confirms the
   message; a late failure cannot regress that confirmation or duplicate a bubble.
-  Retained routes share the outbox, but reload/root teardown/account restart
+  Retained routes and same-account history recovery share the outbox, but reload/root teardown/account change
   discards unpersisted entries. This is not a durable offline send queue.
 - Real bubbles use `z-chat-message-status`: use 14px-wide icons at the
   current metadata height for the static Tabler clock and red alert-circle.
@@ -647,8 +655,11 @@ needed; empty folders mark the initial structure.
   Workers are allowed after verification in the launcher (including alpha merge).
 - `attachment-previews.js` keeps at most 8 MiB/128 small compressed thumbnails in
   an in-memory FIFO, separate from HTTP/avatar caches. Share in-flight work;
-  cancel it when its last consumer leaves. Each consumer owns and revokes its
-  own URL. Reuse selected thumbnails in pending/confirmed bubbles, gallery and
+  cancel it when its last consumer leaves. Each cache entry owns one stable URL;
+  consumers acquire disposable leases, synchronously for cache hits. Revoke a
+  retired entry's URL only after its last lease closes. Gallery renders must
+  never restore a revoked URL from a cached signal or clear a valid same-media
+  preview during unrelated updates. Reuse selected thumbnails in pending/confirmed bubbles, gallery and
   replies; do not reopen the original just to display the composer thumbnail.
   Local video players use preload=none and a reduced poster. After-render tasks
   own video src setup/cleanup so retained elements restore it after confirmation.
@@ -667,6 +678,17 @@ needed; empty folders mark the initial structure.
 - The confirmed attachment catalog is latest-first and unique by root. Only
   image/video metadata with verified dimensions qualifies; defer thumbnail loads.
   Keep photo-plus duotone first and file-download cards for unsupported previews.
+  Until initial history decryption completes, partial results do not establish a
+  catalog. Loading displays add-file plus three noninteractive shimmer tiles
+  (static for reduced motion) in one row, preserving panel height through failure
+  and retry. Each panel recovery keeps loading visible for at least two seconds
+  after rendering; hold only presentation, not account/history completion. Closing
+  or unmounting cancels the timer, and stale timers must never reopen the panel.
+  Failure shows add-file plus refresh-alert/Retry,
+  without explanatory text. A known empty catalog opens the native picker;
+  a late empty result keeps the panel open with add-file only. Close/reopen retries
+  unavailable history; completion never changes panel visibility. Cached tiles
+  acquire before first paint; cold tiles retain visibility-gated preparation.
 - Local nfile rendering bypasses HTTP caches and connectivity gates. Keep geometry,
   ThumbHash placeholders, active-route cleanup and the existing growth controller.
   Downloads are precomputed native links from getFileDownloadUrl; never file-sized

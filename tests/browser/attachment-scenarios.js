@@ -5,6 +5,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { crc32 } from 'node:zlib'
 import { checkAttachmentPresentation } from './attachment-presentation-scenarios.js'
+import { checkGalleryFrames, checkGalleryRecovery, checkGalleryUI } from './gallery-scenarios.js'
 import { checkDownloadIntent } from './download-intent-scenarios.js'
 
 export async function checkAttachmentScenarios ({ browser, evaluate, origin, requests = [] }) {
@@ -155,6 +156,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.value = ${JSON.stringify('  Caption   file\n\n\nx  ')}; input.dispatchEvent(new Event('input', {bubbles:true})); })()`)
     await evaluate('document.querySelector(".chat-composer .attach").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".attachment-gallery button").length === 2'), 'gallery contains picker and one image')
+    await checkGalleryFrames({ browser, evaluate, origin })
     assert.equal(await evaluate('previewWorkers.size'), 0, 'gallery/replies reuse completed thumbnails')
     assert.equal(await evaluate('document.querySelector(".chat-composer .attach").getAttribute("aria-expanded")'), 'true')
     await evaluate('document.querySelector(".chat-composer .attach").click()')
@@ -231,8 +233,12 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.until(() => browser.evaluate('!!document.querySelector("lock-overlay .lock-unlock")', 'http://localhost:4000'), 'vault locked')
     await evaluate('document.querySelector(".compose-action").click()')
     const failedId = await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].find(row => row.querySelector(".attachment-name")?.textContent.includes("locked.mp3") && row.querySelector(".message-status")?.dataset.status === "error")?.dataset.messageId'), 'file outbox error with locked vault')
+    await evaluate('selfChatAccount.recover()')
+    assert.equal(await evaluate(`selfChatAccount.messages$().find(message => message.id === ${JSON.stringify(failedId)})?.status`), 'error', 'history recovery preserves failed attachment outbox')
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', 'http://localhost:4000')
     await browser.until(() => browser.evaluate('!document.querySelector("vault-lock-button").hidden', 'http://localhost:4000'), 'vault unlocked for retry')
+    await evaluate('document.querySelector(".chat-date .retry-btn").click()')
+    await browser.until(() => evaluate('selfChatAccount.historyState$() === "loaded"'), 'conversation Retry restores history')
     await evaluate(`document.querySelector('[data-message-id="${failedId}"] .chat-bubble').dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true}))`)
     await browser.until(() => evaluate('!!document.querySelector(".message-actions .message-retry")'), 'file retry menu')
     await evaluate('document.querySelector(".message-actions .message-retry").click()')
@@ -245,8 +251,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.until(async () => { try { return (await readFile(path.join(downloads, 'locked.mp3'))).equals(Buffer.from(compressedBytes)) } catch { return false } }, 'compressed native download matches final bytes')
     await browser.until(() => evaluate('navigator.storage.getDirectory().then(root => root.getDirectoryHandle(\'zillion-compression-v1\')).then(dir => Array.fromAsync(dir.keys())).then(names => names.length === 0)'), 'confirmed artifact released')
     console.log('Attachments: compressed MP3, locked-vault retry and native download verified')
-    const route = await evaluate('location.pathname + location.search')
-    await browser.evaluate(`(() => { const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)}); const url = new URL(frame.src); const route = new URL(${JSON.stringify(route)}, url); url.pathname = route.pathname; frame.src = url.href; })()`)
+    await checkGalleryRecovery({ browser, evaluate, origin })
     await browser.until(() => evaluate('document.querySelectorAll(".chat-composer").length === 1 && [...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'confirmed file metadata reopens offline', 60000)
     await browser.until(() => evaluate('[...document.querySelectorAll(".message-row .attachment-frame img")].some(img => img.src.startsWith("blob:") && img.naturalWidth === 1)'), 'image bytes survive reload offline')
     assert.deepEqual(await evaluate(`fetch(${JSON.stringify(compressedUrl)}).then(r => r.arrayBuffer()).then(b => [...new Uint8Array(b)])`), compressedBytes, 'compressed bytes reopen offline')
@@ -262,5 +267,6 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
       await browser.until(() => evaluate('navigator.storage.getDirectory().then(root => root.getDirectoryHandle(\'zillion-compression-v1\')).then(dir => Array.fromAsync(dir.keys())).then(names => names.length === 0)'), 'removal releases compressed file')
     }
     console.log('Attachments: image, animation and H264 compression verified inside launcher')
+    await checkGalleryUI({ browser, evaluate, origin })
   } finally { await rm(directory, { recursive: true, force: true }) }
 }

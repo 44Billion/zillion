@@ -4,7 +4,7 @@ import { eventToProfile, selectPreferredProfile } from '#helpers/nostr/queries.j
 
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
-    pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false,
+    pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0,
     person$ () {
       const profile = this.profile$()
@@ -22,42 +22,71 @@ export function useInitAccount () {
     return runtime.chat.send(content, replyTo, attachment)
   }
   account.retryMessage = id => runtime.chat?.retry(id)
-  useTask(({ track, cleanup }) => {
-    track(() => account.retry$())
+  account.recover = () => runtime.recover?.() ?? Promise.resolve(false)
+  useTask(({ cleanup }) => {
     let closed = false
     let profiles
-    let chat
-    account.error$(null)
-    account.historyLoaded$(false)
-    cleanup(() => {
-      closed = true
-      chat?.close()
-      profiles?.return().catch(() => {})
-      if (runtime.chat === chat) runtime.chat = null
-    })
+    let identity = null
+    let recovery
+    let profileVersion = 0
     const report = error => { if (!closed) account.error$(error.message || String(error)) }
-    const updateProfile = event => {
-      if (!closed && event?.pubkey === account.pubkey$()) account.profile$(previous => selectPreferredProfile(previous, eventToProfile(event)))
-    }
-    const start = async () => {
-      const pubkey = await window.nostr.peekPublicKey()
-      if (closed) return
-      if (!/^[0-9a-f]{64}$/.test(pubkey || '')) { account.ready$(true); account.historyLoaded$(true); return }
-      account.pubkey$(pubkey)
-      const eventStore = window.napp.eventStore
-      if (!(await eventStore.supports()).includes('subscribe:initial')) throw new Error('Launcher update required for initial event-store subscriptions')
-      if (closed) return
-      chat = createSelfChat({ pubkey, eventStore, signer: window.nostr, onMessages: account.messages$, onError: report, onInitialLoad: () => { if (!closed) account.historyLoaded$(true) } })
-      runtime.chat = chat
-      account.ready$(true)
-      chat.start()
+    const loadProfile = (pubkey, eventStore) => {
+      const version = ++profileVersion
+      profiles?.return().catch(() => {})
+      const current = () => !closed && profileVersion === version
+      const update = event => {
+        if (current() && event?.pubkey === pubkey) account.profile$(previous => selectPreferredProfile(previous, eventToProfile(event)))
+      }
       const filter = { kinds: [0], authors: [pubkey] }
       profiles = eventStore.subscribe(filter, { initial: true })
-      const live = (async () => { for await (const { result } of profiles) updateProfile(result) })()
-      live.catch(report)
-      const { results } = await eventStore.query({ ...filter, limit: 1 })
-      for (const event of results) updateProfile(event)
+      const stream = profiles
+      ;(async () => { for await (const { result } of stream) { if (!current()) return; update(result) } })().catch(() => {})
+      eventStore.query({ ...filter, limit: 1 }).then(({ results }) => { for (const event of results) update(event) }).catch(() => {})
     }
-    start().catch(report)
+    runtime.recover = () => {
+      if (closed) return Promise.resolve(false)
+      if (recovery) return recovery
+      account.error$(null)
+      account.historyState$('loading')
+      recovery = (async () => {
+        try {
+          const pubkey = await window.nostr.peekPublicKey()
+          if (closed) return false
+          if (!/^[0-9a-f]{64}$/.test(pubkey || '')) throw new Error('Account unavailable')
+          if (identity !== pubkey) {
+            runtime.chat?.close(); runtime.chat = null
+            profileVersion++; profiles?.return().catch(() => {}); profiles = null
+            identity = pubkey
+            account.messages$([]); account.profile$(null); account.historyLoaded$(false)
+          }
+          account.pubkey$(pubkey)
+          const eventStore = window.napp.eventStore
+          if (!(await eventStore.supports()).includes('subscribe:initial')) throw new Error('Launcher update required for initial event-store subscriptions')
+          if (closed) return false
+          if (!runtime.chat) {
+            runtime.chat = createSelfChat({
+              pubkey, eventStore, signer: window.nostr, onMessages: account.messages$, onError: report,
+              onInitialLoad: () => { if (!closed) account.historyLoaded$(true) },
+              onHistoryState: state => { if (!closed) account.historyState$(state) }
+            })
+          }
+          account.ready$(true)
+          loadProfile(pubkey, eventStore)
+          return await runtime.chat.start()
+        } catch (error) {
+          if (!closed) { account.historyState$('unavailable'); account.ready$(true); report(error) }
+          return false
+        }
+      })().finally(() => { recovery = null })
+      return recovery
+    }
+    cleanup(() => {
+      closed = true
+      runtime.chat?.close(); runtime.chat = null
+      profiles?.return().catch(() => {})
+      runtime.recover = null
+    })
   })
+  // Retry the read session without tearing down the account or its outbox.
+  useTask(({ track }) => { track(() => account.retry$()); account.recover() })
 }

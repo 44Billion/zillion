@@ -1021,5 +1021,18 @@
     "zh-TW": "無法壓縮，將使用原始檔案",
     "ja": "圧縮できないため、元のファイルを使用します",
     "ko": "압축할 수 없어 원본 파일을 사용합니다"
+  },
+  "Attachments": {
+    "en": "Attachments",
+    "fr": "Pièces jointes",
+    "it": "Allegati",
+    "de": "Anhänge",
+    "es": "Archivos adjuntos",
+    "pt-BR": "Anexos",
+    "ru": "Вложения",
+    "zh-CN": "附件",
+    "zh-TW": "附件",
+    "ja": "添付ファイル",
+    "ko": "첨부 파일"
   }
 }

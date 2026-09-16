@@ -11,14 +11,15 @@ export const SELF_CHAT_KIND = 9
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.
-export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onInitialLoad = () => {}, verifyFile = verifyLocalFile }) {
+export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onInitialLoad = () => {}, onHistoryState = () => {}, verifyFile = verifyLocalFile }) {
   const context = `dm:${pubkey}`
   const messages = new Map()
   const outbox = new Map()
   const controller = new AbortController()
   let closed = false
   let subscription
-  let filter
+  let generation = 0
+  let loading
   const emit = () => {
     if (!closed) onMessages([...messages.values()].sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id)))
   }
@@ -29,12 +30,13 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     outbox.delete(id)
     emit()
   }
-  async function accept (wrapper) {
-    if (closed || wrapper?.kind !== PERSONAL_COPY || wrapper.pubkey !== pubkey || !isValidEvent(wrapper)) return
+  async function accept (wrapper, filter, current) {
+    if (!current() || wrapper?.kind !== PERSONAL_COPY || wrapper.pubkey !== pubkey || !isValidEvent(wrapper)) return
     const tag = name => wrapper.tags.filter(tag => tag[0] === name)
     if (tag('k').length !== 1 || !['9', '1063'].includes(tag('k')[0][1]) || tag('c').length !== 1 || tag('c')[0][1] !== filter['#c'][0]) return
     if (tag('v').length !== 1 || !['0', '1'].includes(tag('v')[0][1])) return
     const plaintext = await signer.nip44v3.decrypt(pubkey, Number(tag('k')[0][1]), '', wrapper.content)
+    if (!current()) return
     const inner = JSON.parse(new TextDecoder().decode(plaintext))
     const event = { ...inner, pubkey: inner.pubkey ?? pubkey }
     if (event.pubkey !== pubkey || String(event.kind) !== tag('k')[0][1] || event.created_at !== wrapper.created_at || !isSerializableEvent(event)) return
@@ -42,26 +44,54 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     const id = getEventHash(event)
     confirm(id, event)
   }
-  async function start () {
-    try {
-      const encodedContext = await signer.obfuscate(context, String(PERSONAL_COPY), '')
-      if (closed) return
-      filter = { kinds: [PERSONAL_COPY], authors: [pubkey], '#k': ['9', '1063'], '#c': [encodedContext], '#v': ['0', '1'] }
-      // Settle the initial read permissions before opening the live stream.
-      // Its initial replay closes the snapshot/subscription race.
-      const { results } = await eventStore.query(filter)
-      if (closed) return
-      subscription = eventStore.subscribe(filter, { initial: true })
-      // Initial replay closes the snapshot/live race even across permission
-      // dialogs. The query provides a prompt local read and explicit failures.
-      const live = (async () => {
-        for await (const { result } of subscription) await accept(result)
-        if (!closed) throw new Error('Self chat subscription ended')
-      })()
-      live.catch(error => { if (!closed) onError(error) })
-      for (const wrapper of results) await accept(wrapper)
-      if (!closed) onInitialLoad()
-    } catch (error) { if (!closed) onError(error) }
+  function start () {
+    if (closed) return Promise.resolve(false)
+    if (loading) return loading
+    const version = ++generation
+    const current = () => !closed && generation === version
+    const previous = subscription
+    subscription = null
+    previous?.return().catch(() => {})
+    onHistoryState('loading')
+    const fail = error => {
+      if (!current()) return
+      generation++
+      const failed = subscription
+      subscription = null
+      failed?.return().catch(() => {})
+      onHistoryState('unavailable')
+      onError(error)
+    }
+    loading = (async () => {
+      try {
+        const encodedContext = await signer.obfuscate(context, String(PERSONAL_COPY), '')
+        if (!current()) return false
+        const filter = { kinds: [PERSONAL_COPY], authors: [pubkey], '#k': ['9', '1063'], '#c': [encodedContext], '#v': ['0', '1'] }
+        // Settle read permissions first; initial subscription replay closes the
+        // snapshot/live race. Recovery retains the messages and their outbox.
+        const { results } = await eventStore.query(filter)
+        if (!current()) return false
+        const stream = eventStore.subscribe(filter, { initial: true })
+        subscription = stream
+        const live = (async () => {
+          for await (const { result } of stream) {
+            if (!current()) return
+            await accept(result, filter, current)
+          }
+          if (current()) throw new Error('Self chat subscription ended')
+        })()
+        live.catch(fail)
+        for (const wrapper of results) {
+          if (!current()) return false
+          await accept(wrapper, filter, current)
+        }
+        if (!current()) return false
+        onInitialLoad()
+        onHistoryState('loaded')
+        return true
+      } catch (error) { fail(error); return false }
+    })().finally(() => { loading = null })
+    return loading
   }
   function write (id) {
     const entry = outbox.get(id)
@@ -140,6 +170,7 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   }
   function close () {
     closed = true
+    generation++
     controller.abort()
     for (const entry of outbox.values()) entry.attachment?.close?.()
     outbox.clear()

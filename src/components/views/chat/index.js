@@ -134,7 +134,7 @@ f('z-chat', ({ h, props }) => {
           `)}
         </ol>
       </div></div>
-      <z-chat-composer props=${{ messages$: account.messages$, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null) }} />
+      <z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null) }} />
     </main>
   `
 })

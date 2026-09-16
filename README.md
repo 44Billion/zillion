@@ -322,7 +322,18 @@ the plain Nostr link. Sample-chat link cards remain static fixtures.
 ## Local self-chat attachments
 
 The paperclip selects one file. With previously confirmed images/videos it opens
-an ordered gallery first; its first tile opens the native file picker. A selection
+an ordered gallery first; its first tile opens the native file picker. An unknown
+or unavailable history opens a recovery panel: add-file plus three loading tiles
+in one row, then the catalog or a Retry tile. Loading, failure and retries keep
+the same panel height. Recovery keeps its loading row visible for at least two
+seconds, even after a quick result; closing the panel remains immediate. Reduced
+motion disables the shimmer. Unlocking
+the vault can be followed by Retry or reopening the panel; restarting Zillion is
+unnecessary. A confirmed empty catalog opens the picker, while an empty result
+arriving in an open panel leaves just its add-file tile. Closing the panel stays
+closed even when the query finishes later. Conversation and gallery retries
+share recovery and preserve the same account's outbox and prepared attachments.
+A selection
 prepares a preview and MMR tree, shown above an optional caption. **Nothing is
 stored until Send.** Changing/removing the selection preserves caption and reply.
 While preparing, a compact opaque cancel button sits to the left of the status.
@@ -353,7 +364,11 @@ Confirmed attachments survive according to launcher storage retention.
 
 Local attachments read original bytes from nostr.alt outside the HTTP image cache
 and connectivity probes. Composer, bubbles, gallery and replies reuse reduced
-previews (at most 320px) instead of decoding the original again. Video players
+previews (at most 320px) instead of decoding the original again. The 8 MiB / 128-entry
+FIFO supplies cached gallery previews synchronously with a stable shared URL;
+eviction/replacement revokes it only after every consumer releases it. Reopening
+a cached tile therefore needs neither a placeholder transition nor another read
+of the original. Video players
 use the small poster and load the original only for playback. Preview preparation
 runs serially: PNGs are reduced scanline by scanline, JPEGs request native scaled
 decoding, and videos use MediaBunny. Disposable image Workers and MediaBunny's
@@ -371,6 +386,8 @@ sibling source imports are required.
 
 The local Chrome validation and remaining device coverage are recorded in
 [docs/local-attachments-validation.md](docs/local-attachments-validation.md).
+Gallery recovery and frame sampling are recorded in
+[docs/attachment-gallery-validation.md](docs/attachment-gallery-validation.md).
 Run `npm run test:browser:attachments` for the focused integration checks, or
 `node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js`
 for the full self-chat regression.

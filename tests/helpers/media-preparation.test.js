@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { inflateSync } from 'node:zlib'
-import { rememberAttachmentPreview, acquireAttachmentPreview } from '../../src/services/attachment-previews.js'
+import { rememberAttachmentPreview, acquireAttachmentPreview, acquireCachedAttachmentPreview } from '../../src/services/attachment-previews.js'
 import { mediaSource } from '../../src/services/media-preparation/source.js'
 import { pngPreview } from '../../src/services/media-preparation/png.js'
 import { jpegDimensions, jpegDecodeSize } from '../../src/services/media-preparation/jpeg.js'
@@ -94,20 +94,75 @@ test('local range reader preserves localOnly and rejects oversized or incomplete
   for (mode of ['oversized', 'short', 'wrong']) await assert.rejects(reader.read(2, 5), /INVALID_FILE_RANGE/)
 })
 
-test('cached thumbnails reuse pixels but give each consumer an independently disposable URL', async () => {
+test('cached thumbnails share a synchronous stable URL and leases survive replacement', async () => {
   const file = { root: 'test-cache-root', mime: 'image/png' }
   rememberAttachmentPreview(file, { blob: new Blob(['thumbnail']), width: 2, height: 3 })
   const controller = new AbortController()
-  const first = await acquireAttachmentPreview(file, { signal: controller.signal })
+  const first = acquireCachedAttachmentPreview(file, { signal: controller.signal })
   const second = await acquireAttachmentPreview(file)
-  assert.notEqual(first.source, second.source)
+  assert.equal(first.source, second.source)
   assert.deepEqual([first.width, first.height], [2, 3])
   controller.abort()
-  await assert.rejects(fetch(first.source))
+  assert.equal(first.closed, true)
   assert.equal(await (await fetch(second.source)).text(), 'thumbnail')
   second.close(); second.close()
-  await assert.rejects(fetch(second.source))
-  const third = await acquireAttachmentPreview(file)
-  assert.equal(await (await fetch(third.source)).text(), 'thumbnail')
+  const third = acquireCachedAttachmentPreview(file)
+  assert.equal(third.source, first.source, 'reopening requires no decode or new URL')
+  rememberAttachmentPreview(file, { blob: new Blob(['replacement']), width: 4, height: 5 })
+  const replacement = acquireCachedAttachmentPreview(file)
+  assert.notEqual(replacement.source, third.source)
+  assert.equal(await (await fetch(third.source)).text(), 'thumbnail', 'replacement cannot revoke active leases')
   third.close()
+  await assert.rejects(fetch(third.source))
+  replacement.close()
+  assert.throws(() => acquireCachedAttachmentPreview(file, { signal: controller.signal }), { name: 'AbortError' })
+})
+
+test('thumbnail FIFO enforces entry and byte budgets without revoking active consumers', async () => {
+  const file = { root: 'eviction-root', mime: 'image/png' }
+  const preview = { blob: new Blob(['old']), width: 1, height: 1 }
+  rememberAttachmentPreview(file, preview)
+  const active = acquireCachedAttachmentPreview(file)
+  for (let i = 0; i < 128; i++) rememberAttachmentPreview({ ...file, root: `evict-${i}` }, preview)
+  assert.equal(acquireCachedAttachmentPreview(file), null)
+  assert.equal(await (await fetch(active.source)).text(), 'old')
+  active.close()
+  await assert.rejects(fetch(active.source))
+  rememberAttachmentPreview(file, preview)
+  const inactive = acquireCachedAttachmentPreview(file)
+  inactive.close()
+  rememberAttachmentPreview({ ...file, root: 'full-budget' }, { ...preview, blob: new Blob([new Uint8Array(8 * 1024 * 1024)]) })
+  assert.equal(acquireCachedAttachmentPreview(file), null)
+  await assert.rejects(fetch(inactive.source))
+})
+
+test('cold preview work is shared and only canceled after the last interested consumer leaves', async t => {
+  let requests = 0
+  let currentSignal
+  t.mock.method(globalThis, 'fetch', (url, { signal }) => {
+    requests++
+    currentSignal = signal
+    return new Promise((resolve, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+    })
+  })
+  const file = { root: 'cold-cancel-root', mime: 'image/png', url: 'https://nostr.alt/nfile1abc?localOnly=1' }
+  assert.equal(acquireCachedAttachmentPreview(file), null)
+  const first = new AbortController(); const second = new AbortController()
+  const one = acquireAttachmentPreview(file, { signal: first.signal })
+  const two = acquireAttachmentPreview(file, { signal: second.signal })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(requests, 1)
+  first.abort()
+  await assert.rejects(one, { name: 'AbortError' })
+  assert.equal(currentSignal.aborted, false)
+  second.abort()
+  await assert.rejects(two, { name: 'AbortError' })
+  assert.equal(currentSignal.aborted, true)
+  const third = new AbortController()
+  const retry = acquireAttachmentPreview(file, { signal: third.signal })
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(requests, 2, 'canceled preparation can be retried')
+  third.abort()
+  await assert.rejects(retry, { name: 'AbortError' })
 })

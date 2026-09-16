@@ -1,9 +1,9 @@
 import { useMediaDownload } from './hooks/use-media-download.js'
-import { f, useStore, useTask } from '#f'
+import { f, useStore, useTask, useMemo } from '#f'
 import { thumbHashToDataURL } from 'thumbhash'
 import { base64ToBytes } from 'libp2r2p/base64'
 import { t } from '#i18n/messages.js'
-import { acquireAttachmentPreview } from '#services/attachment-previews.js'
+import { acquireAttachmentPreview, acquireCachedAttachmentPreview } from '#services/attachment-previews.js'
 import { mediaDimensions, prepareImage, prepareVideo, preparationSignal } from '#helpers/media-dimensions.js'
 import { useRoutePage } from '#shared/route-page.js'
 import '#shared/icons/icon-file-download.js'
@@ -119,17 +119,33 @@ f('z-chat-attachment', ({ h, props }) => {
 // The gallery shares the bounded thumbnail service with messages and replies.
 f('z-chat-attachment-tile', ({ h, props }) => {
   const page = useRoutePage()
-  const view = useStore({ source$: null })
+  const runtime = useMemo(() => ({ preview: null, key: null }))
+  const view = useStore({ revision$: 0 })
+  const file = props.file$()
+  const key = `${file.root || file.url}:${file.mime}`
+  const active = page.isActive$()
+  // Render from a live lease, never from a restored signal holding a revoked
+  // URL. Cache acquisition is synchronous, including remounts of keyed tiles.
+  if (runtime.key !== key || !active) {
+    runtime.preview?.close(); runtime.preview = null; runtime.key = key
+  }
+  if (active && (!runtime.preview || runtime.preview.closed)) runtime.preview = acquireCachedAttachmentPreview(file)
+  view.revision$()
+  useTask(({ cleanup }) => cleanup(() => { runtime.preview?.close(); runtime.preview = null }))
   useTask(({ track, cleanup }) => {
     const active = track(() => page.isActive$())
-    track(() => props.file$().url)
+    track(() => `${props.file$().root || props.file$().url}:${props.file$().mime}`)
+    const file = props.file$()
     const controller = new AbortController()
-    cleanup(() => { controller.abort(); view.source$(null) })
-    if (!active) return
-    acquireAttachmentPreview(props.file$(), { signal: controller.signal }).then(preview => {
-      if (!controller.signal.aborted) view.source$(preview?.source || null)
+    cleanup(() => controller.abort())
+    if (!active || (runtime.preview && !runtime.preview.closed)) return
+    acquireAttachmentPreview(file, { signal: controller.signal }).then(preview => {
+      if (controller.signal.aborted || runtime.key !== `${file.root || file.url}:${file.mime}` || !page.isActive$()) { preview?.close(); return }
+      runtime.preview?.close()
+      runtime.preview = preview
+      view.revision$(value => value + 1)
     }).catch(() => {})
   }, { when: 'visible', rootMargin: '0px' })
-  const file = props.file$()
-  return h`<button type="button" title=${fileName(file, t('unnamed-file')).full} aria-label=${fileName(file, t('unnamed-file')).full} onclick=${() => props.select(file)}>${view.source$() ? h`<img src=${view.source$()} alt="" loading="lazy">` : h`<icon-file-text-shield props=${{ size: '24px', weight: 'light' }} />`}</button>`
+  const source = runtime.preview?.closed ? null : runtime.preview?.source
+  return h`<button type="button" title=${fileName(file, t('unnamed-file')).full} aria-label=${fileName(file, t('unnamed-file')).full} onclick=${() => props.select(file)}>${source ? h`<img src=${source} alt="">` : h`<icon-file-text-shield props=${{ size: '24px', weight: 'light' }} />`}</button>`
 })

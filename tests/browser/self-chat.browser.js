@@ -5,10 +5,12 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { noteEncode, appEncode } from 'libp2r2p/nip19'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { bytesToBase16 } from 'libp2r2p/base16'
-import { compile, root } from '../../bin/build-options.js'
+import esbuild from 'esbuild'
+import { buildOptions, root } from '../../bin/build-options.js'
 import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
 import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
+import { checkGalleryUI } from './gallery-scenarios.js'
 import { checkAttachmentScenarios } from './attachment-scenarios.js'
 import { checkScrollScenarios } from './scroll-scenarios.js'
 
@@ -36,7 +38,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     // Source maps are not exercised here. Installing their multi-MiB JSON via
     // the fixture CDP expression needlessly multiplies startup memory. Keep
     // development UI flags, but omit maps from this disposable installation.
-    const app = await prepareTestApp(await compile({ development: process.env.ZILLION_FILES_ONLY !== '1', sourceMaps: false, futureFeatures: true }), { identifier: 'self-chat-test', name: 'Self chat test' })
+    let files
+    const options = buildOptions({ development: process.env.ZILLION_FILES_ONLY !== '1', sourceMaps: false, futureFeatures: true, onEnd: result => { files = result } })
+    options.entryPoints[0] = { in: 'tests/browser/self-chat-fixture.js', out: 'app' }
+    await esbuild.build(options)
+    const html = files.find(file => file.name === 'index.html')
+    html.bytes = new TextEncoder().encode(new TextDecoder().decode(html.bytes).replaceAll('z-app', 'z-self-chat-fixture'))
+    const app = await prepareTestApp(files, { identifier: 'self-chat-test', name: 'Self chat test' })
+    files = null
     browser = await launchChrome({
       intercept: request => {
         const url = new URL(request.url)
@@ -134,6 +143,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     // Opening the vault can dismiss an initial permission card. Recover via
     // the app's real retry control before testing write permission separately.
     await browser.until(() => evaluate('document.querySelector(".chat-date .retry-btn")?.click(); document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial history before menu interactions')
+    if (process.env.ZILLION_GALLERY_UI_ONLY === '1') { await checkGalleryUI({ browser, evaluate, origin }); return }
     if (process.env.ZILLION_FILES_ONLY === '1') {
       await checkAttachmentScenarios({ browser, evaluate, origin, requests })
       return

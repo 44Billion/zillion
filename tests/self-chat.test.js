@@ -239,3 +239,72 @@ test('1063 history decrypts in its own kind and the catalog uses latest confirme
   assert.equal(attachmentCatalog(f.messages.map(message => ({ ...message, status: 'error' }))).length, 0)
   f.chat.close()
 })
+
+test('history recovery shares work, retains failed outbox entries, and waits for decryption', async () => {
+  const states = []
+  let locked = true
+  const decrypted = Promise.withResolvers()
+  const f = fixture([wrapper(inner('Recovered'))], {
+    onHistoryState: state => states.push(state),
+    signer: {
+      obfuscate: async value => { if (locked) throw new Error('VAULT_LOCKED'); return value },
+      nip44v3: { decrypt: async (owner, kind, scope, content) => { await decrypted.promise; return base64ToBytes(content).buffer } }
+    }
+  })
+  assert.equal(await f.chat.start(), false)
+  assert.deepEqual(states, ['loading', 'unavailable'])
+  f.eventStore.addPersonalCopy = async () => ({ result: { ok: false } })
+  const id = f.chat.send('Keep my draft')
+  await f.chat.retry(id)
+  const failed = f.messages[0]
+  locked = false
+  const first = f.chat.start()
+  assert.equal(f.chat.start(), first)
+  await tick()
+  assert.equal(states.at(-1), 'loading')
+  assert.equal(f.initialMessages, null)
+  decrypted.resolve()
+  assert.equal(await first, true)
+  assert.equal(states.at(-1), 'loaded')
+  assert.deepEqual(f.messages.find(message => message.id === id), failed)
+  f.eventStore.addPersonalCopy = async event => { assert.equal(getEventHash({ ...event, pubkey }), id); return { result: { ok: true } } }
+  await f.chat.retry(id)
+  assert.equal(f.messages.find(message => message.id === id).status, 'saved')
+  f.chat.close()
+})
+
+test('recovering subscriptions ignores replaced streams and late decryptions after close', async () => {
+  const f = fixture()
+  const streams = []
+  f.eventStore.subscribe = () => {
+    let next = Promise.withResolvers()
+    const stream = {
+      returned: false,
+      [Symbol.asyncIterator] () { return this },
+      next: () => next.promise,
+      emit: result => { const previous = next; next = Promise.withResolvers(); previous.resolve({ value: { result }, done: false }) },
+      return: async () => { stream.returned = true; next.resolve({ done: true }); return { done: true } }
+    }
+    streams.push(stream)
+    return stream
+  }
+  await f.chat.start()
+  await f.chat.start()
+  assert.equal(streams[0].returned, true)
+  assert.deepEqual(f.errors, [])
+  streams[1].emit(wrapper(inner('Current stream')))
+  await tick()
+  assert.equal(f.messages[0].content, 'Current stream')
+  f.chat.close()
+  assert.equal(streams[1].returned, true)
+
+  const decrypt = Promise.withResolvers()
+  const closed = fixture([wrapper(inner('Stale'))], { signer: { obfuscate: async value => value, nip44v3: { decrypt: () => decrypt.promise } } })
+  const loading = closed.chat.start()
+  await tick()
+  closed.chat.close()
+  decrypt.resolve(new TextEncoder().encode(JSON.stringify(inner('Stale'))).buffer)
+  assert.equal(await loading, false)
+  assert.deepEqual(closed.messages, [])
+  assert.equal(closed.initialMessages, null)
+})
