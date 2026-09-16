@@ -220,6 +220,27 @@ for (const localDevelopment of [false, true]) {
         await browser.until(() => browser.evaluate('Boolean(document.querySelector("local-dev-reset-button button:not(:disabled)"))'), 'reset completed')
         assert.equal(await browser.evaluate('document.querySelector("local-dev-reset-button [role=alert]")?.textContent || ""'), '')
         assert.equal(await browser.evaluate(`JSON.parse(localStorage.getItem('local_devApps'))[${JSON.stringify(app.appId)}].version`), nextBuild.revision)
+
+        // Full environment reset: the vault accounts, every app origin and the
+        // launcher origin are wiped, and the next load boots a clean launcher
+        // instead of adopting the account again.
+        await openMenu()
+        await browser.until(() => browser.evaluate('Boolean(document.querySelector("local-dev-full-reset-button button:not(:disabled)"))'), 'full reset menu action')
+        await browser.evaluate('document.querySelector("local-dev-full-reset-button button").click()')
+        await browser.until(() => browser.evaluate('Boolean(document.querySelector("dialog[open] #confirmation-dialog-card .confirm-button:not(:disabled)"))'), 'full reset confirmation')
+        await browser.evaluate('document.querySelector("dialog[open] #confirmation-dialog-card .confirm-button").click()')
+        await browser.until(async () => {
+          const state = await browser.evaluate(`({
+            apps: localStorage.getItem('local_devApps'),
+            accounts: JSON.parse(localStorage.getItem('session_accountUserPks') || '[]')
+          })`).catch(() => null)
+          return Boolean(state) && state.apps === null && state.accounts.length === 1
+        }, 'clean launcher after the full reset', 90000)
+        assert.equal(await browser.evaluate('JSON.parse(localStorage.getItem("session_accountUserPks")).every(pk => localStorage.getItem("session_accountByUserPk_" + pk + "_isReadOnly") === "true")'), true, 'full reset leaves a fresh stub user')
+        assert.equal(await browser.evaluate('(async () => (await indexedDB.databases()).filter(db => db.name.startsWith("44billion_nostrdb:")).length)()'), 0, 'full reset removes every owner database')
+        // The vault iframe reloads while it wipes, so a missing context also
+        // means the account is gone.
+        assert.equal(await browser.evaluate(`Boolean(document.querySelector('account-avatar[pubkey="${pubkey}"]'))`, vaultOrigin).catch(() => false), false, 'full reset removes the vault account')
         await browser.send('Target.closeTarget', { targetId })
       }
     } catch (error) {

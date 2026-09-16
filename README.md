@@ -193,6 +193,10 @@ The local app remains cached when the watcher stops and is excluded from remote
 updates. The app's launcher menu offers **Clear local app data and reload**, with
 confirmation and a scope limited to that app and the selected user. Other open
 instances of that user/app pause during the reset. Failed cleanup is reported.
+Above it, the development-only **Reset development environment and reload**
+deletes every vault account and all local data of every app in that browser and
+reloads; it aborts with an error when the vault is unreachable. Reopen the
+printed local link afterwards to reinstall the app files.
 
 `start:publish` retains the two-second debounce, isolated upload files and shared
 `tmp/upload.lock` used by `upload:draft`. It publishes to the real network. If an

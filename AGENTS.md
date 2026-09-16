@@ -476,6 +476,10 @@ needed; empty folders mark the initial structure.
 - The explicit menu reset affects only the selected user/app. It must pause other
   instances, await completion and report partial failures. Remote draft cleanup
   continues unchanged. Run the local-update browser scenario when changing this.
+- The launcher also exposes a development-only full environment reset above that
+  action: it wipes the vault accounts, every app origin and the launcher origin.
+  Keep Zillion out of that protocol; it only needs to survive a fresh launcher
+  boot and be reinstalled from the printed local link.
 
 
 ## Real self chat
