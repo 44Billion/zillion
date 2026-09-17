@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { noteEncode, appEncode } from 'libp2r2p/nip19'
+import { getEventHash } from 'libp2r2p/event'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { bytesToBase16 } from 'libp2r2p/base16'
 import esbuild from 'esbuild'
@@ -268,14 +269,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('Boolean(document.querySelector(".message-actions"))'), 'message actions')
     await evaluate('document.querySelector(".message-actions [aria-label=Reply]").click()')
     await browser.until(() => evaluate('Boolean(document.querySelector(".composer-reply"))'), 'reply preview')
-    assert.equal(await evaluate('document.querySelector(".composer-reply span").textContent'), 'Reply: Today\nexample.com/photo.png #private')
+    assert.equal(await evaluate('document.querySelector(".composer-reply .reply-text").textContent'), 'Reply: Today\nexample.com/photo.png #private')
     await setText('Reply to my note')
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 2'), 'saved reply')
     await browser.until(() => evaluate('document.querySelectorAll(".message-status[data-status=saved]").length === 2'), 'reply persistence confirmed')
-    assert.equal(await evaluate('document.querySelectorAll(".message-quote").length'), 1)
-    assert.equal(await evaluate('document.querySelector(".quote-text").textContent'), 'Today\nexample.com/photo.png #private')
-    assert.equal(await evaluate('document.querySelector(".quote-text").title'), 'Today\nhttps://example.com/photo.png #private')
+    await browser.until(() => evaluate('document.querySelectorAll(".message-quote").length === 1'), 'posted reply paints its quote')
+    assert.equal(await evaluate('document.querySelector(".quote-text").textContent'), 'Today\nexample.com/photo.png\n#private')
+    assert.equal(await evaluate('document.querySelector(".quote-text").title'), 'Today\nexample.com/photo.png\n#private')
     const readMessages = `window.napp.eventStore.query({ kinds: [1006], '#k': ['9'] }).then(async ({ results }) => Promise.all(results.map(async wrapper => JSON.parse(new TextDecoder().decode(await window.nostr.nip44v3.decrypt(${JSON.stringify(pubkey)}, 9, '', wrapper.content))))))`
     const events = await evaluate(readMessages)
     assert.equal(events.filter(event => event.content === 'Today\nhttps://example.com/photo.png #private').length, 1, 'the compacted event is persisted once after retry')
@@ -294,7 +295,11 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       if (!(plain instanceof ArrayBuffer)) throw new Error('Double DH did not return an ArrayBuffer');
       return Array.from(new Uint8Array(plain));
     })()`), [0, 255, 251, 128, 63], 'real vault preserves arbitrary bytes across default, persona, namespace and Double DH APIs')
-    assert.deepEqual(events.find(event => event.content === 'Reply to my note').tags.find(tag => tag[0] === 'q'), ['q', id, '', pubkey])
+    const replyEvent = events.find(event => event.content.endsWith('\nReply to my note'))
+    assert.ok(replyEvent, 'the reply is stored as a kind 9 whose content ends with the typed text')
+    assert.deepEqual(replyEvent.tags.find(tag => tag[0] === 'q'), ['q', id, '', pubkey])
+    assert.match(replyEvent.content.split('\n')[0], /^nostr:nevent1/, 'the replied message leads the content as a NIP-21 URI')
+    assert.equal(replyEvent.content.split('\n').length, 2, 'reply content is the URI followed by the typed text')
     assert.equal((await evaluate('window.napp.eventStore.query({ kinds: [9] })')).results.length, 0, 'no public chat copies')
     const rawHistory = '  Arrived \tthrough the store \n\n\n\n with paragraphs  '
     const compactHistory = 'Arrived through the store\n\nwith paragraphs'
@@ -365,7 +370,12 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     assert.deepEqual(await evaluate('window.previewStability.changes'), [], 'existing previews never collapse while another message is added or enriched')
     assert.equal(await evaluate('window.previewStability.nodes.every(node => node.isConnected)'), true)
     await evaluate('window.previewStability.observer.disconnect(); delete window.previewStability')
-    const privatePointer = noteEncode(id)
+    // Encode the note's own inner id. The first message `id` above is only the
+    // reply target and would otherwise point at a different bubble.
+    const privateSeconds = Math.floor(Date.now() / 1000) + 1
+    const privateId = getEventHash({ kind: 9, created_at: privateSeconds, tags: [], content: 'Private local copy', pubkey })
+    await evaluate(`window.napp.eventStore.addPersonalCopy({ kind: 9, created_at: ${privateSeconds}, tags: [], content: 'Private local copy' }, { context: ${JSON.stringify(`dm:${pubkey}`)} })`)
+    const privatePointer = noteEncode(privateId)
     const appEntity = appEncode({ pubkey, dTag: 'zillion', channel: 'main' })
     const appReferences = [
       ['+apps', '+apps'],
@@ -390,14 +400,23 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     assert.equal(requests.slice(appRequestStart).some(url => url.includes(appEntity) || url.includes('/.well-known/nostr.json')), false, 'app references do not start preview or author lookups')
     const requestStart = requests.length
     await addNote(privatePointer)
+    await browser.until(() => evaluate(`selfChatAccount.messages$().some(message => message.content === ${JSON.stringify(privatePointer)})`), 'private pointer reaches the account service')
     await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`), 'private Nostr link retained', 60000)
     assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false, 'private pointer never reaches njump')
     assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').textContent`), privatePointer.slice(0, 22) + '…')
     assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').getAttribute('aria-label')`), privatePointer)
     assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').title`), privatePointer)
-    await addNote(`https://njump.me/${noteEncode(id)}`)
-    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${noteEncode(id)}"]')`), 'private njump URL stays local', 60000)
-    assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false)
+    const privateNip19 = privatePointer.replace(/^nostr:/, '')
+    await addNote(`https://njump.me/${privateNip19}`)
+    await browser.until(() => evaluate(`selfChatAccount.messages$().some(message => message.content === ${JSON.stringify(`https://njump.me/${privateNip19}`)})`), 'private njump note reaches the account service')
+    // A local personal copy resolves through the store, so the njump URL never
+    // becomes a link preview and the bubble quotes the referenced message.
+    await browser.until(() => evaluate(`(() => {
+      const note = selfChatAccount.messages$().find(message => message.content === 'https://njump.me/${privateNip19}');
+      const row = note && document.querySelector('[data-message-id="' + note.id + '"]');
+      return row?.querySelector('.message-quote .quote-text')?.textContent === 'Private local copy';
+    })()`), 'private njump URL stays local', 60000)
+    assert.equal(requests.slice(requestStart).some(url => url.includes(privateNip19)), false)
 
     const startReply = async (target, title) => {
       await evaluate(`(async () => {
@@ -413,9 +432,9 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await startReply('[...document.querySelectorAll(".chat-reference")].find(el => el.title === "+apps")', '+apps')
     assert.equal(await evaluate('document.querySelector(".reply-text").textContent'), 'Reply: +apps')
     assert.equal(await evaluate('document.querySelector(".reply-thumbnail")'), null, 'replying to an app reference keeps a text summary')
-    await startReply(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`, privatePointer)
+    await startReply(`document.querySelector('[data-message-id="${privateId}"] .chat-bubble')`, 'Private local copy')
     assert.equal(await evaluate('document.querySelector(".reply-thumbnail")'), null)
-    assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false, 'reply thumbnails keep personal pointers local')
+    assert.equal(requests.slice(requestStart).some(url => url.includes(privateNip19)), false, 'reply thumbnails keep personal pointers local')
     await startReply(`[...document.querySelectorAll('.chat-content')].find(el => el.innerText === ${JSON.stringify(compactHistory)})`, compactHistory)
     assert.equal(await evaluate('document.querySelector(".reply-text").textContent'), `Reply: ${compactHistory}`, 'composer reply uses the same compact historical text')
     await startReply('document.querySelector(\'.reference-link[href="https://example.com/article"]\')', 'https://example.com/article')

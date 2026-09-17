@@ -27,13 +27,24 @@ function fixture (history = [], options = {}) {
     next: () => new Promise(resolve => { deliver = resolve }),
     return: async () => { returned = true; deliver?.({ done: true }); return { done: true } }
   }
+  const publicEvents = options.publicEvents ?? []
   const eventStore = {
     subscribe (filter, options) {
       assert.deepEqual(options, { initial: true })
-      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9', '1063'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
+      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
       return subscription
     },
-    query: async () => ({ results: history }),
+    query: async (filter = {}) => {
+      // Reference lookups: the source-id mirror is opaque here, so only the
+      // public `ids` fallback can answer them in unit tests.
+      if (filter['#o']) return { results: [] }
+      if (filter.ids) return { results: publicEvents.filter(event => filter.ids.includes(event.id)) }
+      if (filter['#k']) {
+        const kinds = filter['#k'].map(String)
+        return { results: history.filter(wrapper => wrapper.tags.some(tag => tag[0] === 'k' && kinds.includes(tag[1]))) }
+      }
+      return { results: history }
+    },
     addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true, stored: true } } }
   }
   const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => base64ToBytes(content).buffer } }, onMessages: value => { messages = value }, onError: error => errors.push(error), onInitialLoad: () => { initialMessages = messages }, ...options })
@@ -69,6 +80,14 @@ test('saving uses only personal copies, preserves text, quotes inner IDs with an
   assert.deepEqual(f.writes[0].event.tags[0], ['q', parent, '', pubkey])
   assert.equal(f.writes[0].event.kind, 9)
   assert.equal(f.writes[0].event.sig, undefined)
+  // The replied message is referenced by a NIP-21 URI first, then the text.
+  const [pointer, ...text] = f.writes[0].event.content.split('\n')
+  const [parsed] = parseChatContent(pointer)
+  assert.equal(parsed.key, 'event')
+  assert.equal(parsed.event.id, parent)
+  assert.equal(parsed.event.kind, 9)
+  assert.match(parsed.event.original, /^nostr:nevent1/)
+  assert.equal(text.join('\n'), 'Reply\nhttps://example.com/image.png')
   const write = f.eventStore.addPersonalCopy
   let failed
   f.eventStore.addPersonalCopy = async event => { failed = event; return { result: { ok: false, code: 'invalid' } } }
@@ -205,7 +224,8 @@ test('files are prepared without writes, chunks settle before metadata, and retr
   const id = f.chat.send('', null, { prepared, metadata, close: () => { released++; prepared.close() } })
   await f.chat.retry(id)
   assert.equal(f.messages[0].status, 'error')
-  assert.equal(f.messages[0].kind, 1063)
+  // Every message is a kind 9; the file metadata is its own event written first.
+  assert.equal(f.messages[0].kind, 9)
   assert.equal(f.writes.filter(({ event }) => event.kind === 1063).length, 0)
   const original = { ...f.messages[0] }
   fail = false
@@ -220,23 +240,30 @@ test('files are prepared without writes, chunks settle before metadata, and retr
   verified = 0
   f.chat.send('  reuse   caption ', id, { metadata: { ...metadata, download: '1' } })
   await f.chat.retry(f.messages.find(message => message.id !== id).id)
-  assert.equal(f.writes.length, before + 1, 'reuse writes metadata only')
-  assert.equal(f.writes.at(-1).event.content, 'reuse caption')
-  assert.equal(f.writes.at(-1).event.tags.some(tag => tag[0] === 'download'), false, 'sending does not propagate received download intent')
+  assert.equal(f.writes.length, before + 2, 'reuse writes the file metadata and its kind 9')
+  const [fileWrite, messageWrite] = f.writes.slice(-2)
+  assert.equal(fileWrite.event.kind, 1063)
+  assert.equal(fileWrite.event.content, 'reuse caption')
+  assert.equal(fileWrite.event.tags.some(tag => tag[0] === 'download'), false, 'sending does not propagate received download intent')
+  assert.equal(messageWrite.event.kind, 9)
+  assert.deepEqual(messageWrite.event.tags.filter(tag => tag[0] === 'q').map(tag => tag[1]), [id, getEventHash({ ...fileWrite.event, pubkey })])
+  const pointers = messageWrite.event.content.split('\n').map(pointer => parseChatContent(pointer)[0])
+  assert.deepEqual(pointers.map(pointer => pointer.event.id), [id, getEventHash({ ...fileWrite.event, pubkey })])
+  assert.equal(messageWrite.event.content.includes('reuse caption'), false, 'caption lives only on the file metadata')
   f.chat.close()
 })
 
-test('1063 history decrypts in its own kind and the catalog uses latest confirmed distinct roots', async () => {
+test('1063 history stays out of the feed and fills the attachment catalog from the store', async () => {
   const metadata = { root: 'ab'.repeat(32), size: 1, mime: 'image/png', filename: 'one.png', width: 1, height: 1, service: 'irfs', url: `https://nostr.alt/${nfileEncode({ root: 'ab'.repeat(32), mime: 'image/png', filename: 'one.png' })}?localOnly=1` }
   const first = createFileMetadata({ ...metadata, created_at: 1 })
   const recent = createFileMetadata({ ...metadata, caption: 'Recent', created_at: 2 })
   const f = fixture([wrapper(first), wrapper(recent)])
   await f.chat.start()
-  assert.equal(f.messages.length, 2)
-  const catalog = attachmentCatalog(f.messages)
+  assert.equal(f.messages.length, 0, 'file metadata no longer becomes a bubble')
+  const catalog = attachmentCatalog(await f.chat.readFiles())
   assert.equal(catalog.length, 1)
   assert.equal(catalog[0].caption, 'Recent')
-  assert.equal(attachmentCatalog(f.messages.map(message => ({ ...message, status: 'error' }))).length, 0)
+  assert.equal(attachmentCatalog((await f.chat.readFiles()).map(event => ({ ...event, status: 'error' }))).length, 0)
   f.chat.close()
 })
 

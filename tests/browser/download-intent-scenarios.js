@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import { getEventHash } from 'libp2r2p/event'
+import { neventEncode } from 'libp2r2p/nip19'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -16,11 +17,27 @@ export async function checkDownloadIntent ({ browser, evaluate, origin, download
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
   }
   let timestamp = Math.floor(Date.now() / 1000) + 60
+  const save = event => evaluate(`(async () => window.napp.eventStore.addPersonalCopy(${JSON.stringify(event)}, {context:'dm:' + await window.nostr.peekPublicKey()}))()`)
   const insert = async (content, tags, kind = 1063) => {
+    const owner = await evaluate('window.nostr.peekPublicKey()')
     const event = { kind, content, tags, created_at: timestamp++ }
-    const saved = await evaluate(`(async () => window.napp.eventStore.addPersonalCopy(${JSON.stringify(event)}, {context:'dm:' + await window.nostr.peekPublicKey()}))()`)
+    const saved = await save(event)
     assert.equal(saved.result.ok, true)
-    const id = getEventHash({ ...event, pubkey: await evaluate('window.nostr.peekPublicKey()') })
+    let message = event
+    if (kind === 1063) {
+      // File metadata only reaches a bubble through the kind 9 that references
+      // it, so each fixture inserts the 9+1063 pair.
+      const fileId = getEventHash({ ...event, pubkey: owner })
+      message = {
+        kind: 9,
+        content: `nostr:${neventEncode({ id: fileId, author: owner, kind: 1063 })}`,
+        tags: [['q', fileId, '', owner]],
+        created_at: timestamp++
+      }
+      const messageSaved = await save(message)
+      assert.equal(messageSaved.result.ok, true)
+    }
+    const id = getEventHash({ ...message, pubkey: owner })
     const row = `document.querySelector('[data-message-id="${id}"]')`
     await browser.until(() => evaluate(`!!(${row})`), 'received download metadata by exact ID')
     await reveal(row)

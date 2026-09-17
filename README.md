@@ -277,6 +277,22 @@ the app or restarting the account service discards any that were not saved.
 The app root owns history/profile subscriptions and cleans them up on unmount;
 home's self avatar and last-message preview share that state.
 
+Every new message is kind 9. Sending an image or file writes its kind 1063
+first, then a kind 9 whose content is a NIP-21 `nostr:nevent1…` URI (kind and
+author, no relay hints) plus any literal text; the text typed for an attachment
+lives only in the kind-1063 caption. Replies reference the replied message the
+same way, so an image reply carries two URIs and two `q` tags in order. The feed
+renders kind 9 only: a reference to a kind 9 becomes a quote, one to a 1063
+becomes the attachment card in the URI's position, and a `q` tag without a URI
+renders before the text. References resolve lazily from pending sends and the
+local store (never relays); unsupported or unresolved kinds keep the compact
+inline link. A rendered caption sits below the download row, italic, muted and
+clamped to two lines, expanding two lines per click.
+The first whitespace run that separates an expanded quote or attachment from the
+rest of the bubble is structural: a space or tab never indents the next line and
+a single line break never paints as an empty line, while an authored blank line
+(`\n\n`) still does.
+
 The companion launcher must expose NIP-44 v3 plaintext as `ArrayBuffer`, matching
 the NIP-07 extension. Self chat decodes those bytes directly as UTF-8 JSON.
 The local launcher/vault channel keeps those bytes binary; Base64 is confined
@@ -337,6 +353,10 @@ unnecessary. A confirmed empty catalog opens the picker, while an empty result
 arriving in an open panel leaves just its add-file tile. Closing the panel stays
 closed even when the query finishes later. Conversation and gallery retries
 share recovery and preserve the same account's outbox and prepared attachments.
+The catalog is a dedicated newest-first read of the account's kind-1063 personal
+copies in the self-chat context; they are decrypted before the existing
+image/video, dimension and unique-root filters, so files sent before this change
+stay reusable.
 A selection
 prepares a preview and MMR tree, shown above an optional caption. **Nothing is
 stored until Send.** Changing/removing the selection preserves caption and reply.
@@ -352,17 +372,19 @@ category-colored file icon in the composer; bubbles retain download cards.
 Attachment bubbles fit the available width (160–320 px when possible) and cap
 media height at 360 px without cropping.
 
-Text uses kind 9. Files use a single kind-1063 personal copy in `dm:<own pubkey>`:
-caption in content; `url`, `r`, `m`, `size`, `service=irfs`, and verified `dim` /
-Base64 `thumbhash` when available. The URL is `https://nostr.alt/nfile1…?localOnly=1`.
-Chunks use the launcher's existing public-local 34601 model with separated bytes;
-the personal copy's `r` retains them. They are not uploaded to relays or encrypted.
+Text uses kind 9. A file writes a kind-1063 personal copy in `dm:<own pubkey>`
+followed by the kind 9 that references it: caption in the 1063 content; `url`,
+`r`, `m`, `size`, `service=irfs`, and verified `dim` / Base64 `thumbhash` when
+available. The URL is `https://nostr.alt/nfile1…?localOnly=1`. Chunks use the
+launcher's existing public-local 34601 model with separated bytes; the personal
+copy's `r` retains them. They are not uploaded to relays or encrypted.
 
 Pending/error bubbles use the existing outbox and Retry. Each attempt preserves
-the same metadata event and timestamp, skips existing chunks, confirms local
-bytes, then saves metadata. Gallery reuse writes new metadata without duplicating
-bytes. Partial chunks remain under the launcher's normal cleanup. Empty files
-are rejected; files with failed/unsupported previews remain sendable/downloadable.
+the same metadata and kind-9 events with their timestamp, skips existing chunks,
+confirms local bytes, then saves the 1063 before the 9 that quotes it. Gallery
+reuse writes new metadata without duplicating bytes. Partial chunks remain under
+the launcher's normal cleanup. Empty files are rejected; files with
+failed/unsupported previews remain sendable/downloadable.
 Drafts and failed outbox entries remain memory-only and disappear on reload.
 Confirmed attachments survive according to launcher storage retention.
 

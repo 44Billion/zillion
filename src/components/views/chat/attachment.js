@@ -16,7 +16,9 @@ import { attachmentSizeStyle, fileCategory, fileName, fileSize } from '#helpers/
 f('z-chat-attachment', ({ h, props }) => {
   const page = useRoutePage()
   const view = useStore({
-    loadedFor: null, videoRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false,
+    loadedFor: null, videoRef$: null, captionRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false,
+    // Caption starts clamped to two lines; each click reveals two more.
+    captionLines$: 2,
     file$ () { return props.attachment$() || {} },
     placeholder$ () {
       try { return thumbHashToDataURL(base64ToBytes(this.file$().thumbhash)) } catch { return null }
@@ -66,6 +68,13 @@ f('z-chat-attachment', ({ h, props }) => {
     video.src = poster ? view.file$().url : source
     cleanup(() => { video.pause(); video.removeAttribute('src'); video.load() })
   }, { after: 'rendering' })
+  // The clamp is set on the node: it is a vendor-prefixed property that the
+  // template's style attribute cache does not own.
+  useTask(({ track }) => {
+    const element = track(() => view.captionRef$())
+    const lines = track(() => view.captionLines$())
+    if (element) element.style.setProperty('-webkit-line-clamp', lines > 2 ? String(lines) : '2')
+  }, { after: 'rendering' })
   const file = view.file$()
   const name = fileName(file, t('unnamed-file'))
   const size = fileSize(file.size, i18n.getLocale())
@@ -88,6 +97,12 @@ f('z-chat-attachment', ({ h, props }) => {
       .attachment-download > icon-file-download { display: block !important; flex: none; }
       .attachment-name { flex: 1; min-width: 0; overflow: hidden; font-size: 14rem; }
       .attachment-size { display: block; color: var(--z-muted); font-size: 11rem; }
+      .attachment-caption {
+        display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
+        width: 100%; margin: 0; padding: 0; border: 0; background: transparent;
+        color: var(--z-muted); font: inherit; font-size: 13rem; font-style: italic; line-height: 1.35;
+        text-align: start; overflow-wrap: anywhere; cursor: pointer;
+      }
       a:focus-visible { outline: 2px solid var(--z-accent-text); outline-offset: -2px; }
       &.attachment-preview {
         position: relative; width: 100%; aspect-ratio: 1; margin: 0; overflow: hidden; border-radius: var(--attachment-tile-radius, 8px); color: var(--z-text);
@@ -112,7 +127,7 @@ f('z-chat-attachment', ({ h, props }) => {
   ? forceDownload
     ? h`<a class="attachment-frame download-media" href=${download.href$()} target=${download.target} download=${download.attribute$()} aria-label=${t('Download file')} aria-disabled=${String(!download.href$())} onclick=${download.click}>${visual}</a>`
     : h`<span class="attachment-frame">${visual}</span>`
-  : null}<a class="attachment-download" href=${download.href$() || null} target=${download.target} download=${download.attribute$()} aria-disabled=${String(!download.href$())} title=${t('Download file')} onclick=${download.click}><icon-file-download props=${{ size: '24px', weight: 'regular' }} /><span class="attachment-name"><z-file-name props=${{ file$: view.file$ }} />${size ? h`<span class="attachment-size">${size}</span>` : null}</span></a>`}
+        : null}<a class="attachment-download" href=${download.href$() || null} target=${download.target} download=${download.attribute$()} aria-disabled=${String(!download.href$())} title=${t('Download file')} onclick=${download.click}><icon-file-download props=${{ size: '24px', weight: 'regular' }} /><span class="attachment-name"><z-file-name props=${{ file$: view.file$ }} />${size ? h`<span class="attachment-size">${size}</span>` : null}</span></a>${!props.preview && props.caption$?.() ? h`<button type="button" class="attachment-caption" aria-expanded=${String(view.captionLines$() > 2)} onpointerdown=${event => event.stopPropagation()} onclick=${event => { event.stopPropagation(); view.captionLines$(value => value + 2) }} ref=${view.captionRef$}>${props.caption$()}</button>` : null}`}
   </div>`
 })
 

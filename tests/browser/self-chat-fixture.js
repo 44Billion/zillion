@@ -17,7 +17,7 @@ f('z-self-chat-fixture', ({ h }) => {
 // This does not replace any launcher provider or the running account service.
 f('z-gallery-ui-fixture', ({ h }) => {
   useClosestStore('z-route-page', () => ({ isActive$: true }), { shouldCache: false })
-  const runtime = useMemo(() => ({ work: null }))
+  const runtime = useMemo(() => ({ work: null, files: [] }))
   const view = useStore({
     messages$: [], historyState$: 'unavailable', canAttach$: true, canSend$: false, calls$: 0,
     recover () {
@@ -31,17 +31,25 @@ f('z-gallery-ui-fixture', ({ h }) => {
       const canvas = document.createElement('canvas'); canvas.width = 8; canvas.height = 8
       const ctx = canvas.getContext('2d'); ctx.fillStyle = 'green'; ctx.fillRect(0, 0, 8, 8)
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'))
-      this.messages$(Array.from({ length: count }, (_, index) => {
+      runtime.files = Array.from({ length: count }, (_, index) => {
         const root = (index + 1).toString(16).padStart(64, '0')
         const mime = 'image/png'; const filename = `gallery-${index}.png`
         const file = { root, mime, filename, width: 8, height: 8, size: blob.size, service: 'irfs', url: `https://nostr.alt/${nfileEncode({ root, mime, filename })}?localOnly=1` }
         rememberAttachmentPreview(file, { blob, width: 8, height: 8 })
         return { ...createFileMetadata(file), id: root, status: 'saved' }
-      }))
+      })
       this.historyState$('loaded')
     },
     settle (state) { this.historyState$(state); runtime.work?.resolve(); runtime.work = null }
   })
   window.galleryUI = view
-  return h`<div class="gallery-fixture"><z-chat-composer props=${{ messages$: view.messages$, historyState$: view.historyState$, canAttach$: view.canAttach$, canSend$: view.canSend$, recover: view.recover }} /></div>`
+  const readFiles = async () => {
+    // The controlled fixture drives loading/failure through historyState$, so
+    // the catalog read itself always resolves (possibly empty).
+    return runtime.files
+  }
+  return h`<div class="gallery-fixture"><z-chat-composer props=${{
+    messages$: view.messages$, historyState$: view.historyState$, canAttach$: view.canAttach$,
+    canSend$: view.canSend$, recover: view.recover, readFiles
+  }} /></div>`
 })

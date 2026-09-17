@@ -17,18 +17,51 @@ import '#shared/icons/icon-x.js'
 
 f('z-chat-composer', ({ h, props }) => {
   const page = useRoutePage()
-  const runtime = useMemo(() => ({ attachment: null, controller: null }))
+  const runtime = useMemo(() => ({ attachment: null, controller: null, catalog: 0 }))
   const view = useStore({
     galleryId: `attachment-gallery-${crypto.randomUUID()}`,
     attachment$: null, source$: null, preparing$: false, progress$: null, gallery$: false, galleryRef$: null, pickerRef$: null,
-    catalog$ () { return props.historyLoaded$?.() === false ? [] : attachmentCatalog(props.messages$?.() || []) },
+    catalogFiles$: [], catalogBusy$: false, catalogError$: false,
+    // Files come from the kind-1063 events the chat timeline already resolved
+    // through its kind-9 references, so old files stay reusable without a
+    // second, permission-gated store read.
+    catalog$ () {
+      if (props.historyLoaded$?.() === false) return []
+      return attachmentCatalog(props.references$ ? Object.values(props.references$()) : this.catalogFiles$())
+    },
     catalogByRoot$ () { return Object.fromEntries(this.catalog$().map(file => [file.root, file])) },
-    catalogState$ () { return props.historyState$?.() || 'loaded' },
+    catalogState$ () {
+      if (props.historyState$?.() === 'unavailable') return 'unavailable'
+      return this.catalogBusy$() ? 'loading' : this.catalogError$() ? 'unavailable' : 'loaded'
+    },
     loadingHold$: false, loadingAttempt$: 0,
-    catalogLoading$ () { return this.loadingHold$() || (!this.catalog$().length && this.catalogState$() === 'loading') },
+    catalogLoading$ () { return this.loadingHold$() || this.catalogState$() === 'loading' },
+    async loadCatalog () {
+      // Deriving from the references the chat already resolved avoids another
+      // permission-gated store read and its unanswered-dialog stall.
+      if (props.references$ || this.catalogBusy$()) return
+      if (!props.readFiles) return
+      this.catalogBusy$(true)
+      this.catalogError$(false)
+      const generation = ++runtime.catalog
+      try {
+        // An unanswered read-permission request must not leave the gallery
+        // spinning forever; fall back to the Retry tile instead.
+        const timeout = Promise.withResolvers()
+        const timer = setTimeout(() => timeout.reject(new Error('CATALOG_TIMEOUT')), 15000)
+        timeout.promise.catch(() => {})
+        const files = await Promise.race([props.readFiles(), timeout.promise]).finally(() => clearTimeout(timer))
+        if (runtime.catalog === generation) this.catalogFiles$(files)
+      } catch {
+        if (runtime.catalog === generation) this.catalogError$(true)
+      } finally {
+        if (runtime.catalog === generation) this.catalogBusy$(false)
+      }
+    },
     recover () {
       this.loadingHold$(true)
       this.loadingAttempt$(value => value + 1)
+      this.loadCatalog()
       props.recover?.()
     },
     replyAttachment$ () { return props.reply$?.()?.attachment },
@@ -71,7 +104,9 @@ f('z-chat-composer', ({ h, props }) => {
     text$: '', fieldRef$: null, inputRef$: null,
     replyContent$ () {
       const reply = props.reply$?.()
-      return reply ? reply.real ? reply.attachment ? reply.text || '' : reply.text : t(reply.text) : ''
+      // Raw compacted text keeps the URLs reply thumbnails parse; attachment
+      // captions take precedence because the kind-9 content is only a URI.
+      return reply ? reply.real ? (reply.caption || reply.text || '') : t(reply.text) : ''
     },
     replyText$ () { return shortQuotedText(this.replyContent$()) },
     send () {
@@ -87,6 +122,17 @@ f('z-chat-composer', ({ h, props }) => {
       } catch (_) { error(() => t('Could not save message')) }
     }
   })
+  // The catalog reads file metadata (inner kind 1063) straight from the local
+  // store, so files sent before this change stay reusable. It loads when the
+  // panel opens (or Recovers) instead of eagerly, because the read is
+  // permission-gated and must not race the file-write permission dialog.
+  // Standalone/controlled usage without resolved references still reloads the
+  // catalog once history is complete.
+  useTask(({ track }) => {
+    if (props.references$) return
+    if (track(() => props.historyState$?.()) !== 'loaded') return
+    view.loadCatalog()
+  }, { after: 'rendering' })
   // Hold only the gallery presentation, never the shared account recovery.
   // Start after rendering so even an immediate failure gets a visible interval.
   useTask(({ track, cleanup }) => {

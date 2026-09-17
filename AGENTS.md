@@ -495,18 +495,52 @@ needed; empty folders mark the initial structure.
   becomes true only after initial query processing and stays true during
   same-account recovery, so scroll initialization does not restart.
   `/chat/user` never falls back to fixture messages, including when signed out.
-- `src/services/self-chat.js` uses unsigned kind-9 text and kind-1063 file templates, explicit context
-  `dm:<own hex pubkey>`, `addPersonalCopy` and query/subscribe. No relay sends or
-  private-messenger transport are involved. Only owner-authored direct/signed
-  copies in that exact context are rendered; hearsay/other authors are excluded.
+- `src/services/self-chat.js` uses unsigned kind-9 text templates and unsigned
+  kind-1063 file templates, explicit context `dm:<own hex pubkey>`,
+  `addPersonalCopy` and query/subscribe. No relay sends or private-messenger
+  transport are involved. Only owner-authored direct/signed copies in that
+  exact context are rendered; hearsay/other authors are excluded. The feed
+  subscribes to inner kind 9 only; file metadata is resolved through the
+  references of those messages instead of becoming a bubble.
+- Every new message is kind 9. An attachment writes its kind 1063 first and
+  then the kind 9 that references it, so the file row exists before the message
+  row commits. The kind-9 `.content` holds NIP-21 `nostr:nevent1…` URIs (kind and
+  author, no relay hints) followed by any literal text; the text typed for an
+  attachment lives only in the kind-1063 caption. Replies prepend the replied
+  event's URI and carry a `q` tag for each referenced event in the same order;
+  a reply with an image therefore carries two `q` tags and two URIs. Consume
+  `q` tags and content URIs together, deduplicated by id, with a URI keeping its
+  content position and a `q`-only reference rendering before the text.
+- `src/services/chat-references.js` resolves those references lazily from the
+  local store: pending outbox events first, personal copies through
+  `signer.obfuscate(id, '1006', '.id')` plus a `#o`/`#c`/`#v`/`#k` query, then
+  public events by `ids`. Results are cached in memory and cleared on account
+  change/teardown. Only kinds 9 and 1063 (and unknown `note1` pointers, which
+  must be looked up to learn their kind) are resolved; every other kind keeps
+  the existing inline label/link presentation. Never fetch references over the
+  network and never query relays for them.
 - The launcher owns wrapper encryption/signing. Read kind-1006 wrappers with
-  obfuscated `c` and inner `k=9` or `k=1063`; decrypt through the documented NIP-44 v3 signer
-  extension's `ArrayBuffer` result directly with `TextDecoder`; never Base64
-  decode the injected v3 API result. The local launcher/vault channel also stays
-  binary; remote bunker and encrypted-log encoding belong to the vault. This
-  requires the companion launcher/vault binary API update. Compute inner IDs with the library event hash; q tags use those IDs,
+  obfuscated `c` and inner `k=9` or `k=1063`; decrypt through the documented
+  NIP-44 v3 signer extension's `ArrayBuffer` result directly with `TextDecoder`;
+  never Base64 decode the injected v3 API result. The local launcher/vault
+  channel also stays binary; remote bunker and encrypted-log encoding belong to
+  the vault. This requires the companion launcher/vault binary API update.
+  Compute inner IDs with the library event hash; q tags and URIs use those IDs,
   empty relay hints and the owner pubkey. A `zillion` UUID tag distinguishes
-  identical intentional sends; retries retain the same template until saved.
+  identical intentional sends; retries retain the same templates until saved.
+- Bubble references follow the plan: a resolved kind 9 renders as
+  `z-chat-quote`, a resolved kind 1063 as `z-chat-attachment` in the URI's
+  position, unresolved or unsupported kinds stay compact inline references,
+  and quotes never nest. `q`-only references that do not resolve to a chat
+  message add nothing, exactly as before.
+- The line break that separates an expanded block (quote or attachment) from
+  the surrounding content is structural, not a blank line the author typed.
+  `augmentedContentItems` consumes the first whitespace run after such a block
+  — space, tab, line break or a mix — so `URI URI`, `URI\nURI` and `URI\ntext`
+  render flush and the next line never starts indented. Extra line breaks
+  survive, so an authored `\n\n` still keeps one visible blank line. Unresolved
+  references stay inline and keep their separator; never rewrite the stored
+  event content.
 - The self-chat service owns an in-memory outbox and message `status` values
   `pending`, `error`, and `saved`; never serialize UI state into a Nostr event.
   Concurrent sends have independent entries. Explicit retries reuse the same
@@ -672,8 +706,14 @@ needed; empty folders mark the initial structure.
   preparation and revoke temporary visual URLs on replacement/removal/unmount or
   confirmation. Cancel superseded work so old selections cannot update the draft.
 - Query/decrypt personal copies for inner kinds 9 and 1063 with their respective
-  scopes, retaining owner/context/provenance validation. File messages have no
-  companion kind 9. Consume nip94 tags directly; copy/share includes caption+URL.
+  scopes, retaining owner/context/provenance validation. A file message is always
+  the 9+1063 pair: the message is the kind 9, and the kind 1063 carries the
+  caption, URL, mime, root, dimensions and thumbhash with no `q` tag. Consume
+  nip94 tags directly; copy/share includes caption+URL.
+- The composer gallery runs its own local query of the context's inner kind-1063
+  copies, newest first, and decrypts them before filtering. The store does not
+  index mime, so select candidate roots first and apply the existing
+  image/video-with-dimensions, unique-by-root filters after decryption.
 - Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.18`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
@@ -751,6 +791,13 @@ needed; empty folders mark the initial structure.
   paperclip highlights only while its gallery is expanded. Bubble attachments
   retain file-download cards, 160px desired minimum/320px maximum constrained by
   available width, and 360px media-height maximum, with letterboxing when needed.
+- A rendered kind-1063 caption is presentation, not message text. Show it below
+  `.attachment-download` inside `.attachment-caption`: italic, muted, slightly
+  smaller than a normal message, horizontally limited to the attachment card.
+  Clamp it to two lines and let each click reveal two more; it only expands,
+  stops at the end of the text, and must not open the bubble's action menu
+  (stop propagation on pointerdown and click). Caption measurement must not
+  interfere with the bubble growth controller.
 - Set the nfile filename on outgoing attachments and derive a download-only URL
   for existing references needing a name/extension. Preserve root, relay/author
   hints and localOnly; never rewrite received events or use a SHA hash as a root.

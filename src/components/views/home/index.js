@@ -1,8 +1,7 @@
-import { messageAttachment } from '#services/chat-attachments.js'
+import { chatTimeline } from '#helpers/chat-timeline.js'
 import { t } from '#i18n/messages.js'
 import { i18n } from '#i18n/index.js'
 import { f, useStore } from '#f'
-import { compactWhitespace } from 'libp2r2p/nip27'
 import '#f/components/f-to-signals.js'
 import data from './fixtures/home.json'
 import { useAccount } from '#hooks/use-account.js'
@@ -28,11 +27,15 @@ f('z-home', ({ h }) => {
       const self = account.person$()
       const latest = account.messages$().at(-1)
       const date = latest ? new Date(latest.created_at * 1000) : null
+      // Preview from the resolved message model so a kind 9 that only
+      // references a file shows its caption/filename instead of the URI.
+      const preview = latest ? chatTimeline([latest], { locale: i18n.getLocale(), references: account.references$(), t })[0] : null
+      const previewText = preview ? (preview.attachment ? (preview.caption || preview.attachment.filename || '') : preview.displayText) : ''
       return data.conversations.map(conversation => {
         if (conversation.contactId === self.id) {
           return {
             ...conversation, contact: self, real: true, unread: 0,
-            message: compactWhitespace(latest?.content ?? '') || messageAttachment(latest)?.filename || '', lastMessageAt: date?.toISOString() ?? '',
+            message: previewText, lastMessageAt: date?.toISOString() ?? '',
             timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
           }
         }

@@ -1,18 +1,20 @@
 import { encodedFileName } from '#helpers/attachment-presentation.js'
 import { nfileEncode } from 'libp2r2p/nip19'
 import { decodeIrfsChunk } from 'libp2r2p/irfs'
-import { getEventHash, isSerializableEvent, isValidEvent } from 'libp2r2p/event'
+import { getEventHash } from 'libp2r2p/event'
 import { createFileMetadata } from 'libp2r2p/nip94'
 import { verifyLocalFile } from './chat-attachments.js'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { compactWhitespace } from 'libp2r2p/nip27'
+import { chatReferenceUri, createChatReferences, decryptPersonalCopy, CHAT_TEXT_KIND } from './chat-references.js'
 
 export const SELF_CHAT_KIND = 9
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.
-export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onInitialLoad = () => {}, onHistoryState = () => {}, verifyFile = verifyLocalFile }) {
+export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onReference = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, verifyFile = verifyLocalFile }) {
   const context = `dm:${pubkey}`
+  const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference })
   const messages = new Map()
   const outbox = new Map()
   const controller = new AbortController()
@@ -31,18 +33,14 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     emit()
   }
   async function accept (wrapper, filter, current) {
-    if (!current() || wrapper?.kind !== PERSONAL_COPY || wrapper.pubkey !== pubkey || !isValidEvent(wrapper)) return
-    const tag = name => wrapper.tags.filter(tag => tag[0] === name)
-    if (tag('k').length !== 1 || !['9', '1063'].includes(tag('k')[0][1]) || tag('c').length !== 1 || tag('c')[0][1] !== filter['#c'][0]) return
-    if (tag('v').length !== 1 || !['0', '1'].includes(tag('v')[0][1])) return
-    const plaintext = await signer.nip44v3.decrypt(pubkey, Number(tag('k')[0][1]), '', wrapper.content)
     if (!current()) return
-    const inner = JSON.parse(new TextDecoder().decode(plaintext))
-    const event = { ...inner, pubkey: inner.pubkey ?? pubkey }
-    if (event.pubkey !== pubkey || String(event.kind) !== tag('k')[0][1] || event.created_at !== wrapper.created_at || !isSerializableEvent(event)) return
-    if (tag('v')[0][1] === '0' ? !isValidEvent(event) : ('id' in inner || 'sig' in inner || 'pubkey' in inner)) return
-    const id = getEventHash(event)
-    confirm(id, event)
+    const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: filter['#c'][0] })
+    if (!current()) return
+    if (!event || event.kind !== CHAT_TEXT_KIND) return
+    confirm(event.id, event)
+    // A message may have arrived before the personal copy it references, and a
+    // missed lookup is cached. Revalidate misses as new copies land.
+    references.retryMisses()
   }
   function start () {
     if (closed) return Promise.resolve(false)
@@ -66,7 +64,9 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
       try {
         const encodedContext = await signer.obfuscate(context, String(PERSONAL_COPY), '')
         if (!current()) return false
-        const filter = { kinds: [PERSONAL_COPY], authors: [pubkey], '#k': ['9', '1063'], '#c': [encodedContext], '#v': ['0', '1'] }
+        // The feed is driven by kind 9 messages only. File metadata (1063) is
+        // fetched lazily through the references of those messages.
+        const filter = { kinds: [PERSONAL_COPY], authors: [pubkey], '#k': ['9'], '#c': [encodedContext], '#v': ['0', '1'] }
         // Settle read permissions first; initial subscription replay closes the
         // snapshot/live race. Recovery retains the messages and their outbox.
         const { results } = await eventStore.query(filter)
@@ -132,6 +132,11 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
         await verifyFile(metadata, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]) })
         controller.signal.throwIfAborted()
       }
+      // The file metadata is committed before the kind 9 that references it.
+      if (entry.fileEvent) {
+        const savedFile = await eventStore.addPersonalCopy(entry.fileEvent, { context })
+        if (!savedFile?.result?.ok) throw new Error(`File storage failed: ${savedFile?.result?.code ?? 'unknown'}`)
+      }
       const saved = await eventStore.addPersonalCopy(entry.event, { context })
       if (!saved?.result?.ok) throw new Error(`Message storage failed: ${saved?.result?.code ?? 'unknown'}`)
       confirm(id, { ...entry.event, pubkey })
@@ -149,22 +154,40 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     content = compactWhitespace(content)
     if (!content && !attachment) return
     if (replyTo && !messages.has(replyTo)) throw new Error('Unknown reply target')
-    const textEvent = {
-      kind: SELF_CHAT_KIND, created_at: Math.floor(Date.now() / 1000), content,
-      tags: [...(replyTo ? [['q', replyTo, '', pubkey]] : []), ['zillion', crypto.randomUUID()]]
-    }
+    const createdAt = Math.floor(Date.now() / 1000)
+    const reply = replyTo ? messages.get(replyTo) : null
+    const tags = reply ? [['q', reply.id, '', pubkey]] : []
+    let fileEvent = null
     if (attachment) {
       const { root, mime, size, width, height, thumbhash } = attachment.metadata
       const filename = encodedFileName(attachment.metadata)
       const url = `https://nostr.alt/${nfileEncode({ root, mime, filename })}?localOnly=1`
       attachment = { ...attachment, metadata: { root, mime, size, width, height, thumbhash, filename, url, service: 'irfs' } }
+      fileEvent = createFileMetadata({ ...attachment.metadata, caption: content, created_at: createdAt })
+      const fileId = getEventHash({ ...fileEvent, pubkey })
+      tags.push(['q', fileId, '', pubkey])
     }
-    const event = attachment
-      ? createFileMetadata({ ...attachment.metadata, caption: content, created_at: textEvent.created_at, tags: textEvent.tags })
-      : textEvent
+    // NIP-21 URIs come first: the replied message (kind 9), then the file
+    // metadata (1063) when this message carries an attachment. A caption lives
+    // only on the 1063, so the 9 has no extra text in that case.
+    const uris = []
+    if (reply) uris.push(chatReferenceUri(reply))
+    if (fileEvent) uris.push(chatReferenceUri({ ...fileEvent, pubkey, id: getEventHash({ ...fileEvent, pubkey }) }))
+    const text = attachment ? '' : content
+    const event = {
+      kind: SELF_CHAT_KIND,
+      created_at: createdAt,
+      content: [...uris, text].filter(Boolean).join('\n'),
+      tags: [...tags, ['zillion', crypto.randomUUID()]]
+    }
     const id = getEventHash({ ...event, pubkey })
-    messages.set(id, { ...event, pubkey, id, status: 'pending', localSource: attachment?.source })
-    outbox.set(id, { event, attachment, work: null })
+    messages.set(id, { ...event, pubkey, id, status: 'pending', localSource: attachment?.source, localAttachment: attachment?.metadata })
+    if (fileEvent) {
+      const fileId = getEventHash({ ...fileEvent, pubkey })
+      references.locals.set(fileId, { ...fileEvent, pubkey, id: fileId })
+    }
+    references.locals.set(id, { ...event, pubkey, id })
+    outbox.set(id, { event, fileEvent, attachment, work: null })
     write(id)
     return id
   }
@@ -174,7 +197,16 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     controller.abort()
     for (const entry of outbox.values()) entry.attachment?.close?.()
     outbox.clear()
+    references.clear()
     subscription?.return().catch(() => {})
   }
-  return { start, send, retry: write, close }
+  return {
+    start,
+    send,
+    retry: write,
+    close,
+    // Pending/local events and store lookups share one resolver.
+    resolveReference: reference => references.resolve(reference),
+    readFiles: options => references.readFiles(options)
+  }
 }

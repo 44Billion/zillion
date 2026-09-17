@@ -11,23 +11,52 @@ import './attachment.js'
 import { useMediaDownload } from './hooks/use-media-download.js'
 import { useRoutePage } from '#shared/route-page.js'
 import { abortable, preparationSignal, prepareVideo, mediaDimensions, mediaSizeStyle } from '#helpers/media-dimensions.js'
+import { messageAttachment } from '#services/chat-attachments.js'
+import { isResolvableChatReference, CHAT_FILE_KIND, CHAT_TEXT_KIND } from '#services/chat-references.js'
+import { augmentedContentItems, chatQuoteModel } from '#helpers/chat-timeline.js'
 
 f('z-chat-content', ({ h, props }) => {
   const view = useStore({ items$ () { return parseChatContent(props.text$()) } })
+  // `q`-only references have no URI position and render before the content.
+  // Expanded blocks consume the line break that separated them, so a `\n`
+  // between two URIs does not paint as a blank line.
+  const items$ = () => augmentedContentItems([
+    ...(props.prepend$?.() ?? []).map(reference => ({ key: 'event', prepend: true, event: { id: reference.id, kind: reference.kind } })),
+    ...view.items$()
+  ], props.references$?.() ?? {})
   return h`<span class="chat-content"><style>${`
       z-chat-content .chat-content {
         white-space: pre-wrap; overflow-wrap: anywhere;
         .chat-reference { color: var(--z-accent-text); text-decoration: none; }
       }
-    `}</style>${view.items$().map((item, index) => h({ key: index })`<f-to-signals props=${{
+    `}</style>${items$().map((item, index) => h({ key: index })`<f-to-signals props=${{
       from: { item },
-      render: ({ h, props }) => h`<z-chat-content-item props=${{ item$: props.item$ }} />`
+      render: ({ h, props: data }) => h`<z-chat-content-item props=${{ item$: data.item$, references$: props.references$, resolve$: props.resolve$, source$: props.source$ }} />`
     }} />`)}</span>`
 })
 
 f('z-chat-content-item', ({ h, props }) => {
   const view = useStore({ attachment$ () { const url = props.item$().url; return { ...url?.nfile, ...url, url: url?.value, mime: url?.m || 'application/octet-stream' } } })
   const item = props.item$()
+  const eventReference = item.key === 'event' ? item.event : null
+  const resolved = eventReference ? props.references$?.()?.[eventReference.id] : null
+  useTask(() => {
+    if (!resolved && eventReference && isResolvableChatReference(eventReference)) props.resolve$?.(eventReference)
+  })
+  if (eventReference) {
+    // Kind 9 renders as a quote and kind 1063 as its attachment card, in place
+    // of the URI. Other kinds keep today's inline link/label behavior.
+    if (resolved?.kind === CHAT_TEXT_KIND) {
+      return h`<z-chat-quote props=${{ message$: () => chatQuoteModel(resolved, props.references$?.() ?? {}) }} />`
+    }
+    if (resolved?.kind === CHAT_FILE_KIND) {
+      const file = messageAttachment(resolved)
+      if (file) return h`<z-chat-attachment props=${{ attachment$: () => file, caption$: () => file.caption, source$: () => props.source$?.() ?? null }} />`
+    }
+    // A `q`-only reference that does not resolve to a chat message adds
+    // nothing, exactly like the previous q-tag behavior.
+    if (item.prepend) return null
+  }
   if (item.key === 'url' && (item.url.nfile || (item.url.download === '1' && !/^(image|video)\//.test(item.url.m ?? '')))) return h`<z-chat-attachment props=${{ attachment$: view.attachment$ }} />`
   if (item.key === 'text') return h`${item.text.value}`
   if (item.key === 'url' && /^(image|video)\//.test(item.url.m ?? '')) return h`<z-chat-media props=${{ item$: props.item$ }} />`

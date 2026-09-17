@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
-import { nfileDecode, nfileEncode } from 'libp2r2p/nip19'
+import { nfileDecode, nfileEncode, neventEncode } from 'libp2r2p/nip19'
+import { getEventHash } from 'libp2r2p/event'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 
@@ -101,13 +102,24 @@ export async function checkAttachmentPresentation ({ browser, evaluate, origin, 
     const source = `https://nostr.alt/${nfileEncode({ root: reference.root, mime: 'application/pdf' })}?localOnly=1`
     const filename = reference.root + '.pdf'
     const caption = 'First line\nSecond line followed by enough words to wrap onto additional lines naturally.'
-    const event = {
-      kind: 1063, content: caption, created_at: Math.floor(Date.now() / 1000) + 1000,
+    const owner = await evaluate('selfChatAccount.pubkey$()')
+    const at = Math.floor(Date.now() / 1000) + 1000
+    const file = {
+      kind: 1063, content: caption, created_at: at,
       tags: [['url', source], ['r', reference.root], ['m', 'application/pdf'], ['size', String(bytes.length)], ['service', 'irfs']]
     }
-    assert.equal((await evaluate(`(async () => window.napp.eventStore.addPersonalCopy(${JSON.stringify(event)}, {context:'dm:'+await window.nostr.peekPublicKey()}))()`)).result.ok, true)
-    const row = `[...document.querySelectorAll('.message-row')].find(row => row.querySelector('.chat-content')?.innerText === ${JSON.stringify(caption)})`
+    const fileId = getEventHash({ ...file, pubkey: owner })
+    const message = {
+      kind: 9, created_at: at,
+      content: `nostr:${neventEncode({ id: fileId, author: owner, kind: 1063 })}`,
+      tags: [['q', fileId, '', owner]]
+    }
+    const context = `dm:${owner}`
+    assert.equal(await evaluate(`(async () => (await window.napp.eventStore.addPersonalCopy(${JSON.stringify(file)}, {context:${JSON.stringify(context)}})).result.ok)()`), true)
+    assert.equal(await evaluate(`(async () => (await window.napp.eventStore.addPersonalCopy(${JSON.stringify(message)}, {context:${JSON.stringify(context)}})).result.ok)()`), true)
+    const row = `[...document.querySelectorAll('.message-row')].find(row => row.querySelector('.attachment-name')?.textContent.includes(${JSON.stringify(filename)}))`
     await browser.until(() => evaluate(`!!(${row})?.querySelector('.attachment-download[href]')`), 'received file gets a fallback download name')
+    await browser.until(() => evaluate(`(${row})?.querySelector('.attachment-caption')?.textContent === ${JSON.stringify(caption)}`), 'received file caption renders below the download row')
     const href = await evaluate(`(${row}).querySelector('.attachment-download').href`)
     assert.equal(nfileDecode(new URL(href).pathname.slice('/~~nfile/'.length)).filename, filename)
     await browser.send('Browser.setDownloadBehavior', { behavior: 'allowAndName', downloadPath: downloads, eventsEnabled: true })
@@ -124,7 +136,9 @@ export async function checkAttachmentPresentation ({ browser, evaluate, origin, 
     const composedLines = await inlineLines('document.querySelector(".composer-reply .file-reply")')
     assert.ok(composedLines.count >= 2 && composedLines.firstAfterName && composedLines.followingAtLeft, JSON.stringify(composedLines))
     await evaluate('(() => {const input=document.querySelector(\'.chat-composer textarea\');input.value=\'Reply presentation\';input.dispatchEvent(new Event(\'input\',{bubbles:true}));document.querySelector(\'.compose-action\').click()})()')
-    const quote = '[...document.querySelectorAll(\'.message-row\')].find(row => row.querySelector(\'.chat-content\')?.innerText === \'Reply presentation\')?.querySelector(\'.message-quote\')'
+    // Real bubbles keep the posted quote inside z-chat-content, so match the
+    // row that contains the typed text and the quote instead of an exact text.
+    const quote = '[...document.querySelectorAll(\'.message-row\')].find(row => row.querySelector(\'.chat-content\')?.innerText.includes(\'Reply presentation\') && row.querySelector(\'.message-quote\'))?.querySelector(\'.message-quote\')'
     await browser.until(() => evaluate(`(${quote})?.querySelector('.file-name')?.getAttribute('aria-label') === '${filename}'`), 'posted quote retains filename before caption')
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 520, deviceScaleFactor: 1, mobile: true }, pageSession)
     await settle()

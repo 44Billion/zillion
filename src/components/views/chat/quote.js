@@ -3,10 +3,19 @@ import './file-reply.js'
 import { f, useStore } from '#f'
 import { shortQuotedText } from '#helpers/reference-label.js'
 import { useReplyThumbnail } from './hooks/use-reply-thumbnail.js'
+import { t } from '#i18n/messages.js'
 
 f('z-chat-quote', ({ h, props }) => {
-  const view = useStore({ text$ () { return shortQuotedText(props.text$()) } })
-  const thumbnail = useReplyThumbnail(props.mediaText$, { when: 'visible', attachment$: props.attachment$ })
+  // The quoted message is a resolved kind 9: excerpt plus its first
+  // thumbnailable item (or inline filename) and caption, as before.
+  const model$ = () => props.message$?.() ?? null
+  const view = useStore({
+    raw$ () { const model = model$(); return model?.caption || model?.text || '' },
+    text$ () { return shortQuotedText(this.raw$()) },
+    attachment$ () { return model$()?.attachment ?? null },
+    content$ () { return model$()?.content ?? '' }
+  })
+  const thumbnail = useReplyThumbnail(view.content$, { when: 'visible', attachment$: view.attachment$ })
   const media = thumbnail.visible$() ? thumbnail.media$() : null
   return h`<blockquote class="message-quote"><style>${`
     z-chat-quote .message-quote {
@@ -20,5 +29,5 @@ f('z-chat-quote', ({ h, props }) => {
     }
   `}</style>${media
 ? h`<z-media-thumbnail props=${{ media$: thumbnail.media$, className: 'quote-thumbnail', onError: () => thumbnail.failed$(true) }} />`
-    : null}<div class="quote-copy"><span class="quote-name" title=${props.author$()}>${props.author$()}</span><span class="quote-text" title=${props.text$()}>${props.attachment$?.() && !media ? h`<z-file-reply props=${{ file$: props.attachment$, caption$: props.text$ }} />` : view.text$()}</span></div></blockquote>`
+    : null}<div class="quote-copy"><span class="quote-name" title=${props.author$?.() ?? t('You')}>${props.author$?.() ?? t('You')}</span><span class="quote-text" title=${view.text$()}>${view.attachment$() && !media ? h`<z-file-reply props=${{ file$: view.attachment$, caption$: view.raw$ }} />` : view.text$()}</span></div></blockquote>`
 })

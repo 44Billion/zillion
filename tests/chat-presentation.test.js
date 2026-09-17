@@ -1,8 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { noteEncode, appEncode } from 'libp2r2p/nip19'
+import { noteEncode, appEncode, nfileEncode, neventEncode } from 'libp2r2p/nip19'
 import { extractMedia } from 'libp2r2p/nip27'
-import { chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
+import { augmentedContentItems, chatQuoteModel, chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
+import { finalizeEvent, getEventHash } from 'libp2r2p/event'
+import { createFileMetadata } from 'libp2r2p/nip94'
 import { parseChatContent } from '#helpers/chat-content.js'
 import { shortNostrLabel, shortQuotedText, shortUrlLabel } from '#helpers/reference-label.js'
 import { canPreviewNostrReference, createLinkPreviews, safePreviewUrl } from '#services/link-preview.js'
@@ -58,6 +60,67 @@ test('day groups retain their identity when older messages arrive ahead of the c
   assert.equal(after[0].key, before[0].key)
   assert.equal(after[0].label, before[0].label)
   assert.deepEqual(after[0].messages.map(message => message.id), ['older', 'newer'])
+})
+
+test('kind 9 references expand to quotes and attachments by URI position', () => {
+  const secret = new Uint8Array(32).fill(7)
+  const pubkey = finalizeEvent({ kind: 0, created_at: 1, tags: [], content: '' }, secret).pubkey
+  const inner = event => ({ ...event, pubkey, id: getEventHash({ ...event, pubkey }) })
+  const parent = inner({ kind: 9, created_at: 1, content: 'Parent text', tags: [] })
+  const root = 'ab'.repeat(32)
+  const file = inner(createFileMetadata({
+    root, size: 1, mime: 'image/png', width: 1, height: 1, caption: 'A caption', created_at: 2,
+    url: `https://nostr.alt/${nfileEncode({ root, mime: 'image/png', filename: 'one.png' })}?localOnly=1`
+  }))
+  const uri = event => `nostr:${neventEncode({ id: event.id, author: pubkey, kind: event.kind })}`
+  const references = { [parent.id]: parent, [file.id]: file }
+  const reply = inner({ kind: 9, created_at: 3, content: `${uri(parent)}\nLook at this`, tags: [['q', parent.id, '', pubkey]] })
+  const image = inner({ kind: 9, created_at: 4, content: uri(file), tags: [['q', file.id, '', pubkey]] })
+  const legacy = inner({ kind: 9, created_at: 5, content: 'Only a q tag', tags: [['q', parent.id, '', pubkey]] })
+
+  const [replyMessage, imageMessage, legacyMessage] = chatTimeline([reply, image, legacy], { references, locale: 'en' })
+  // The URI position wins and the duplicate `q` tag does not duplicate the block.
+  assert.deepEqual(replyMessage.references.map(reference => [reference.id, reference.fromQ, reference.fromUri, reference.position]), [[parent.id, true, true, 0]])
+  assert.deepEqual(replyMessage.prepend, [])
+  assert.equal(replyMessage.quoted.text, 'Parent text')
+  assert.equal(replyMessage.displayText, 'Look at this')
+  assert.equal(imageMessage.attachment.filename, 'one.png')
+  assert.equal(imageMessage.caption, 'A caption')
+  assert.deepEqual(imageMessage.prepend, [])
+  // A `q` without a URI renders before the content.
+  assert.deepEqual(legacyMessage.prepend.map(reference => reference.id), [parent.id])
+  assert.equal(legacyMessage.quoted.text, 'Parent text')
+  // File metadata never becomes a bubble of its own.
+  assert.equal(chatTimeline([file], { references }).length, 0)
+  assert.equal(chatQuoteModel(image, references).caption, 'A caption')
+  assert.equal(chatQuoteModel(image, references).content, uri(file), 'raw content stays available for reply thumbnails')
+  // Expanded blocks own their line: the single break between them is
+  // structural, while an authored double break still asks for a blank line.
+  const pair = () => parseChatContent(`${uri(parent)}\n${uri(file)}`)
+  assert.deepEqual(augmentedContentItems(pair(), references).map(item => item.key), ['event', 'event'])
+  const spaced = augmentedContentItems(parseChatContent(`${uri(parent)}\n\ntexto`), references)
+  assert.deepEqual(spaced.map(item => item.key), ['event', 'text'])
+  assert.equal(spaced[1].text.value, '\ntexto')
+  const replied = augmentedContentItems(parseChatContent(`${uri(parent)}\ntexto`), references)
+  assert.deepEqual(replied.map(item => item.key), ['event', 'text'])
+  assert.equal(replied[1].text.value, 'texto')
+  // A plain space, tab or any other whitespace right after a block is the same
+  // structural separator and would otherwise indent the next line.
+  const inline = augmentedContentItems(parseChatContent(`${uri(parent)} texto`), references)
+  assert.deepEqual(inline.map(item => item.key), ['event', 'text'])
+  assert.equal(inline[1].text.value, 'texto')
+  assert.equal(augmentedContentItems(parseChatContent(`${uri(parent)}\ttexto`), references)[1].text.value, 'texto')
+  assert.equal(augmentedContentItems(parseChatContent(`${uri(parent)}\u00a0texto`), references)[1].text.value, 'texto')
+  const mixed = augmentedContentItems(parseChatContent(`${uri(parent)}\t\n\ntexto`), references)
+  assert.equal(mixed[1].text.value, '\ntexto', 'extra line breaks survive the consumed run')
+  // Unresolved references stay inline, so their separator is untouched.
+  assert.deepEqual(augmentedContentItems(pair(), {}).map(item => item.key), ['event', 'text', 'event'])
+  // Kinds without an augmentation stay inline references.
+  const note = inner({ kind: 1, created_at: 6, content: 'hello', tags: [] })
+  const quotedNote = inner({ kind: 9, created_at: 7, content: uri(note), tags: [] })
+  const [noteMessage] = chatTimeline([quotedNote], { references: { [note.id]: note }, locale: 'en' })
+  assert.equal(noteMessage.quoted, null)
+  assert.equal(noteMessage.displayText, shortNostrLabel(uri(note)))
 })
 
 test('chat parsing delegates app references to the library and leaves concatenated pointers as text', () => {

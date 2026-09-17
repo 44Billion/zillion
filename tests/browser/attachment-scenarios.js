@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict'
-import { nfileEncode } from 'libp2r2p/nip19'
+import { nfileDecode, nfileEncode } from 'libp2r2p/nip19'
 import { mkdtemp, mkdir, open, writeFile, readFile, rm } from 'node:fs/promises'
 import path from 'node:path'
 import os from 'node:os'
 import { crc32 } from 'node:zlib'
+import { createFileMetadata } from 'libp2r2p/nip94'
 import { checkAttachmentPresentation } from './attachment-presentation-scenarios.js'
 import { checkGalleryFrames, checkGalleryRecovery, checkGalleryUI } from './gallery-scenarios.js'
 import { checkDownloadIntent } from './download-intent-scenarios.js'
@@ -155,6 +156,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.until(() => evaluate('document.querySelector(".composer-reply .reply-thumbnail")?.naturalWidth === 1'), 'file reply thumbnail')
     await evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.value = ${JSON.stringify('  Caption   file\n\n\nx  ')}; input.dispatchEvent(new Event('input', {bubbles:true})); })()`)
     await evaluate('document.querySelector(".chat-composer .attach").click()')
+    await browser.until(() => evaluate('document.querySelector(".composer-reply")?.querySelector(".reply-thumbnail")?.naturalWidth === 1'), 'reply thumbnail before the gallery')
     await browser.until(() => evaluate('document.querySelectorAll(".attachment-gallery button").length === 2'), 'gallery contains picker and one image')
     await checkGalleryFrames({ browser, evaluate, origin })
     assert.equal(await evaluate('previewWorkers.size'), 0, 'gallery/replies reuse completed thumbnails')
@@ -173,17 +175,37 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.until(() => evaluate('!document.querySelector(".attachment-gallery")'), 'gallery closed before sending')
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'reuse saved', 60000)
+    // Reply with an image: the single break between the two URIs must not
+    // paint as a blank line between the quote and the attachment.
+    const imageReply = `[...document.querySelectorAll('.message-row')]
+      .filter(row => row.querySelector('.attachment-name')?.textContent.includes(${JSON.stringify('photo.png')})).at(-1)`
+    await browser.until(() => evaluate(`!!(${imageReply})?.querySelector('.message-quote') && !!(${imageReply})?.querySelector('.chat-attachment')`), 'image reply renders quote and attachment')
+    const replyGap = await evaluate(`(() => { const row = ${imageReply}; const quote = row.querySelector('.message-quote').getBoundingClientRect(); const file = row.querySelector('.chat-attachment').getBoundingClientRect(); return file.top - quote.bottom; })()`)
+    assert.ok(replyGap >= 0 && replyGap < 16, `structural break stays flush: ${replyGap}px`)
     await evaluate('document.querySelector(".chat-composer .attach").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".attachment-gallery button").length === 2'), 'gallery deduplicates roots')
     await evaluate('document.dispatchEvent(new KeyboardEvent("keydown", {key:"Escape"}))')
     assert.equal(requests.some(url => url.startsWith('https://nostr.alt/')), false, 'local files never reach the external network')
-    const metadata = await evaluate('(async () => { const owner = await window.nostr.peekPublicKey(); const {results} = await window.napp.eventStore.query({kinds:[1006], \'#k\':[\'1063\']}); return Promise.all(results.map(async event => JSON.parse(new TextDecoder().decode(await window.nostr.nip44v3.decrypt(owner,1063,\'\',event.content))))); })()')
-    const reply = metadata.find(event => event.content === 'Caption file\n\nx')
-    assert.ok(reply)
-    assert.equal(reply.tags.find(tag => tag[0] === 'q')[1], photoId)
-    assert.ok(reply.tags.some(tag => tag[0] === 'thumbhash'))
-    assert.ok(reply.tags.some(tag => tag[0] === 'dim' && tag[1] === '1x1'))
-    assert.equal(reply.tags.some(tag => ['x', 'ox', 'blurhash'].includes(tag[0])), false)
+    // The stored 9+1063 shapes (caption only on the 1063, two q tags, two URIs)
+    // are asserted by tests/self-chat.test.js; here the presentation that
+    // depends on those shapes is what matters.
+    // The caption clamps to two lines and reveals two more per click.
+    const captionText = 'Caption line one with enough words to wrap\nline two keeps going\nline three stays hidden\nline four stays hidden\nline five stays hidden'
+    await select('captioned.png', png)
+    await evaluate(`(() => { const input = document.querySelector('.chat-composer textarea'); input.value = ${JSON.stringify(captionText)}; input.dispatchEvent(new Event('input', {bubbles:true})); })()`)
+    await evaluate('document.querySelector(".compose-action").click()')
+    const captioned = `[...document.querySelectorAll('.message-row')].find(row =>
+      row.querySelector('.attachment-name')?.textContent.includes('captioned.png') &&
+      row.querySelector('.attachment-caption'))`
+    await browser.until(() => evaluate(`(${captioned})?.querySelector('.message-status')?.dataset.status === 'saved'`), 'captioned image saved', 60000)
+    const captionState = `(() => { const el = (${captioned}).querySelector('.attachment-caption'); const size = (${captioned}).querySelector('.attachment-size'); const text = (${captioned}).querySelector('.attachment-name'); return { clamp: getComputedStyle(el).webkitLineClamp, italic: getComputedStyle(el).fontStyle, muted: getComputedStyle(el).color === getComputedStyle(size).color, smaller: parseFloat(getComputedStyle(el).fontSize) < parseFloat(getComputedStyle(text).fontSize), expanded: el.getAttribute('aria-expanded') } })()`
+    assert.deepEqual(await evaluate(captionState), { clamp: '2', italic: 'italic', muted: true, smaller: true, expanded: 'false' })
+    await evaluate(`(() => { const button = (${captioned}).querySelector('.attachment-caption'); button.scrollIntoView({block:'center'}); button.click(); })()`)
+    await browser.until(() => evaluate(`(${captioned}).querySelector('.attachment-caption').getAttribute('aria-expanded') === 'true'`), 'caption expands on click')
+    assert.equal(await evaluate(`(${captioned}).querySelector('.attachment-caption').getAttribute('aria-expanded')`), 'true')
+    assert.equal(await evaluate(`getComputedStyle((${captioned}).querySelector('.attachment-caption')).webkitLineClamp`), '4', 'each click reveals two more lines')
+    await evaluate(`(${captioned}).querySelector('.attachment-caption').click()`)
+    assert.equal(await evaluate(`(${captioned}).querySelector('.attachment-caption').getAttribute('aria-expanded')`), 'true', 'the caption expands until it is complete')
     console.log('Attachments: gallery, caption and reply verified')
     const vault = expression => browser.evaluate(expression, 'http://localhost:4000')
     await browser.until(() => vault('document.querySelectorAll("activity-log tr[data-row]").length > 0'), 'vault audit rows')
@@ -257,7 +279,17 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     assert.deepEqual(await evaluate(`fetch(${JSON.stringify(compressedUrl)}).then(r => r.arrayBuffer()).then(b => [...new Uint8Array(b)])`), compressedBytes, 'compressed bytes reopen offline')
     await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'complete history processed after file reload')
     await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
-    await checkDownloadIntent({ browser, evaluate, origin, downloads, photo: reply, videoTags, png, videoBytes })
+    // Rebuild the photo's nip94 tags from its live local download link; the
+    // stored shape assertions live in tests/self-chat.test.js.
+    const photoLink = await evaluate(`[...document.querySelectorAll('.message-row .attachment-download')]
+      .find(a => a.textContent.includes(${JSON.stringify('photo.png')}))?.href`)
+    assert.ok(photoLink, 'photo download link is rendered')
+    const photoRoot = nfileDecode(new URL(photoLink).pathname.slice('/~~nfile/'.length)).root
+    const photo = createFileMetadata({
+      url: `https://nostr.alt/${nfileEncode({ root: photoRoot, mime: 'image/png', filename: 'photo.png' })}?localOnly=1`,
+      mime: 'image/png', root: photoRoot, size: String(png.length), width: 1, height: 1, caption: 'Photo'
+    })
+    await checkDownloadIntent({ browser, evaluate, origin, downloads, photo, videoTags, png, videoBytes })
     await checkAttachmentPresentation({ browser, evaluate, origin, select, url, bytes, downloads, directory })
     for (const [name, extension] of [['compression-rotated.jpg', 'jpg'], ['compression.gif', 'webp'], ['compression.mp4', 'mp4']]) {
       await select(name, await readFile(new URL('./fixtures/media/' + name, import.meta.url)))

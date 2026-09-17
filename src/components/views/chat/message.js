@@ -131,9 +131,11 @@ f('z-chat-message', ({ h, props }) => {
         onpointerup=${press.cancel} onpointercancel=${press.cancel} onpointerleave=${press.cancel}
         oncontextmenu=${press.context} onkeydown=${press.key} onclick=${press.click}>
         <div class="message-growth" ref=${growth.outerRef$}><div class="message-growth-inner" ref=${growth.innerRef$}>
-        ${quoted ? h`<z-chat-quote props=${{ text$: view.quoteContent$, author$: view.quoteAuthor$, mediaText$: view.quoteMedia$, attachment$: view.quoteAttachment$ }} />` : null}
-        ${message.attachment ? h`<z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$ }} />` : null}
-        <div class="message-text">${message.real ? h`<z-chat-content props=${{ text$: view.content$ }} />` : t(message.text)}</div>
+        ${!message.real && quoted ? h`<z-chat-quote props=${{ message$: () => ({ text: view.quoteContent$(), content: view.quoteMedia$(), attachment: view.quoteAttachment$() }), author$: view.quoteAuthor$ }} />` : null}
+        ${!message.real && message.attachment ? h`<z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$ }} />` : null}
+        <div class="message-text">${message.real
+          ? h`<z-chat-content props=${{ text$: view.content$, prepend$: () => props.message$().prepend ?? [], references$: props.references$, resolve$: props.resolve$, source$: view.source$ }} />`
+          : t(message.text)}</div>
         ${message.url ? h`<a class="message-link" href=${message.url} title=${message.url} aria-label=${message.url} target="_blank" rel="noopener noreferrer">${shortUrlLabel(message.url)}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}
         <div class="message-meta">${message.real ? h`<z-chat-message-status props=${{ message$: props.message$, onOpenError: view.openError }} />` : h`<time>${message.time}</time>`}${message.outgoing && !message.real ? h`<span aria-label=${t('Read')}><icon-check props=${{ size: '13px', weight: 'regular' }} /></span>` : null}</div>

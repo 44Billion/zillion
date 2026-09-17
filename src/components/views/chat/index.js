@@ -47,7 +47,7 @@ f('z-chat', ({ h, props }) => {
     real$ () { return props.person$().self === true },
     messages$ () {
       if (!this.real$()) return getMessages(props.person$())
-      return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t })
+      return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$() })
     },
     days$ () { return groupChatDays(this.messages$()) },
     reply (id) { this.replyTo$(id); this.activeId$(null) },
@@ -129,12 +129,12 @@ f('z-chat', ({ h, props }) => {
           ${view.days$().map(day => h({ key: day.key })`
             <f-to-signals props=${{
               from: { day },
-              render: ({ h, props: data }) => h`<z-chat-day props=${{ day$: data.day$, messages$: view.messages$, person$: props.person$, activeId$: view.activeId$, onReply: view.reply, onRetry: view.retry }} />`
+              render: ({ h, props: data }) => h`<z-chat-day props=${{ day$: data.day$, messages$: view.messages$, person$: props.person$, activeId$: view.activeId$, onReply: view.reply, onRetry: view.retry, references$: () => account.references$(), resolve$: account.resolveReference }} />`
             }} />
           `)}
         </ol>
       </div></div>
-      <z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null) }} />
+      <z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null), readFiles: account.readFiles, references$: account.references$ }} />
     </main>
   `
 })

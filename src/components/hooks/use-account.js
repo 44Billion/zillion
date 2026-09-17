@@ -6,6 +6,8 @@ export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0,
+    // Inner events resolved from kind-9 references, keyed by event id.
+    references$: {},
     person$ () {
       const profile = this.profile$()
       return { id: 'user', self: true, pubkey: this.pubkey$(), profile: profile ?? {}, name: profile?.name ?? '', shortName: profile?.name ?? '', pinned: false, unread: 0 }
@@ -22,6 +24,8 @@ export function useInitAccount () {
     return runtime.chat.send(content, replyTo, attachment)
   }
   account.retryMessage = id => runtime.chat?.retry(id)
+  account.resolveReference = reference => runtime.chat?.resolveReference(reference) ?? null
+  account.readFiles = options => runtime.chat?.readFiles(options) ?? Promise.resolve([])
   account.recover = () => runtime.recover?.() ?? Promise.resolve(false)
   useTask(({ cleanup }) => {
     let closed = false
@@ -57,7 +61,7 @@ export function useInitAccount () {
             runtime.chat?.close(); runtime.chat = null
             profileVersion++; profiles?.return().catch(() => {}); profiles = null
             identity = pubkey
-            account.messages$([]); account.profile$(null); account.historyLoaded$(false)
+            account.messages$([]); account.profile$(null); account.historyLoaded$(false); account.references$({})
           }
           account.pubkey$(pubkey)
           const eventStore = window.napp.eventStore
@@ -66,6 +70,7 @@ export function useInitAccount () {
           if (!runtime.chat) {
             runtime.chat = createSelfChat({
               pubkey, eventStore, signer: window.nostr, onMessages: account.messages$, onError: report,
+              onReference: (id, event) => { if (!closed) account.references$({ ...account.references$(), [id]: event }) },
               onInitialLoad: () => { if (!closed) account.historyLoaded$(true) },
               onHistoryState: state => { if (!closed) account.historyState$(state) }
             })
