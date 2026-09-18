@@ -72,6 +72,20 @@ Chrome. The final successful Chrome run had an observed cgroup memory peak of
 suite peaked at approximately 296 MiB. Suites ran one at a time, and the owned
 local runtime was stopped after each browser run.
 
+## Kind-9 attachments follow-up (2026-09-17)
+
+The kind-9 work pushed the attachments run to the cap: two guarded runs were
+OOM-killed with a 3,072 MiB peak while the full self-chat suite stayed around
+2,241–2,265 MiB. The attachments script now skips the controlled gallery fixture
+(`ZILLION_SKIP_GALLERY_UI=1`) and reloads the app before the download fixtures;
+the gallery fixture has its own guarded script (`npm run test:browser:gallery-ui`).
+Measured after the split: attachments 2,201 MiB peak (per-phase charge via
+`ZILLION_MEMORY_TRACE=1`), gallery UI 1,443 MiB, both below the 3,072 MiB limit
+with zero swap. The runner also detects leftover launcher/vault/esbuild processes
+on the runtime ports after a kernel OOM, kills them and fails the run when it had
+to, because systemd can report `Failed to kill control group ... Invalid argument`
+and leave descendants outside the cap.
+
 There is no pre-fix RSS trace, controlled before/after benchmark, or proof that
 all historical freezes had this cause. The full older browser suite and a physical
 machine freeze were not deliberately reproduced. The guard bounds each run;

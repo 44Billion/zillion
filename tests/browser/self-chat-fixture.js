@@ -38,6 +38,9 @@ f('z-gallery-ui-fixture', ({ h }) => {
         rememberAttachmentPreview(file, { blob, width: 8, height: 8 })
         return { ...createFileMetadata(file), id: root, status: 'saved' }
       })
+      // Re-run the composer catalog task so the seeded files are visible even
+      // when the fixture starts outside the attachment flow.
+      this.historyState$('loading')
       this.historyState$('loaded')
     },
     settle (state) { this.historyState$(state); runtime.work?.resolve(); runtime.work = null }

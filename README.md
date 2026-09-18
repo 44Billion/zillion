@@ -417,6 +417,8 @@ The local Chrome validation and remaining device coverage are recorded in
 Gallery recovery and frame sampling are recorded in
 [docs/attachment-gallery-validation.md](docs/attachment-gallery-validation.md).
 Run `npm run test:browser:attachments` for the focused integration checks, or
+`npm run test:browser:gallery-ui` for the controlled gallery fixture (kept in a
+separate guarded run so neither unit approaches the 3 GiB cap), or
 `node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js`
 for the full self-chat regression.
 

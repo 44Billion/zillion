@@ -765,6 +765,12 @@ needed; empty folders mark the initial structure.
   no swap, 15-minute maximum and descendant cleanup. Stop an existing runtime
   before testing; run one suite at a time. Do not replace this with a V8-only
   heap limit or bypass the guard when investigating memory pressure.
+  Keep each guarded invocation well below the cap: the attachments run skips the
+  controlled gallery fixture (`ZILLION_SKIP_GALLERY_UI=1`) and reloads the app
+  before the download fixtures, while `npm run test:browser:gallery-ui` covers
+  that fixture in its own unit. A kernel OOM can make systemd fail to kill the
+  control group, so the runner also detects leftover launcher/vault/esbuild
+  processes on the runtime ports, removes them and fails the run when it had to.
 
 
 ## Attachment presentation

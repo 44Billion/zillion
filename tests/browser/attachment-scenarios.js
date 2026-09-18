@@ -9,9 +9,21 @@ import { checkAttachmentPresentation } from './attachment-presentation-scenarios
 import { checkGalleryFrames, checkGalleryRecovery, checkGalleryUI } from './gallery-scenarios.js'
 import { checkDownloadIntent } from './download-intent-scenarios.js'
 
+// The whole suite runs inside one systemd memory cgroup. Reading its current
+// charge at phase boundaries keeps the 3 GiB budget visible in the logs and
+// makes a future regression obvious.
+async function cgroupMemory () {
+  try {
+    const path = (await readFile('/proc/self/cgroup', 'utf8')).trim().split('\n').at(-1).split(':').at(-1)
+    return Math.round(Number(await readFile(`/sys/fs/cgroup${path}/memory.current`, 'utf8')) / 1024 / 1024)
+  } catch { return null }
+}
+
 export async function checkAttachmentScenarios ({ browser, evaluate, origin, requests = [] }) {
   const directory = await mkdtemp(path.join(os.tmpdir(), 'zillion-files-'))
+  const trace = async label => console.log(`Attachments memory: ${label} ${await cgroupMemory() ?? '?'} MiB`)
   try {
+    await trace('start')
     await evaluate('document.querySelector(".cancel-reply")?.click(); document.querySelector(".chat-timeline").scrollTop = 1e9')
     // Runtime contexts include the trusted iframe too; locate the actual input.
     const findInput = async () => {
@@ -40,6 +52,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate('document.querySelector(".composer-attachment .attachment-remove").click()')
     assert.equal(await evaluate(`fetch(${JSON.stringify(temporarySource)}).then(() => false, () => true)`), true, 'removal revokes its temporary image URL')
     console.log('Attachments: MediaBunny Workers and temporary preview disposal verified inside launcher')
+    await trace('media workers')
     const picker = await findInput()
     await browser.send('Runtime.releaseObject', { objectId: picker.objectId }, picker.sessionId)
     await browser.send('Page.setInterceptFileChooserDialog', { enabled: true }, picker.sessionId)
@@ -82,6 +95,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     assert.equal(await count(), before, 'canceled preparation does not send')
     await evaluate('(() => { const input = document.querySelector(\'.chat-composer textarea\'); input.value = \'\'; input.dispatchEvent(new Event(\'input\', {bubbles:true})); })()')
     console.log('Attachments: compact preparation control and cancellation verified')
+    await trace('prepare cancel')
     const bytes = Buffer.alloc(102003, 37)
     await select('document.bin', bytes)
     assert.equal(await evaluate('document.querySelector("input[type=file]").multiple'), false)
@@ -109,6 +123,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate('[...document.querySelectorAll(".message-row .attachment-download")].find(a => a.textContent.includes("document.bin")).click()')
     await browser.until(async () => { try { return (await readFile(path.join(downloads, 'document.bin'))).equals(bytes) } catch { return false } }, 'real Chrome download has correct bytes and name', 30000)
     console.log('Attachments: native download verified')
+    await trace('binary download')
     await evaluate(`(() => {
       const original = window.fetch; window.fileReplyReads = 0;
       window.restoreFileReplyFetch = () => { window.fetch = original; };
@@ -134,6 +149,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     wrongBridge.searchParams.set('~~bridgeId', 'closed-instance')
     assert.equal(await evaluate(`fetch(${JSON.stringify(wrongBridge.href)}, {method:'HEAD'}).then(r => r.status)`), 404)
     console.log('Attachments: local miss and wrong bridge verified')
+    await trace('local miss')
     const context = [...browser.contexts.values()].find(item => item.origin === 'http://localhost:10000' && item.auxData?.isDefault)
     await browser.send('ServiceWorker.enable', {}, context.sessionId)
     const worker = await browser.until(() => [...browser.workerVersions.values()].find(worker => worker.scriptURL === origin + '/sw.js' && worker.status === 'activated' && worker.runningStatus === 'running'), 'active app worker')
@@ -141,6 +157,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     const recovered = await evaluate(`fetch(${JSON.stringify(url)}, {method:'HEAD', signal:AbortSignal.timeout(12000)}).then(r => r.status).catch(e => e.message)`)
     assert.equal(recovered, 200, 'download recovers its exact bridge after a worker restart')
     console.log('Attachments: worker restart verified')
+    await trace('worker restart')
     await evaluate(`(async () => { const response = await fetch(${JSON.stringify(url)}); const reader = response.body.getReader(); await reader.read(); await reader.cancel(); })()`)
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII=', 'base64')
     for (let offset = 8; offset < png.length;) {
@@ -210,6 +227,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate(`(${captioned}).querySelector('.attachment-caption').click()`)
     assert.equal(await evaluate(`(${captioned}).querySelector('.attachment-caption').getAttribute('aria-expanded')`), 'true', 'the caption expands until it is complete')
     console.log('Attachments: gallery, caption and reply verified')
+    await trace('gallery frames')
     const vault = expression => browser.evaluate(expression, 'http://localhost:4000')
     await browser.until(() => vault('document.querySelectorAll("activity-log tr[data-row]").length > 0'), 'vault audit rows')
     assert.equal(await vault('[...document.querySelectorAll("activity-log .data-full")].reduce((n, pre) => n + pre.textContent.length, 0)'), 0, 'collapsed audit rows do not duplicate complete JSON')
@@ -219,6 +237,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await vault('document.querySelector("activity-log details[open]").open = false')
     await browser.until(() => vault('[...document.querySelectorAll("activity-log .data-full")].every(pre => !pre.textContent)'), 'closing audit details releases their JSON')
     console.log('Attachments: vault audit JSON stays lazy')
+    await trace('vault audit')
     const videoBytes = await evaluate(`(async () => {
       const canvas = document.createElement('canvas'); canvas.width = 32; canvas.height = 16;
       const context = canvas.getContext('2d'); context.fillStyle = 'green'; context.fillRect(0, 0, 32, 16);
@@ -251,6 +270,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     assert.ok(videoTags.some(tag => tag[0] === 'thumbhash'))
     assert.ok(videoTags.some(tag => tag[0] === 'dim' && tag[1] === '32x16'))
     console.log('Attachments: video preview and gallery order verified')
+    await trace('video preview')
     await select('locked.wav', await readFile(new URL('./fixtures/media/compression.wav', import.meta.url)))
     await browser.until(() => evaluate('document.querySelector(".composer-attachment .file-name")?.getAttribute("title") === "locked.mp3"'), 'official MP3 encoder runs in launcher')
     const workersBeforeRetry = await evaluate('previewWorkerCount')
@@ -276,7 +296,9 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.until(async () => { try { return (await readFile(path.join(downloads, 'locked.mp3'))).equals(Buffer.from(compressedBytes)) } catch { return false } }, 'compressed native download matches final bytes')
     await browser.until(() => evaluate('navigator.storage.getDirectory().then(root => root.getDirectoryHandle(\'zillion-compression-v1\')).then(dir => Array.fromAsync(dir.keys())).then(names => names.length === 0)'), 'confirmed artifact released')
     console.log('Attachments: compressed MP3, locked-vault retry and native download verified')
+    await trace('locked vault retry')
     await checkGalleryRecovery({ browser, evaluate, origin })
+    await trace('gallery recovery')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-composer").length === 1 && [...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'confirmed file metadata reopens offline', 60000)
     await browser.until(() => evaluate('[...document.querySelectorAll(".message-row .attachment-frame img")].some(img => img.src.startsWith("blob:") && img.naturalWidth === 1)'), 'image bytes survive reload offline')
     assert.deepEqual(await evaluate(`fetch(${JSON.stringify(compressedUrl)}).then(r => r.arrayBuffer()).then(b => [...new Uint8Array(b)])`), compressedBytes, 'compressed bytes reopen offline')
@@ -292,8 +314,19 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
       url: `https://nostr.alt/${nfileEncode({ root: photoRoot, mime: 'image/png', filename: 'photo.png' })}?localOnly=1`,
       mime: 'image/png', root: photoRoot, size: String(png.length), width: 1, height: 1, caption: 'Photo'
     })
+    // Drop the DOM/heap accumulated by the earlier phases (previews, audit rows,
+    // downloads) before the download fixtures; the guarded run must stay well
+    // below the 3 GiB cgroup cap.
+    await browser.evaluate(`(() => {
+      const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)})
+      frame.src = new URL(frame.src).href
+    })()`)
+    await browser.until(() => evaluate('!!document.querySelector(".chat-composer") && document.querySelector(".chat-timeline")?.dataset.historyLoaded === "true"'), 'fresh app heap before download fixtures', 60000)
+    await trace('reloaded before download intent')
     await checkDownloadIntent({ browser, evaluate, origin, downloads, photo, videoTags, png, videoBytes })
+    await trace('download intent')
     await checkAttachmentPresentation({ browser, evaluate, origin, select, url, bytes, downloads, directory })
+    await trace('attachment presentation')
     for (const [name, extension] of [['compression-rotated.jpg', 'jpg'], ['compression.gif', 'webp'], ['compression.mp4', 'mp4']]) {
       await select(name, await readFile(new URL('./fixtures/media/' + name, import.meta.url)))
       await browser.until(() => evaluate(`document.querySelector('.composer-attachment .file-name')?.getAttribute('title')?.endsWith(${JSON.stringify(extension)})`), 'compressed filename in real launcher')
@@ -302,6 +335,12 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
       await browser.until(() => evaluate('navigator.storage.getDirectory().then(root => root.getDirectoryHandle(\'zillion-compression-v1\')).then(dir => Array.fromAsync(dir.keys())).then(names => names.length === 0)'), 'removal releases compressed file')
     }
     console.log('Attachments: image, animation and H264 compression verified inside launcher')
-    await checkGalleryUI({ browser, evaluate, origin })
+    await trace('compression matrix')
+    // The controlled gallery fixture is a separate guarded run
+    // (`npm run test:browser:gallery-ui`) so no single unit approaches the cap.
+    if (process.env.ZILLION_SKIP_GALLERY_UI !== '1') {
+      await checkGalleryUI({ browser, evaluate, origin })
+      await trace('gallery ui')
+    }
   } finally { await rm(directory, { recursive: true, force: true }) }
 }

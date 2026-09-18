@@ -46,7 +46,10 @@
     "test:only": "node --test --test-only 'tests/**/*.test.js'",
     "// lint": "Check code style with ESLint.",
     "lint": "eslint .",
-    "test:browser:attachments": "ZILLION_FILES_ONLY=1 node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js"
+    "// test:browser:attachments": "Run the file, gallery-recovery, download-intent and compression scenarios in one guarded unit, without the controlled gallery fixture.",
+    "test:browser:attachments": "ZILLION_FILES_ONLY=1 ZILLION_SKIP_GALLERY_UI=1 node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js",
+    "// test:browser:gallery-ui": "Run the controlled gallery fixture in its own guarded unit; it is kept out of the attachments run to preserve the 3 GiB margin.",
+    "test:browser:gallery-ui": "ZILLION_GALLERY_UI_ONLY=1 node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js"
   },
   "imports": {
     "#f": "thenameisf",
