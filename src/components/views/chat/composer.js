@@ -104,11 +104,18 @@ f('z-chat-composer', ({ h, props }) => {
     text$: '', fieldRef$: null, inputRef$: null,
     replyContent$ () {
       const reply = props.reply$?.()
-      // Raw compacted text keeps the URLs reply thumbnails parse; attachment
-      // captions take precedence because the kind-9 content is only a URI.
+      // Raw compacted text keeps the URLs reply thumbnails parse; it is not the
+      // text to show, because a kind-9 content for a file is only a URI.
       return reply ? reply.real ? (reply.caption || reply.text || '') : t(reply.text) : ''
     },
-    replyText$ () { return shortQuotedText(this.replyContent$()) },
+    // What the preview shows and what assistive technology reads: the caption
+    // when the replied message has one, otherwise the text with expanded
+    // references already removed.
+    replySummary$ () {
+      const reply = props.reply$?.()
+      return reply ? reply.real ? (reply.caption || reply.displayText || '') : t(reply.text) : ''
+    },
+    replyText$ () { return shortQuotedText(this.replySummary$()) },
     send () {
       if (!this.canSend$()) return
       const text = this.text$()
@@ -234,7 +241,7 @@ f('z-chat-composer', ({ h, props }) => {
       ${props.reply$?.()
 ? h`<div class="composer-reply"><div class=${`reply-summary ${thumbnail.visible$() ? 'has-thumbnail' : ''}`}>${thumbnail.visible$()
 ? h`<z-media-thumbnail props=${{ media$: thumbnail.media$, className: 'reply-thumbnail', onError: () => thumbnail.failed$(true) }} />`
-        : null}<span class=${`reply-text ${view.replyAttachment$() && !thumbnail.visible$() ? 'file-reply-text' : ''}`} title=${view.replyContent$()} aria-label=${t('Reply')}>${view.replyAttachment$() && !thumbnail.visible$() ? h`<z-file-reply props=${{ file$: view.replyAttachment$, caption$: view.replyContent$ }} />` : h`${t('Reply')}: ${view.replyText$()}`}</span></div><button class="cancel-reply" type="button" aria-label=${t('Cancel reply')} onclick=${props.clearReply}><icon-x props=${{ size: '24px', weight: 'regular' }} /></button></div>`
+        : null}<span class=${`reply-text ${view.replyAttachment$() && !thumbnail.visible$() ? 'file-reply-text' : ''}`} title=${view.replyAttachment$() ? view.replySummary$() : view.replyContent$()} aria-label=${t('Reply')}>${view.replyAttachment$() && !thumbnail.visible$() ? h`<z-file-reply props=${{ file$: view.replyAttachment$, caption$: view.replySummary$ }} />` : h`${t('Reply')}: ${view.replyText$()}`}</span></div><button class="cancel-reply" type="button" aria-label=${t('Cancel reply')} onclick=${props.clearReply}><icon-x props=${{ size: '24px', weight: 'regular' }} /></button></div>`
 : null}
       <input type="file" hidden ref=${view.pickerRef$} onchange=${view.select}>
       ${view.preparing$() ? h`<div class="preparing-file"><button class="preparing-cancel" type="button" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '16px' }} /></button><span role="status">${view.progress$()?.phase === 'compress' ? t('Compressing file…') : t('Preparing file…')}${view.progress$()?.phase === 'compress' && Number.isFinite(view.progress$().progress) ? ` ${Math.floor(view.progress$().progress * 100)}%` : ''}</span></div>` : null}

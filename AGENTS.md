@@ -778,6 +778,10 @@ needed; empty folders mark the initial structure.
   the filename to the caption in normal inline flow, separated only when the
   caption is nonempty. Explicit and wrapped caption lines restart at the left
   edge of the reply. Never put filename and caption in separate flex columns.
+  The composer reply preview shows `caption || displayText`, never the raw
+  compacted content: a caption-less file reply is just the filename, not its
+  kind-9 content URI. Raw content stays only for reply-thumbnail candidates and
+  for the text-reply tooltip.
   Render a fitted label as one text run (`name…pdf`), preserving graphemes;
   separate text-overflow and extension boxes leave a visible gap. Measure against
   the full name's stable layout box to avoid threshold oscillation. The full

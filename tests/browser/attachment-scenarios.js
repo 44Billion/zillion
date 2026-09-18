@@ -121,6 +121,9 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
       await browser.until(() => evaluate('document.querySelector(".composer-reply")?.textContent.includes("document.bin")'), 'binary file reply uses filename')
       await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
       assert.equal(await evaluate('window.fileReplyReads'), 0, 'binary reply does not fetch the document as a web preview')
+      assert.equal(await evaluate('document.querySelector(".composer-reply .reply-text").innerText'), 'document.bin', 'caption-less file reply shows only the filename')
+      assert.equal(await evaluate('document.querySelector(".composer-reply .reply-text").textContent.includes("nevent1")'), false, 'caption-less file reply does not surface the inline reference')
+      assert.equal(await evaluate('document.querySelector(".composer-reply .reply-text").title'), '', 'caption-less file reply does not surface the inline reference')
       await evaluate('document.querySelector(".cancel-reply").click()')
     } finally { await evaluate('window.restoreFileReplyFetch(); delete window.restoreFileReplyFetch; delete window.fileReplyReads') }
     // Local misses and stale instance markers must never select another bridge.
