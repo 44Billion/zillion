@@ -710,10 +710,11 @@ needed; empty folders mark the initial structure.
   the 9+1063 pair: the message is the kind 9, and the kind 1063 carries the
   caption, URL, mime, root, dimensions and thumbhash with no `q` tag. Consume
   nip94 tags directly; copy/share includes caption+URL.
-- The composer gallery runs its own local query of the context's inner kind-1063
-  copies, newest first, and decrypts them before filtering. The store does not
-  index mime, so select candidate roots first and apply the existing
-  image/video-with-dimensions, unique-by-root filters after decryption.
+- The composer gallery queries the context's kind-1063 copies directly: the
+  wrapper's plaintext one-letter `k` tag is indexed, so `'#k': ['1063']` filters
+  in the store and only matching wrappers reach decryption. The store does not
+  index mime, so the image/video-with-dimensions, unique-by-root filters still
+  run after decryption. Resolution by inner id keeps using the `#o` mirror.
 - Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.18`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;

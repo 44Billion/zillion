@@ -98,9 +98,9 @@ test('the attachment catalog reads inner kind 1063 copies newest first', async (
   const references = createChatReferences({ pubkey, eventStore, signer, context })
   const files = await references.readFiles()
   assert.deepEqual(files.map(event => event.content), ['newer', 'older'])
-  // The launcher does not answer a `#k` filter for personal copies, so the
-  // catalog reads the context and filters the decrypted inner kinds instead.
-  assert.equal(queries[0]['#k'], undefined)
+  // The wrapper's plaintext `k` tag is indexed, so the kind filter runs in the
+  // store and only the matching wrappers reach decryption.
+  assert.deepEqual(queries[0]['#k'], ['1063'])
   assert.deepEqual(queries[0]['#c'], [context])
 })
 

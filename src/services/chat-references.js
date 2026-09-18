@@ -137,11 +137,11 @@ export function createChatReferences ({
     // Inner kind-1063 events of this context, newest first, for the composer
     // attachment catalog. Decryption is required before any mime filtering.
     async readFiles ({ limit: readLimit = limit } = {}) {
-      // Inner kinds are not queried directly: the launcher does not answer a
-      // `#k` filter for personal copies here, so read this context's copies and
-      // keep the kind-1063 ones after decryption.
+      // The wrapper carries the inner kind in its plaintext one-letter `k` tag,
+      // which the store indexes, so the kind-1063 filter happens in the store.
+      // Decryption still validates owner, context, provenance and inner kind.
       const { results: copies = [] } = await eventStore.query({
-        kinds: [PERSONAL_COPY], authors: [pubkey], '#c': [await encodedContext()], '#v': ['0', '1'], limit: readLimit
+        kinds: [PERSONAL_COPY], authors: [pubkey], '#k': [String(CHAT_FILE_KIND)], '#c': [await encodedContext()], '#v': ['0', '1'], limit: readLimit
       })
       const events = []
       for (const wrapper of copies) {

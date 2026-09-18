@@ -354,7 +354,8 @@ arriving in an open panel leaves just its add-file tile. Closing the panel stays
 closed even when the query finishes later. Conversation and gallery retries
 share recovery and preserve the same account's outbox and prepared attachments.
 The catalog is a dedicated newest-first read of the account's kind-1063 personal
-copies in the self-chat context; they are decrypted before the existing
+copies in the self-chat context, filtered in the store by the wrapper's
+plaintext `k` tag; the returned wrappers are decrypted before the existing
 image/video, dimension and unique-root filters, so files sent before this change
 stay reusable.
 A selection
