@@ -22,12 +22,13 @@ f('z-chat-composer', ({ h, props }) => {
     galleryId: `attachment-gallery-${crypto.randomUUID()}`,
     attachment$: null, source$: null, preparing$: false, progress$: null, gallery$: false, galleryRef$: null, pickerRef$: null,
     catalogFiles$: [], catalogBusy$: false, catalogError$: false,
-    // Files come from the kind-1063 events the chat timeline already resolved
-    // through its kind-9 references, so old files stay reusable without a
-    // second, permission-gated store read.
+    // The catalog combines the kind-1063 events the timeline already resolved
+    // with the store read, so a file stays reusable even after the last kind-9
+    // message that referenced it was deleted.
     catalog$ () {
       if (props.historyLoaded$?.() === false) return []
-      return attachmentCatalog(props.references$ ? Object.values(props.references$()) : this.catalogFiles$())
+      const referenced = props.references$ ? Object.values(props.references$()) : []
+      return attachmentCatalog([...referenced, ...this.catalogFiles$()])
     },
     catalogByRoot$ () { return Object.fromEntries(this.catalog$().map(file => [file.root, file])) },
     catalogState$ () {
@@ -37,9 +38,7 @@ f('z-chat-composer', ({ h, props }) => {
     loadingHold$: false, loadingAttempt$: 0,
     catalogLoading$ () { return this.loadingHold$() || this.catalogState$() === 'loading' },
     async loadCatalog () {
-      // Deriving from the references the chat already resolved avoids another
-      // permission-gated store read and its unanswered-dialog stall.
-      if (props.references$ || this.catalogBusy$()) return
+      if (this.catalogBusy$()) return
       if (!props.readFiles) return
       this.catalogBusy$(true)
       this.catalogError$(false)
@@ -136,7 +135,6 @@ f('z-chat-composer', ({ h, props }) => {
   // Standalone/controlled usage without resolved references still reloads the
   // catalog once history is complete.
   useTask(({ track }) => {
-    if (props.references$) return
     if (track(() => props.historyState$?.()) !== 'loaded') return
     view.loadCatalog()
   }, { after: 'rendering' })

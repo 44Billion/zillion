@@ -715,6 +715,13 @@ needed; empty folders mark the initial structure.
   in the store and only matching wrappers reach decryption. The store does not
   index mime, so the image/video-with-dimensions, unique-by-root filters still
   run after decryption. Resolution by inner id keeps using the `#o` mirror.
+- Deleting a message sends a **private deletion envelope** (a personal copy
+  whose inner is kind 5) that names only the kind-9 inner id and never touches
+  the 1063 it referenced, so the file stays available for the gallery and for
+  other messages. The service keeps a `#k:['5']` subscription to drop messages
+  removed by other devices, applies the removal optimistically and restores the
+  message if the write fails. The composer catalog combines the resolved
+  references with the store read (`readFiles`) for the same reason.
 - Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.18`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;

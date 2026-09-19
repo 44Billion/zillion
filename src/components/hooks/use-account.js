@@ -24,6 +24,7 @@ export function useInitAccount () {
     return runtime.chat.send(content, replyTo, attachment)
   }
   account.retryMessage = id => runtime.chat?.retry(id)
+  account.deleteMessage = id => runtime.chat?.deleteMessage(id) ?? Promise.resolve(false)
   account.resolveReference = reference => runtime.chat?.resolveReference(reference) ?? null
   account.readFiles = options => runtime.chat?.readFiles(options) ?? Promise.resolve([])
   account.recover = () => runtime.recover?.() ?? Promise.resolve(false)
@@ -71,6 +72,11 @@ export function useInitAccount () {
             runtime.chat = createSelfChat({
               pubkey, eventStore, signer: window.nostr, onMessages: account.messages$, onError: report,
               onReference: (id, event) => { if (!closed) account.references$({ ...account.references$(), [id]: event }) },
+              onDelete: ids => {
+                if (closed) return
+                const removed = new Set(ids)
+                account.messages$(list => list.filter(message => !removed.has(message.id)))
+              },
               onInitialLoad: () => { if (!closed) account.historyLoaded$(true) },
               onHistoryState: state => { if (!closed) account.historyState$(state) }
             })

@@ -149,7 +149,7 @@ f('z-chat-message', ({ h, props }) => {
           <button class=${`message-share ${view.copied$() ? 'copied' : ''}`} type="button" role="menuitem" aria-label=${t(view.copied$() ? 'Copied' : canShare ? 'Share' : 'Copy')} ?disabled=${view.busy$()} onclick=${view.share}>
             ${view.copied$() ? h`<icon-check props=${{ size: '22px', weight: 'regular' }} />` : canShare ? h`<icon-share-2 props=${{ size: '22px', weight: 'regular' }} />` : h`<icon-copy props=${{ size: '22px', weight: 'regular' }} />`}
           </button>
-          <button class="message-delete" type="button" role="menuitem" aria-label=${t('Delete message')} aria-disabled="true"><icon-trash props=${{ size: '22px', weight: 'regular' }} /></button>
+          <button class="message-delete" type="button" role="menuitem" aria-label=${t('Delete message')} aria-disabled=${String(!message.real || message.status !== 'saved')} onclick=${() => { if (message.real && message.status === 'saved') props.onDelete?.(message.id) }}><icon-trash props=${{ size: '22px', weight: 'regular' }} /></button>
         </div>
       `
 : null}

@@ -292,6 +292,9 @@ The first whitespace run that separates an expanded quote or attachment from the
 rest of the bubble is structural: a space or tab never indents the next line and
 a single line break never paints as an empty line, while an authored blank line
 (`\n\n`) still does.
+Deleting a message removes only its kind-9 event through a private deletion
+envelope; the file metadata (1063) and its bytes stay stored and reusable in the
+gallery, and the removal reaches paired devices through the normal sync.
 
 The companion launcher must expose NIP-44 v3 plaintext as `ArrayBuffer`, matching
 the NIP-07 extension. Self chat decodes those bytes directly as UTF-8 JSON.

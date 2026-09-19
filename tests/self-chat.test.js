@@ -17,6 +17,7 @@ function wrapper (event, context = `dm:${pubkey}`, provenance = '1') {
 }
 function fixture (history = [], options = {}) {
   let deliver
+  let deliverDeletion
   let returned = false
   const writes = []
   const errors = []
@@ -27,12 +28,21 @@ function fixture (history = [], options = {}) {
     next: () => new Promise(resolve => { deliver = resolve }),
     return: async () => { returned = true; deliver?.({ done: true }); return { done: true } }
   }
+  const deletionSubscription = {
+    [Symbol.asyncIterator] () { return this },
+    next: () => new Promise(resolve => { deliverDeletion = resolve }),
+    return: async () => { deliverDeletion?.({ done: true }); return { done: true } }
+  }
   const publicEvents = options.publicEvents ?? []
   const eventStore = {
     subscribe (filter, options) {
       assert.deepEqual(options, { initial: true })
-      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
-      return subscription
+      if (filter['#k'][0] === '9') {
+        assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
+        return subscription
+      }
+      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['5'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
+      return deletionSubscription
     },
     query: async (filter = {}) => {
       // Reference lookups: the source-id mirror is opaque here, so only the
@@ -48,7 +58,14 @@ function fixture (history = [], options = {}) {
     addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true, stored: true } } }
   }
   const chat = createSelfChat({ pubkey, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: async (owner, kind, scope, content) => base64ToBytes(content).buffer } }, onMessages: value => { messages = value }, onError: error => errors.push(error), onInitialLoad: () => { initialMessages = messages }, ...options })
-  return { chat, writes, errors, eventStore, get initialMessages () { return initialMessages }, get messages () { return messages }, get returned () { return returned }, deliver: event => deliver({ done: false, value: { result: event } }) }
+  return {
+    chat, writes, errors, eventStore,
+    get initialMessages () { return initialMessages },
+    get messages () { return messages },
+    get returned () { return returned },
+    deliver: event => deliver({ done: false, value: { result: event } }),
+    deliverDeletion: event => deliverDeletion({ done: false, value: { result: event } })
+  }
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
 
@@ -267,6 +284,41 @@ test('1063 history stays out of the feed and fills the attachment catalog from t
   f.chat.close()
 })
 
+test('private deletion envelopes remove matching messages from the local list', async () => {
+  const removed = []
+  const keep = inner('Keep me', 10)
+  const target = inner('Delete me', 11)
+  const f = fixture([wrapper(keep), wrapper(target)], { onDelete: ids => removed.push(...ids) })
+  await f.chat.start()
+  const targetId = f.messages.find(message => message.content === 'Delete me').id
+
+  const request = { kind: 5, created_at: 12, tags: [['e', targetId], ['k', '9']], content: '' }
+  f.deliverDeletion(wrapper(request))
+  await tick()
+
+  assert.deepEqual(removed, [targetId])
+  f.chat.close()
+})
+
+test('deleting a message removes it optimistically and restores it when the request fails', async () => {
+  const f = fixture([wrapper(inner('Delete me', 10)), wrapper(inner('Survivor', 11))])
+  await f.chat.start()
+  const id = f.messages.find(message => message.content === 'Delete me').id
+
+  const deleting = f.chat.deleteMessage(id)
+  assert.equal(f.messages.some(message => message.id === id), false, 'message leaves the list before the write settles')
+  assert.equal(await deleting, true)
+  const request = f.writes.at(-1).event
+  assert.equal(request.kind, 5)
+  assert.deepEqual(request.tags, [['e', id], ['k', '9']])
+
+  f.eventStore.addPersonalCopy = async () => ({ result: { ok: false, code: 'quota' } })
+  const survivor = f.messages.find(message => message.content === 'Survivor')
+  assert.equal(await f.chat.deleteMessage(survivor.id), false)
+  assert.equal(f.messages.some(message => message.id === survivor.id), true, 'failed deletion restores the message')
+  f.chat.close()
+})
+
 test('history recovery shares work, retains failed outbox entries, and waits for decryption', async () => {
   const states = []
   let locked = true
@@ -318,12 +370,13 @@ test('recovering subscriptions ignores replaced streams and late decryptions aft
   await f.chat.start()
   await f.chat.start()
   assert.equal(streams[0].returned, true)
+  assert.equal(streams[1].returned, true)
   assert.deepEqual(f.errors, [])
-  streams[1].emit(wrapper(inner('Current stream')))
+  streams[2].emit(wrapper(inner('Current stream')))
   await tick()
   assert.equal(f.messages[0].content, 'Current stream')
   f.chat.close()
-  assert.equal(streams[1].returned, true)
+  assert.equal(streams[2].returned, true)
 
   const decrypt = Promise.withResolvers()
   const closed = fixture([wrapper(inner('Stale'))], { signer: { obfuscate: async value => value, nip44v3: { decrypt: () => decrypt.promise } } })

@@ -9,10 +9,11 @@ import { compactWhitespace } from 'libp2r2p/nip27'
 import { chatReferenceUri, createChatReferences, decryptPersonalCopy, CHAT_TEXT_KIND } from './chat-references.js'
 
 export const SELF_CHAT_KIND = 9
+export const DELETION_KIND = 5
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.
-export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onReference = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, verifyFile = verifyLocalFile }) {
+export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, verifyFile = verifyLocalFile }) {
   const context = `dm:${pubkey}`
   const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference })
   const messages = new Map()
@@ -20,6 +21,7 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   const controller = new AbortController()
   let closed = false
   let subscription
+  let deletionSubscription
   let generation = 0
   let loading
   const emit = () => {
@@ -42,6 +44,18 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     // missed lookup is cached. Revalidate misses as new copies land.
     references.retryMisses()
   }
+  // A private deletion request is an ordinary personal copy whose inner is a
+  // kind-5 event; the store applies it, and this subscription keeps the
+  // in-memory list in step with removals that arrived from other devices.
+  async function acceptDeletion (wrapper, filter, current) {
+    if (!current()) return
+    const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: filter['#c'][0] })
+    if (!current() || !event || event.kind !== DELETION_KIND) return
+    const ids = event.tags
+      .filter(tag => tag?.[0] === 'e' && typeof tag[1] === 'string')
+      .map(tag => tag[1])
+    if (ids.length > 0) onDelete(ids)
+  }
   function start () {
     if (closed) return Promise.resolve(false)
     if (loading) return loading
@@ -50,6 +64,9 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     const previous = subscription
     subscription = null
     previous?.return().catch(() => {})
+    const previousDeletions = deletionSubscription
+    deletionSubscription = null
+    previousDeletions?.return().catch(() => {})
     onHistoryState('loading')
     const fail = error => {
       if (!current()) return
@@ -81,6 +98,16 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
           if (current()) throw new Error('Self chat subscription ended')
         })()
         live.catch(fail)
+        const deletionFilter = { kinds: [PERSONAL_COPY], authors: [pubkey], '#k': [String(DELETION_KIND)], '#c': [encodedContext], '#v': ['0', '1'] }
+        const deletions = eventStore.subscribe(deletionFilter, { initial: true })
+        deletionSubscription = deletions
+        const deletionLive = (async () => {
+          for await (const { result } of deletions) {
+            if (!current()) return
+            await acceptDeletion(result, deletionFilter, current)
+          }
+        })()
+        deletionLive.catch(fail)
         for (const wrapper of results) {
           if (!current()) return false
           await accept(wrapper, filter, current)
@@ -199,10 +226,37 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     outbox.clear()
     references.clear()
     subscription?.return().catch(() => {})
+    deletionSubscription?.return().catch(() => {})
+  }
+
+  // Deleting a message keeps the file metadata (1063) and everything else it
+  // references: only the kind-9 message is removed, and the request travels as
+  // a private deletion envelope so paired devices apply the same removal.
+  function deleteMessage (id) {
+    if (closed) throw new Error('Self chat is closed')
+    const message = messages.get(id)
+    if (!message || message.status !== 'saved') return Promise.resolve(false)
+    messages.delete(id)
+    emit()
+    const request = {
+      kind: DELETION_KIND,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['e', id], ['k', String(message.kind ?? SELF_CHAT_KIND)]],
+      content: ''
+    }
+    return Promise.resolve(eventStore.addPersonalCopy(request, { context }))
+      .then(result => result?.result?.ok !== false)
+      .catch(error => { onError(error); return false })
+      .then(saved => {
+        if (saved) return true
+        if (!closed && !messages.has(id)) { messages.set(id, message); emit() }
+        return false
+      })
   }
   return {
     start,
     send,
+    deleteMessage,
     retry: write,
     close,
     // Pending/local events and store lookups share one resolver.
