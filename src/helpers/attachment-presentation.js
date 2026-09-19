@@ -11,6 +11,8 @@ function referenceFrom (value) {
 }
 
 export function fileName (file = {}, unnamed = 'unnamed-file') {
+  // A deleted reference can become null before its filename view unmounts.
+  file ??= {}
   const reference = referenceFrom(file.url)
   const provided = [file.filename, reference?.filename].find(value => typeof value === 'string' && value.trim())
   const fallback = [file.root, reference?.root, file.originalSha256, file.sha256].find(value => typeof value === 'string' && value.trim())

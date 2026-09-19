@@ -17,19 +17,17 @@ import '#shared/icons/icon-x.js'
 
 f('z-chat-composer', ({ h, props }) => {
   const page = useRoutePage()
-  const runtime = useMemo(() => ({ attachment: null, controller: null, catalog: 0 }))
+  const runtime = useMemo(() => ({ attachment: null, controller: null, catalog: 0, catalogReading: false, catalogReload: false, catalogLoaded: false }))
   const view = useStore({
     galleryId: `attachment-gallery-${crypto.randomUUID()}`,
     attachment$: null, source$: null, preparing$: false, progress$: null, gallery$: false, galleryRef$: null, pickerRef$: null,
     catalogFiles$: [], catalogBusy$: false, catalogError$: false,
-    // The catalog combines the kind-1063 events the timeline already resolved
-    // with the store read, so a file stays reusable even after the last kind-9
-    // message that referenced it was deleted.
+    // Only independent personal copies in the empty context belong here.
     catalog$ () {
       if (props.historyLoaded$?.() === false) return []
-      const referenced = props.references$ ? Object.values(props.references$()) : []
-      return attachmentCatalog([...referenced, ...this.catalogFiles$()])
+      return attachmentCatalog(this.catalogFiles$())
     },
+    savedMessages$ () { return (props.messages$?.() ?? []).filter(message => message.status === 'saved').map(message => message.id).join(',') },
     catalogByRoot$ () { return Object.fromEntries(this.catalog$().map(file => [file.root, file])) },
     catalogState$ () {
       if (props.historyState$?.() === 'unavailable') return 'unavailable'
@@ -37,10 +35,11 @@ f('z-chat-composer', ({ h, props }) => {
     },
     loadingHold$: false, loadingAttempt$: 0,
     catalogLoading$ () { return this.loadingHold$() || this.catalogState$() === 'loading' },
-    async loadCatalog () {
-      if (this.catalogBusy$()) return
+    async loadCatalog (background = false) {
+      if (runtime.catalogReading) { runtime.catalogReload = true; return }
       if (!props.readFiles) return
-      this.catalogBusy$(true)
+      runtime.catalogReading = true
+      this.catalogBusy$(!background || !runtime.catalogLoaded)
       this.catalogError$(false)
       const generation = ++runtime.catalog
       try {
@@ -50,11 +49,15 @@ f('z-chat-composer', ({ h, props }) => {
         const timer = setTimeout(() => timeout.reject(new Error('CATALOG_TIMEOUT')), 15000)
         timeout.promise.catch(() => {})
         const files = await Promise.race([props.readFiles(), timeout.promise]).finally(() => clearTimeout(timer))
-        if (runtime.catalog === generation) this.catalogFiles$(files)
+        if (runtime.catalog === generation) { this.catalogFiles$(files); runtime.catalogLoaded = true }
       } catch {
         if (runtime.catalog === generation) this.catalogError$(true)
       } finally {
-        if (runtime.catalog === generation) this.catalogBusy$(false)
+        if (runtime.catalog === generation) {
+          runtime.catalogReading = false
+          this.catalogBusy$(false)
+          if (runtime.catalogReload) { runtime.catalogReload = false; this.loadCatalog(true) }
+        }
       }
     },
     recover () {
@@ -73,7 +76,7 @@ f('z-chat-composer', ({ h, props }) => {
     picker () { this.gallery$(false); this.pickerRef$()?.click() },
     attach () {
       if (this.gallery$()) { this.gallery$(false); return }
-      if (this.catalog$().length) { this.gallery$(true); return }
+      if (this.catalog$().length) { this.gallery$(true); this.loadCatalog(true); return }
       if (this.catalogState$() === 'loaded') { this.picker(); return }
       this.gallery$(true)
       this.recover()
@@ -128,15 +131,13 @@ f('z-chat-composer', ({ h, props }) => {
       } catch (_) { error(() => t('Could not save message')) }
     }
   })
-  // The catalog reads file metadata (inner kind 1063) straight from the local
-  // store, so files sent before this change stay reusable. It loads when the
-  // panel opens (or Recovers) instead of eagerly, because the read is
-  // permission-gated and must not race the file-write permission dialog.
-  // Standalone/controlled usage without resolved references still reloads the
-  // catalog once history is complete.
+  // Refresh after confirmed messages without replacing mounted gallery tiles
+  // with loading placeholders. A write during an existing read queues a refresh.
   useTask(({ track }) => {
-    if (track(() => props.historyState$?.()) !== 'loaded') return
-    view.loadCatalog()
+    const state = track(() => props.historyState$?.())
+    track(() => view.savedMessages$())
+    if (state !== 'loaded') return
+    view.loadCatalog(true)
   }, { after: 'rendering' })
   // Hold only the gallery presentation, never the shared account recovery.
   // Start after rendering so even an immediate failure gets a visible interval.
@@ -177,7 +178,7 @@ f('z-chat-composer', ({ h, props }) => {
     observer.observe(field)
     cleanup(() => observer.disconnect())
   }, { after: 'rendering' })
-  useTask(({ cleanup }) => cleanup(() => view.remove()))
+  useTask(({ cleanup }) => cleanup(() => { runtime.catalog++; view.remove() }))
   useTask(({ track, cleanup }) => {
     if (!track(() => page.isActive$())) {
       view.gallery$(false)

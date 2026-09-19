@@ -95,7 +95,7 @@ newline. Self chat always exposes Attach, including while typing a caption;
 Send accepts either text or a prepared file. Other chats retain the future-feature
 preview controls, where typing hides Attach and replaces Camera with Send.
 Sending, attachments and replying work in self chat;
-deletion, camera capture and paid attention remain unimplemented;
+camera capture and paid attention remain unimplemented;
 drafts are temporary component state. The three-dot menu displays the future
 content-deletion action without performing it. Paid attention (the bolt button
 and menu option) is available only in third-party fixture chats with the
@@ -266,7 +266,14 @@ project documentation and code comments in English.
 `window.napp.eventStore.addPersonalCopy(template, { context: 'dm:<own pubkey>' })`;
 they never use private-messenger or relay publication. Replies use `q` with the
 inner event ID, an empty relay hint and the owner's public key. Identical sends
-in the same second remain distinct. Accepted sends appear immediately with a
+remain distinct and preserve creation order among known messages, including
+within one second. The timeline uses ascending timestamps and descending inner
+IDs. A bounded salt search (128 hashes or 4 ms, checked between hashes) finds a
+lower kind-9 ID; on exhaustion it advances the effective timestamp by one second
+without waiting. Earlier timestamp advances and clock rollback cannot move new
+sends behind known messages. The attachment and its references use the final
+timestamp. This does not coordinate simultaneous offline sends on other devices
+or app instances. Accepted sends appear immediately with a
 static clock replacing the time. A failed save shows a red alert; tap it to
 choose the green Retry icon. Icons occupy only their own width. Confirmation smoothly expands
 that space to reveal the time, including any resulting bubble height change.
@@ -292,9 +299,11 @@ The first whitespace run that separates an expanded quote or attachment from the
 rest of the bubble is structural: a space or tab never indents the next line and
 a single line break never paints as an empty line, while an authored blank line
 (`\n\n`) still does.
-Deleting a message removes only its kind-9 event through a private deletion
-envelope; the file metadata (1063) and its bytes stay stored and reusable in the
-gallery, and the removal reaches paired devices through the normal sync. The
+Deleting a message removes its kind 9 and direct attachment's kind 1063 through
+a private deletion envelope in `dm:<own pubkey>`. Quoted messages remain intact.
+Images/videos also have an independent personal copy in context `''`, deduplicated
+by the `r` tag, which keeps them reusable in the gallery after deletion. The
+removal reaches paired devices through the normal sync. The
 deletion subscription narrows envelopes by their obfuscated kind mirrors
 (`#o`) so unrelated private deletions never reach decryption.
 
@@ -311,9 +320,9 @@ update for local content keys. Remote bunker signers require connectivity.
 The existing identity, personal-copy write and signer
 APIs were verified against upstream. The launcher's vault handles eventual
 device synchronization; Zillion consumes the resulting local updates.
-Generic private account lists will use context `''`; self chat never queries it.
+The attachment catalog uses context `''`, alongside future generic private account lists.
 Third-party profile caches retain local-first reads and relay refreshes.
-Deletion, reactions, remote uploads, history pagination and third-party transport
+Reactions, remote uploads, history pagination and third-party transport
 are not implemented. External video bytes are not cached for offline playback;
 local video attachments are stored by the launcher.
 
@@ -359,10 +368,10 @@ arriving in an open panel leaves just its add-file tile. Closing the panel stays
 closed even when the query finishes later. Conversation and gallery retries
 share recovery and preserve the same account's outbox and prepared attachments.
 The catalog is a dedicated newest-first read of the account's kind-1063 personal
-copies in the self-chat context, filtered in the store by the wrapper's
+copies in context `''`, filtered in the store by the wrapper's
 plaintext `k` tag; the returned wrappers are decrypted before the existing
-image/video, dimension and unique-root filters, so files sent before this change
-stay reusable.
+image/video, dimension and unique-root filters. Conversation references do not
+populate the gallery. Existing conversation-only metadata is not migrated.
 A selection
 prepares a preview and MMR tree, shown above an optional caption. **Nothing is
 stored until Send.** Changing/removing the selection preserves caption and reply.
@@ -387,8 +396,13 @@ copy's `r` retains them. They are not uploaded to relays or encrypted.
 
 Pending/error bubbles use the existing outbox and Retry. Each attempt preserves
 the same metadata and kind-9 events with their timestamp, skips existing chunks,
-confirms local bytes, then saves the 1063 before the 9 that quotes it. Gallery
-reuse writes new metadata without duplicating bytes. Partial chunks remain under
+confirms local bytes, then saves the 1063 before the 9 that quotes it. For images
+and videos it also ensures the catalog copy exists before saving the 9. The
+catalog lookup uses the obfuscated `r` mirror; concurrent sends and same-origin
+instances serialize this check/write. A failed catalog write leaves the message
+retryable. Gallery reuse writes new metadata with the send timestamp, caption
+and a fresh 16-character Base64URL `salt` tag (96 random bits), without duplicating
+bytes or catalog entries. Partial chunks remain under
 the launcher's normal cleanup. Empty files are rejected; files with
 failed/unsupported previews remain sendable/downloadable.
 Drafts and failed outbox entries remain memory-only and disappear on reload.

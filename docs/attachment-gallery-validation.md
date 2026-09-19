@@ -106,3 +106,46 @@ of at least 2000ms between placeholder insertion and removal after quick failure
 It also checks stable height, keyboard Retry, quick empty success, reduced motion
 and closing before expiry without reopening afterward. The guarded run took
 16 seconds and peaked at 1414 MiB with no swap; lint and production build pass.
+
+## Independent catalog and scoped deletion follow-up
+
+The catalog now reads only personal copies in context `''`. Sending an image or
+video ensures one catalog entry per root before confirming its kind 9. Every
+intentional send gets a fresh kind 1063 with the send timestamp and a random `salt`;
+retries preserve that event. Deleting a message removes its 9/1063 pair only in
+the conversation context. No migration or legacy sharing handling is included.
+
+Node regressions cover concurrent same-second sends, catalog lookup/write
+failures, stable retries, deletion after reload, preserved reply targets and
+pasted pointers, and stale reference/history results after deletion. Signer
+context derivation can retry after unlock; deleted filename references tolerate
+the interval before their views unmount.
+
+`npm test`, `npm run lint`, `npm run build` and `git diff --check` pass.
+`npm run test:browser:attachments` passes in 136 seconds (2451 MiB peak): the
+real store deletes both conversation events, retains the catalog copy with the
+same inner ID, saves fresh metadata on reuse, and preserves the result and bytes
+after offline reload. Deletion through the bubble menu is also verified.
+`npm run test:browser:gallery-ui` passes in 21 seconds (1519 MiB peak), including
+exclusion of conversation-only references and two samples of 57 multirow frames
+with constant height and all eight cached images present. Both runs use the
+3072 MiB guard with no swap. Device coverage remains desktop Chrome on Linux.
+
+## Ordered salt search follow-up
+
+Kind-9 sends now search for a lower inner ID within the latest known second,
+bounded by 128 candidate hashes or 4 ms checked between hashes. Exhaustion
+advances the effective timestamp by one second without waiting and rebuilds the
+attachment and its pointers. The oldest-first timeline breaks timestamp ties
+by descending inner ID. Failed/pending sends and observed history participate
+in the ordering boundary; retries preserve the accepted templates.
+
+Deterministic Node regressions cover rejected equal IDs, successful lower IDs,
+both search limits, clock rollback, out-of-order confirmations, deletion,
+history/live boundaries, reload and attachment-reference rebuilding. `npm test`,
+`npm run lint`, `npm run build` and `git diff --check` pass.
+The guarded `npm run test:browser:attachments` run passes in 170 seconds with a
+2467 MiB peak and no swap. It additionally verifies a 12-send burst under a
+fixed wall-clock second: pending snapshots, confirmed events and rendered
+messages after offline reload all preserve Send order. The search applies only
+to kind-9 inner IDs; launcher-generated wrapper IDs are unchanged.

@@ -336,6 +336,48 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     }
     console.log('Attachments: image, animation and H264 compression verified inside launcher')
     await trace('compression matrix')
+    // Deleting the original message must remove its metadata only in the DM,
+    // even though the catalog copy has the same inner ID. Reuse must create a
+    // fresh metadata event instead of reviving the deleted one.
+    const fileId = await evaluate(`selfChatAccount.messages$().find(message => message.id === ${JSON.stringify(photoId)}).tags.find(tag => tag[0] === 'q')[1]`)
+    const copies = () => evaluate(`(async () => {
+      const owner = await nostr.peekPublicKey();
+      const mirror = await nostr.obfuscate(${JSON.stringify(fileId)}, '1006', '.id');
+      return Promise.all(['dm:' + owner, ''].map(async context => {
+        const c = await nostr.obfuscate(context, '1006', '');
+        const {results} = await napp.eventStore.query({kinds:[1006], authors:[owner], '#k':['1063'], '#c':[c], '#o':[mirror], '#v':['0','1']});
+        return results.length;
+      }));
+    })()`)
+    assert.deepEqual(await copies(), [1, 1])
+    assert.equal(await evaluate(`selfChatAccount.deleteMessage(${JSON.stringify(photoId)})`), true)
+    assert.deepEqual(await copies(), [0, 1])
+    await browser.until(() => evaluate(`!document.querySelector('[data-message-id="${photoId}"]')`), 'deleted photo leaves the timeline')
+    await evaluate('document.querySelector(".chat-composer .attach").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".attachment-gallery button[title=\\"photo.png\\"]")'), 'catalog photo survives message deletion')
+    await evaluate(`(() => {
+      document.querySelector('.attachment-gallery button[title="photo.png"]').click();
+      const input = document.querySelector('.chat-composer textarea');
+      input.value = 'Reuse after deletion'; input.dispatchEvent(new Event('input', {bubbles:true}));
+    })()`)
+    await browser.until(() => evaluate('!!document.querySelector(".composer-attachment") && !document.querySelector(".compose-action").disabled'), 'catalog reuse ready')
+    await evaluate('document.querySelector(".compose-action").click()')
+    const reusedId = await browser.until(() => evaluate('[...document.querySelectorAll(\'.message-row\')].find(row => row.querySelector(\'.attachment-caption\')?.textContent.trim() === \'Reuse after deletion\' && row.querySelector(\'.message-status\')?.dataset.status === \'saved\')?.dataset.messageId'), 'catalog reuse saved after deletion', 60000)
+    const reusedFileId = await evaluate(`selfChatAccount.messages$().find(message => message.id === ${JSON.stringify(reusedId)}).tags.findLast(tag => tag[0] === 'q')[1]`)
+    assert.notEqual(reusedFileId, fileId)
+    const catalogPhotoCount = await evaluate(`selfChatAccount.readFiles().then(events => events.filter(event => event.tags.some(tag => tag[0] === 'r' && tag[1] === ${JSON.stringify(photoRoot)})).length)`)
+    assert.equal(catalogPhotoCount, 1, 'reuse never duplicates the catalog root')
+    assert.deepEqual(await copies(), [0, 1], 'reuse does not revive deleted metadata')
+    await browser.evaluate(`(() => {
+      const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
+      frame.src = new URL(frame.src).href;
+    })()`)
+    await browser.until(() => evaluate('selfChatAccount.historyState$() === "loaded" && !!document.querySelector(".chat-composer")'), 'deleted message stays absent after offline reload', 60000)
+    assert.equal(await evaluate(`selfChatAccount.messages$().some(message => message.id === ${JSON.stringify(photoId)})`), false)
+    assert.equal(await evaluate(`selfChatAccount.messages$().some(message => message.id === ${JSON.stringify(reusedId)})`), true)
+    assert.deepEqual(await copies(), [0, 1])
+    assert.equal(await evaluate(`fetch(${JSON.stringify(photo.tags.find(tag => tag[0] === 'url')[1])}, {method:'HEAD'}).then(response => response.status)`), 200, 'catalog keeps the photo bytes available offline')
+    console.log('Attachments: scoped 9/1063 deletion, catalog retention, fresh reuse and offline reload verified')
     // The controlled gallery fixture is a separate guarded run
     // (`npm run test:browser:gallery-ui`) so no single unit approaches the cap.
     if (process.env.ZILLION_SKIP_GALLERY_UI !== '1') {

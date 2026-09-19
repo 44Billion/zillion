@@ -526,8 +526,25 @@ needed; empty folders mark the initial structure.
   channel also stays binary; remote bunker and encrypted-log encoding belong to
   the vault. This requires the companion launcher/vault binary API update.
   Compute inner IDs with the library event hash; q tags and URIs use those IDs,
-  empty relay hints and the owner pubkey. A `zillion` UUID tag distinguishes
-  identical intentional sends; retries retain the same templates until saved.
+  empty relay hints and the owner pubkey. A `salt` tag on both the kind 9 and
+  its kind 1063 distinguishes identical intentional sends. `getRandomId` in
+  `src/helpers/random-id.js` encodes 12 bytes from `crypto.getRandomValues` as
+  16 Base64URL characters through libp2r2p. Retries retain the same templates
+  and salts until saved.
+- Render messages oldest first by ascending `created_at`, then descending
+  lexical inner ID (the reverse of NIP-01's initial newest-first query order).
+  Before accepting a send, vary only the kind-9 salt until its ID is lower than
+  the newest known message in the same second. Limit this search to 128 hashes
+  or a 4 ms elapsed budget, checked between hashes. On exhaustion, advance the
+  effective timestamp by one second without waiting. Start from the greater of
+  wall time and the newest observed/accepted timestamp; pending and failed sends
+  count, and deletion does not rewind this in-memory boundary. History and live
+  copies seed it after restart. This coordinates known events in one service,
+  not simultaneous offline sends on separate devices or instances.
+  A timestamp advance rebuilds the 1063 and both its `q`/URI references before
+  accepting the kind 9 into the outbox. Kind-1063 salts stay random; only kind-9
+  inner IDs are searched, never launcher-owned kind-1006 wrapper IDs. Once
+  accepted, timestamps, salts, IDs, replies and file references stay fixed on Retry.
 - Bubble references follow the plan: a resolved kind 9 renders as
   `z-chat-quote`, a resolved kind 1063 as `z-chat-attachment` in the URI's
   position, unresolved or unsupported kinds stay compact inline references,
@@ -632,8 +649,8 @@ needed; empty folders mark the initial structure.
   same provenance check. Address pointers conservatively stay local if copies
   of the same author/kind exist, since there is no personal-copy address index. Missing/unreadable njump pages keep the
   original pointer label and nostr: destination. No new persistent app store exists.
-- Generic private contact/follow events will use context `''`, outside chat.
-  Deletion/reactions, paginated history and third-party messaging remain
+- The attachment catalog uses context `''`, alongside future private contact/follow events.
+  Reactions, paginated history and third-party messaging remain
   unimplemented. All user-facing status/error/reply labels cover 11 locales.
 
 
@@ -710,19 +727,33 @@ needed; empty folders mark the initial structure.
   the 9+1063 pair: the message is the kind 9, and the kind 1063 carries the
   caption, URL, mime, root, dimensions and thumbhash with no `q` tag. Consume
   nip94 tags directly; copy/share includes caption+URL.
-- The composer gallery queries the context's kind-1063 copies directly: the
+- The composer gallery queries only context `''` for kind-1063 copies: the
   wrapper's plaintext one-letter `k` tag is indexed, so `'#k': ['1063']` filters
   in the store and only matching wrappers reach decryption. The store does not
   index mime, so the image/video-with-dimensions, unique-by-root filters still
-  run after decryption. Resolution by inner id keeps using the `#o` mirror.
+  run after decryption. Resolution by inner id keeps using the `#o` mirror in
+  the conversation context. Never merge conversation references into the catalog.
+  Confirmed message changes and reopening refresh the catalog without replacing
+  mounted tiles with shimmers; a change during a read queues another read.
+  On Send, after confirming local bytes, write the conversation's metadata and
+  ensure an image/video copy exists in `''` before saving kind 9. Deduplicate by
+  `r` using its `#o` mirror (`obfuscate(root, '1006', '#r')`), scoped to owner,
+  context, inner kind and provenance. Serialize check/write by root within the
+  service and with a same-origin Web Lock when available. Reuse keeps the first
+  catalog entry and creates a fresh conversation 1063 with the chosen send timestamp,
+  caption and salt. Failed writes keep the exact templates for Retry. Do not
+  migrate conversation-only metadata or handle legacy shared file events.
 - Deleting a message sends a **private deletion envelope** (a personal copy
-  whose inner is kind 5) that names only the kind-9 inner id and never touches
-  the 1063 it referenced, so the file stays available for the gallery and for
-  other messages. The service keeps a `#k:['5']` subscription (narrowed by the
+  whose inner is kind 5) in `dm:<owner>` naming the kind-9 inner id and its direct
+  attachment's 1063 id, with both `k` tags when applicable. Identify the direct
+  attachment through an owner-authored kind-1063 content pointer also present in
+  the message's `q` tags. Preserve quoted messages and pasted pointers. The
+  catalog copy in `''` survives even when its inner ID matches the deleted file.
+  The service keeps a `#k:['5']` subscription (narrowed by the
   obfuscated `#o` kind mirrors for 9 and 1063) to drop messages removed by other
   devices, applies the removal optimistically and restores the message if the
-  write fails. The composer catalog combines the resolved references with the
-  store read (`readFiles`) for the same reason.
+  write fails. Successful deletions invalidate local and resolved references and
+  prevent in-flight lookups or history replays from restoring removed events.
 - Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.18`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;

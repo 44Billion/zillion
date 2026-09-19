@@ -63,8 +63,12 @@ export function createChatReferences ({
   // arrive, because a personal copy may land after the one that references it.
   const misses = new Set()
   const locals = new Map()
+  const removed = new Set()
   let encodedContextPromise
-  const encodedContext = () => (encodedContextPromise ??= signer.obfuscate(context, String(PERSONAL_COPY), ''))
+  const encodedContext = () => (encodedContextPromise ??= signer.obfuscate(context, String(PERSONAL_COPY), '').catch(error => {
+    encodedContextPromise = undefined
+    throw error
+  }))
 
   async function readWrapper (wrapper) {
     return decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: await encodedContext() })
@@ -86,11 +90,21 @@ export function createChatReferences ({
   return {
     // Pending outbox events by inner id; messages read them before the store.
     locals,
+    remove (ids) {
+      for (const id of ids) {
+        removed.add(id)
+        locals.delete(id)
+        cache.delete(id)
+        misses.delete(id)
+        onResolved(id, null)
+      }
+    },
     clear () {
       cache.clear()
       pending.clear()
       misses.clear()
       locals.clear()
+      removed.clear()
       encodedContextPromise = undefined
     },
     // Invalidate misses and start their lookups again. Returns the number of
@@ -108,7 +122,7 @@ export function createChatReferences ({
     // (the caller re-renders through the references signal when it lands).
     resolve (reference) {
       const id = typeof reference === 'string' ? reference : reference?.id
-      if (!HEX64_RE.test(id ?? '')) return null
+      if (!HEX64_RE.test(id ?? '') || removed.has(id)) return null
       // Pending outbox events resolve immediately and must still notify the
       // caller, otherwise a bubble that rendered before confirmation has no
       // reason to re-render with the referenced quote or attachment.
@@ -124,6 +138,7 @@ export function createChatReferences ({
       if (!pending.has(id)) {
         pending.set(id, load(id)
           .then(event => {
+            if (removed.has(id)) return null
             cache.set(id, event)
             if (event) onResolved(id, event)
             else misses.add(id)
@@ -136,17 +151,23 @@ export function createChatReferences ({
     },
     // Inner kind-1063 events of this context, newest first, for the composer
     // attachment catalog. Decryption is required before any mime filtering.
-    async readFiles ({ limit: readLimit = limit } = {}) {
+    async readFiles ({ limit: readLimit = limit, root } = {}) {
       // The wrapper carries the inner kind in its plaintext one-letter `k` tag,
       // which the store indexes, so the kind-1063 filter happens in the store.
       // Decryption still validates owner, context, provenance and inner kind.
       const { results: copies = [] } = await eventStore.query({
-        kinds: [PERSONAL_COPY], authors: [pubkey], '#k': [String(CHAT_FILE_KIND)], '#c': [await encodedContext()], '#v': ['0', '1'], limit: readLimit
+        kinds: [PERSONAL_COPY], authors: [pubkey], '#k': [String(CHAT_FILE_KIND)], '#c': [await encodedContext()], '#v': ['0', '1'],
+        ...(root ? { '#o': [await signer.obfuscate(root, String(PERSONAL_COPY), '#r')] } : {}), limit: readLimit
       })
       const events = []
       for (const wrapper of copies) {
-        const event = await readWrapper(wrapper).catch(() => null)
-        if (event?.kind === CHAT_FILE_KIND) events.push(event)
+        const event = await readWrapper(wrapper).catch(error => {
+          // Root lookups decide whether to create a catalog copy. A failed
+          // decryption must not be mistaken for an absent entry.
+          if (root) throw error
+          return null
+        })
+        if (event?.kind === CHAT_FILE_KIND && (!root || event.tags.some(tag => tag[0] === 'r' && tag[1] === root))) events.push(event)
       }
       return events.sort((a, b) => b.created_at - a.created_at || b.id.localeCompare(a.id))
     }

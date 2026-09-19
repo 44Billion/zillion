@@ -20,6 +20,7 @@ test('filenames prioritize supplied name, root, original hash, hash and translat
   assert.equal(fileName({ filename: 'name.unknown', mime: 'image/png' }).full, 'name.unknown')
   assert.equal(fileName({ filename: 'data', mime: 'unknown/type' }).full, 'data.bin')
   assert.equal(fileName({}).full, 'unnamed-file.bin')
+  assert.equal(fileName(null).full, 'unnamed-file.bin', 'deleted references remain safe until their views unmount')
 })
 
 test('nfile encoding limits UTF-8 bytes while retaining extension and valid characters', () => {

@@ -19,7 +19,7 @@ f('z-gallery-ui-fixture', ({ h }) => {
   useClosestStore('z-route-page', () => ({ isActive$: true }), { shouldCache: false })
   const runtime = useMemo(() => ({ work: null, files: [] }))
   const view = useStore({
-    messages$: [], historyState$: 'unavailable', canAttach$: true, canSend$: false, calls$: 0,
+    messages$: [], references$: {}, historyState$: 'unavailable', canAttach$: true, canSend$: false, calls$: 0,
     recover () {
       if (runtime.work) return runtime.work.promise
       this.calls$(value => value + 1)
@@ -43,6 +43,15 @@ f('z-gallery-ui-fixture', ({ h }) => {
       this.historyState$('loading')
       this.historyState$('loaded')
     },
+    seedConversationFile () {
+      const root = 'f'.repeat(64)
+      this.references$({
+        [root]: {
+          ...createFileMetadata({ root, mime: 'image/png', width: 1, height: 1, url: `https://nostr.alt/${nfileEncode({ root, mime: 'image/png', filename: 'conversation-only.png' })}?localOnly=1` }),
+          id: root
+        }
+      })
+    },
     settle (state) { this.historyState$(state); runtime.work?.resolve(); runtime.work = null }
   })
   window.galleryUI = view
@@ -52,7 +61,7 @@ f('z-gallery-ui-fixture', ({ h }) => {
     return runtime.files
   }
   return h`<div class="gallery-fixture"><z-chat-composer props=${{
-    messages$: view.messages$, historyState$: view.historyState$, canAttach$: view.canAttach$,
+    messages$: view.messages$, references$: view.references$, historyState$: view.historyState$, canAttach$: view.canAttach$,
     canSend$: view.canSend$, recover: view.recover, readFiles
   }} /></div>`
 })

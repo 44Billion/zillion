@@ -118,3 +118,55 @@ test('a missing reference is retried once its copy can exist', async () => {
   assert.deepEqual(resolved, [[file.id, 'late caption']])
   assert.equal(references.resolve(file.id)?.content, 'late caption', 'the later result replaces the miss')
 })
+
+test('catalog root lookups use the r mirror and validate the decrypted root and context', async () => {
+  const root = 'a'.repeat(64)
+  const file = innerEvent({ kind: 1063, tags: [['r', root]] })
+  const queries = []
+  const scopes = []
+  const references = createChatReferences({
+    pubkey, context: '',
+    signer: { ...signer, obfuscate: async (...args) => { scopes.push(args); return args[0] } },
+    eventStore: {
+      query: async filter => {
+        queries.push(filter)
+        return { results: [wrapper(file), wrapper(file, { wrapperContext: '' }), wrapper(innerEvent({ kind: 1063 }), { wrapperContext: '' })] }
+      }
+    }
+  })
+  assert.deepEqual((await references.readFiles({ root, limit: 1 })).map(event => event.id), [file.id])
+  assert.deepEqual(queries[0]['#c'], [''])
+  assert.deepEqual(queries[0]['#o'], [root])
+  assert.equal(queries[0].limit, 1)
+  assert.ok(scopes.some(args => JSON.stringify(args) === JSON.stringify([root, '1006', '#r'])))
+})
+
+test('deleting a reference invalidates pending lookups before they can restore cached metadata', async () => {
+  const file = innerEvent({ kind: 1063, content: 'Deleted' })
+  const queried = Promise.withResolvers()
+  const resolved = []
+  const references = createChatReferences({
+    pubkey, signer, context,
+    eventStore: { query: () => queried.promise },
+    onResolved: (id, event) => resolved.push([id, event])
+  })
+  references.resolve(file.id)
+  references.remove([file.id])
+  queried.resolve({ results: [wrapper(file)] })
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(references.resolve(file.id), null)
+  assert.deepEqual(resolved, [[file.id, null]])
+})
+
+test('catalog context derivation retries after unlocking the signer', async () => {
+  let locked = true
+  const file = innerEvent({ kind: 1063 })
+  const references = createChatReferences({
+    pubkey, context: '',
+    signer: { ...signer, obfuscate: async value => { if (locked) throw new Error('LOCKED'); return value } },
+    eventStore: { query: async () => ({ results: [wrapper(file, { wrapperContext: '' })] }) }
+  })
+  await assert.rejects(references.readFiles(), /LOCKED/)
+  locked = false
+  assert.deepEqual((await references.readFiles()).map(event => event.id), [file.id])
+})

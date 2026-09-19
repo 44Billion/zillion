@@ -150,8 +150,9 @@ export async function checkGalleryUI ({ browser, evaluate, origin }) {
     await evaluate('galleryDwellObserver.disconnect(); document.querySelector(".gallery-fixture .gallery-retry").click()')
     await browser.until(() => evaluate('galleryUI.calls$() === 3 && document.querySelectorAll(".gallery-fixture .gallery-placeholder").length === 3'), 'retry after minimum display')
     const choosers = browser.fileChoosers.length
-    await evaluate('galleryUI.settle("loaded")')
+    await evaluate('galleryUI.seedConversationFile(); galleryUI.settle("loaded")')
     await browser.until(() => evaluate('document.querySelectorAll(".gallery-fixture .attachment-gallery button").length === 1 && !document.querySelector(".gallery-fixture .gallery-placeholder")'), 'empty result leaves just add-file')
+    assert.equal(await evaluate('!!document.querySelector(".gallery-fixture button[title=\\"conversation-only.png\\"]")'), false, 'conversation references never populate the independent catalog')
     assert.equal(browser.fileChoosers.length, choosers, 'empty asynchronous result never launches picker')
     await evaluate('document.querySelector(".gallery-fixture .attach").click()')
     await browser.until(() => evaluate('!document.querySelector(".gallery-fixture .attachment-gallery")'), 'empty panel closes')
