@@ -6,7 +6,7 @@ import { createFileMetadata } from 'libp2r2p/nip94'
 import { verifyLocalFile } from './chat-attachments.js'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { compactWhitespace } from 'libp2r2p/nip27'
-import { chatReferenceUri, createChatReferences, decryptPersonalCopy, CHAT_TEXT_KIND } from './chat-references.js'
+import { chatReferenceUri, createChatReferences, decryptPersonalCopy, CHAT_FILE_KIND, CHAT_TEXT_KIND } from './chat-references.js'
 
 export const SELF_CHAT_KIND = 9
 export const DELETION_KIND = 5
@@ -98,7 +98,26 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
           if (current()) throw new Error('Self chat subscription ended')
         })()
         live.catch(fail)
-        const deletionFilter = { kinds: [PERSONAL_COPY], authors: [pubkey], '#k': [String(DELETION_KIND)], '#c': [encodedContext], '#v': ['0', '1'] }
+        // The envelope's inner carries `k` tags for the kinds it targets; those
+        // values are mirrored into `o`, so the subscription only decrypts
+        // deletions that can affect chat messages or their file metadata. The
+        // narrowing is an optimization: if the signer cannot derive the extra
+        // scopes, keep the broader envelope subscription instead of failing.
+        let deletionFilter = {
+          kinds: [PERSONAL_COPY],
+          authors: [pubkey],
+          '#k': [String(DELETION_KIND)],
+          '#c': [encodedContext],
+          '#v': ['0', '1']
+        }
+        try {
+          const deletionKindMirrors = await Promise.all([CHAT_TEXT_KIND, CHAT_FILE_KIND].map(kind =>
+            signer.obfuscate(String(kind), String(PERSONAL_COPY), '#k')
+          ))
+          deletionFilter = { ...deletionFilter, '#o': deletionKindMirrors }
+        } catch {
+          // Keep the unfiltered subscription; the main history already loaded.
+        }
         const deletions = eventStore.subscribe(deletionFilter, { initial: true })
         deletionSubscription = deletions
         const deletionLive = (async () => {

@@ -41,7 +41,14 @@ function fixture (history = [], options = {}) {
         assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
         return subscription
       }
-      assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['5'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
+      assert.deepEqual(filter, {
+        kinds: [1006],
+        authors: [pubkey],
+        '#k': ['5'],
+        '#c': [`dm:${pubkey}`],
+        '#v': ['0', '1'],
+        '#o': ['9', '1063']
+      })
       return deletionSubscription
     },
     query: async (filter = {}) => {

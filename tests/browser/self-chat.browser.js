@@ -144,9 +144,47 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     // Opening the vault can dismiss an initial permission card. Recover via
     // the app's real retry control before testing write permission separately.
     await browser.until(() => evaluate('document.querySelector(".chat-date .retry-btn")?.click(); document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial history before menu interactions')
+
+    // Deleting a message removes only its kind 9; the file metadata stays in
+    // the store and reusable by the composer gallery.
+    const checkMessageDeletion = async () => {
+      if (await evaluate('location.pathname !== "/"')) {
+        await evaluate('document.querySelector(".chat-back").click()')
+        await browser.until(() => evaluate('location.pathname === "/"'), 'home before deletion')
+      }
+      await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
+      await browser.until(() => evaluate('location.pathname === "/chat/user" && document.querySelector(".route-page[data-active=true] .chat-timeline")?.dataset.historyLoaded === "true"'), 'chat entered for deletion')
+      await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      const countWrappers = kind => evaluate(`window.napp.eventStore.query({ kinds: [1006], '#k': [${JSON.stringify(String(kind))}] }).then(({ results }) => results.length)`)
+      const messageCountBefore = await countWrappers(9)
+      const fileCountBefore = await countWrappers(1063)
+      const readFilesBefore = await evaluate('selfChatAccount.readFiles().then(files => files.length)')
+      const deletedId = await browser.until(() => evaluate(`(() => {
+        const rows = [...document.querySelectorAll('.message-row')].filter(row => row.querySelector('.message-status[data-status=saved]') && row.querySelector('.attachment-download'))
+        return rows.at(-1)?.dataset.messageId ?? null
+      })()`), 'saved file bubble for deletion')
+
+      await evaluate(`document.querySelector('[data-message-id="${deletedId}"] .chat-bubble').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))`)
+      await browser.until(() => evaluate('Boolean(document.querySelector(".message-actions .message-delete[aria-disabled=false]"))'), 'delete message action')
+      await evaluate('document.querySelector(".message-actions .message-delete").click()')
+      await browser.until(() => evaluate(`!document.querySelector('[data-message-id="${deletedId}"]')`), 'deleted bubble removed')
+      await browser.until(async () => await countWrappers(9) === messageCountBefore - 1, 'kind 9 deletion committed')
+
+      assert.equal(await countWrappers(1063), fileCountBefore, 'file metadata stays stored after deleting its message')
+      assert.equal(await evaluate('selfChatAccount.readFiles().then(files => files.length)'), readFilesBefore, 'file catalog stays unchanged')
+      assert.equal(await evaluate(`selfChatAccount.messages$().some(message => message.id === ${JSON.stringify(deletedId)})`), false)
+
+      await evaluate('document.querySelector(".chat-back").click()')
+      await browser.until(() => evaluate('location.pathname === "/"'), 'home after deletion')
+      await evaluate('document.querySelector(".conversation [data-contact-id=user]").click()')
+      await browser.until(() => evaluate('location.pathname === "/chat/user" && document.querySelector(".route-page[data-active=true] .chat-timeline")?.dataset.historyLoaded === "true"'), 'chat reload after deletion')
+      assert.equal(await evaluate(`selfChatAccount.messages$().some(message => message.id === ${JSON.stringify(deletedId)})`), false, 'deleted message does not come back after history reload')
+    }
+
     if (process.env.ZILLION_GALLERY_UI_ONLY === '1') { await checkGalleryUI({ browser, evaluate, origin }); return }
     if (process.env.ZILLION_FILES_ONLY === '1') {
       await checkAttachmentScenarios({ browser, evaluate, origin, requests })
+      await checkMessageDeletion()
       return
     }
     assert.equal(await evaluate('document.querySelectorAll(".chat-bubble").length'), 0)
@@ -536,6 +574,8 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await evaluate('document.querySelector(".chat-back").click()')
     await browser.until(() => evaluate('location.pathname === "/"'), 'home navigation')
     await browser.until(() => evaluate('document.querySelector(".conversation [data-contact-id=user] .preview").textContent.length > 0'), 'real self preview')
+
+    await checkMessageDeletion()
   } catch (error) {
     console.error('Self chat browser failure:', error.message)
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/self-chat'))
