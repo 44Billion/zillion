@@ -4,7 +4,8 @@ import { t } from '#i18n/messages.js'
 import { chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
 import { i18n } from '#i18n/index.js'
 import { useRoutePage } from '#shared/route-page.js'
-import home from '#views/home/fixtures/home.json'
+import people from '#views/contacts/fixtures/people.json'
+import './contact-invitation.js'
 import { getMessages } from './fixtures/index.js'
 import './header.js'
 import './day.js'
@@ -16,7 +17,7 @@ f('z-chat-route', ({ h, props }) => {
   const location = useLocation()
   const account = useAccount()
   const route = props.route$()
-  const person = [...home.contacts, account.person$()].find(person => person.id === route.params?.contactId)
+  const person = [...people, account.person$()].find(person => person.id === route.params?.contactId)
   const entry = route.url.searchParams.entry === '1'
   if (!person) {
     return h`
@@ -46,6 +47,7 @@ f('z-chat', ({ h, props }) => {
     now$: Date.now(),
     real$ () { return props.person$().self === true },
     messages$ () {
+      if (props.person$().saved === false) return []
       if (!this.real$()) return getMessages(props.person$())
       return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$() })
     },
@@ -124,7 +126,7 @@ f('z-chat', ({ h, props }) => {
       `}</style>
       <z-chat-header props=${{ person$: props.person$, entry$: props.entry$, route$: props.route$ }} />
       <div class="chat-timeline" ref=${view.timelineRef$} data-history-loaded=${String(!view.real$() || account.historyLoaded$())}><div class="timeline-content">
-        ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!account.error$() && account.ready$() && !!account.pubkey$() && view.messages$().length > 0}>${account.error$() ? t('Could not load conversation') : !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t('Notes to yourself') : ''}${account.error$() ? h` <button type="button" class="retry-btn" onclick=${() => account.retry$(value => value + 1)}>${t('Retry')}</button>` : null}</div>` : h`<div class="chat-date">${t('Today')}</div>`}
+        ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!account.error$() && account.ready$() && !!account.pubkey$() && view.messages$().length > 0}>${account.error$() ? t('Could not load conversation') : !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t('Notes to yourself') : ''}${account.error$() ? h` <button type="button" class="retry-btn" onclick=${() => account.retry$(value => value + 1)}>${t('Retry')}</button>` : null}</div>` : props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : h`<div class="chat-date">${t('Today')}</div>`}
         <ol class="message-list" aria-label=${t('Messages')}>
           <span hidden></span>
           ${view.days$().map(day => h({ key: day.key })`
@@ -135,7 +137,7 @@ f('z-chat', ({ h, props }) => {
           `)}
         </ol>
       </div></div>
-      <z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null), readFiles: account.readFiles, references$: account.references$ }} />
+      ${props.person$().saved === false ? h`<z-contact-invitation props=${{ person$: props.person$ }} />` : h`<z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null), readFiles: account.readFiles, references$: account.references$ }} />`}
     </main>
   `
 })

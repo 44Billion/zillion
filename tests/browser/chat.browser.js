@@ -28,7 +28,7 @@ test('future feature flag controls home and chat previews without leaving empty 
       const evaluate = expression => browser.evaluate(expression, origin)
       await browser.until(() => evaluate('Boolean(document.querySelector(".contact-item[data-contact-id=maya]"))'), 'home')
       assert.deepEqual(await evaluate('[...document.querySelectorAll(".home-header .actions button")].map(button => button.getAttribute("aria-label"))'), enabled ? ['Search messages', 'New message', 'Your profile'] : ['Your profile'])
-      assert.equal(await evaluate('Boolean(document.querySelector(".contact-strip .more"))'), enabled)
+      assert.equal(await evaluate('Boolean(document.querySelector(".contact-strip .more"))'), true)
       widths.push(await evaluate('document.querySelector(".contact-list").getBoundingClientRect().width'))
       await evaluate('document.querySelector(".contact-item[data-contact-id=maya]").click()')
       await browser.until(() => evaluate('Boolean(document.querySelector(".chat-more"))'), 'chat header')
@@ -52,8 +52,8 @@ test('future feature flag controls home and chat previews without leaving empty 
       await browser.close()
       browser = null
     }
-    assert.equal(widths[0] - widths[1], 56, 'contacts reclaim the More button width and gap')
-    assert.equal(widths[0], widths[2], 'production uses the full contact strip')
+    assert.equal(widths[0], widths[1], 'More is available independently of future-feature previews')
+    assert.equal(widths[0], widths[2], 'production keeps the same contact strip navigation')
   } catch (error) {
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/future-features'))
     throw error

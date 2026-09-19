@@ -1,0 +1,122 @@
+[
+  {
+    "id": "maya",
+    "name": "Maya Chen",
+    "shortName": "Maya",
+    "avatar": "maya",
+    "pinned": true,
+    "saved": true,
+    "nip05": "maya@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqshp52w2",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg7ncw7k"
+  },
+  {
+    "id": "daniel",
+    "name": "Daniel Costa",
+    "shortName": "Daniel",
+    "avatar": "daniel",
+    "pinned": true,
+    "saved": true,
+    "nip05": "daniel@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpqdangsl",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqs4x564c"
+  },
+  {
+    "id": "ellie",
+    "name": "Ellie Parker",
+    "shortName": "Ellie",
+    "avatar": "ellie",
+    "pinned": true,
+    "saved": true,
+    "nip05": "ellie@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpscums9v",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqctjskt9"
+  },
+  {
+    "id": "james",
+    "name": "James Wilson",
+    "shortName": "James",
+    "avatar": "james",
+    "pinned": false,
+    "saved": true,
+    "nip05": "james@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzqunz0d4",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpq06nctd"
+  },
+  {
+    "id": "nina",
+    "name": "Nina Patel",
+    "shortName": "Nina",
+    "avatar": "nina",
+    "pinned": false,
+    "saved": true,
+    "nip05": "nina@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzsfj2hcx",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpg3wh54s"
+  },
+  {
+    "id": "juliette",
+    "name": "Juliette Roux",
+    "shortName": "Juliette",
+    "avatar": "juliette",
+    "pinned": false,
+    "saved": true,
+    "nip05": "juliette@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqrqnwd4xn",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqps6mmq77"
+  },
+  {
+    "id": "matteo",
+    "name": "Matteo Rossi",
+    "shortName": "Matteo",
+    "avatar": "matteo",
+    "pinned": false,
+    "saved": true,
+    "nip05": "matteo@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqrsx09dnq",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqpcy0lvqr"
+  },
+  {
+    "id": "sofia",
+    "name": "Sofia Martins",
+    "shortName": "Sofia",
+    "avatar": "sofia",
+    "pinned": false,
+    "saved": true,
+    "nip05": "sofia@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqyqh0fp7p",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzq75zlk8"
+  },
+  {
+    "id": "alex",
+    "name": "Alex Kim",
+    "shortName": "Alex",
+    "avatar": "alex",
+    "pinned": false,
+    "saved": true,
+    "nip05": "alex@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqyszwpetj",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzgqqxng6"
+  },
+  {
+    "id": "sam",
+    "name": "Sam Taylor",
+    "shortName": "Sam",
+    "avatar": "sam",
+    "pinned": false,
+    "saved": true,
+    "nip05": "sam@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qcjxm48",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzst428r5"
+  },
+  {
+    "id": "luna",
+    "name": "Luna Oliveira",
+    "shortName": "Luna",
+    "avatar": "sofia",
+    "saved": false,
+    "nip05": "luna@example.com",
+    "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9sdnwrq5",
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzc4pwtaf"
+  }
+]

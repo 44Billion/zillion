@@ -197,12 +197,14 @@ foundations, and build/publishing tooling. Do not describe planned features as a
 - Third-party preview contacts do not fetch real contacts or messages; self identity
   and history use the runtime. `a-avatar`
   receives provided data-URL profiles without public keys, so no Nostr lookup is
-  triggered. Contact and conversation controls navigate to fixture DMs or real self chat. Search,
-  compose, profile and More remain inert.
+  triggered. Contact and conversation controls navigate to fixture DMs or real self chat.
+  Home Search, compose and profile remain inert; More opens the contacts view.
 - Keep the main column at a maximum of 718px, centered with vertical borders on
   wider screens. Use the same mobile composition at every width. The contact
-  strip fits whole items while keeping 44px portraits. More occupies a fixed
-  cell only when future-feature previews are enabled; otherwise the list expands.
+  strip fits whole items while keeping 44px portraits. More occupies the final cell when all other visible cells are filled. Otherwise
+  Add Contact immediately follows the existing contacts inside the scroller.
+  Both actions are independent of future-feature flags and use translated,
+  ellipsized labels. ResizeObserver derives whole slots from the strip width.
 - Sort contacts pinned first, alphabetically within each group. All contacts,
   including pinned ones, scroll; only More stays outside the scroller. Share
   unread counts with their conversations through `z-unread-badge`.
@@ -244,18 +246,19 @@ foundations, and build/publishing tooling. Do not describe planned features as a
 ## Conversation preview and routing
 
 - `ZILLION_FUTURE_FEATURES` controls the inert previews for home Search/New
-  message, contact-strip More, paid attention (header and menu), Attach, and
+  message, paid attention (header and menu), Attach, and
   Camera. Development enables them by default; `0` disables and `1` enables
   them. Restart the watcher after changing the flag. `bin/build-options.js`
   defines `FUTURE_FEATURES_ENABLED` and always forces it off in production.
   Self chat always omits both paid-attention controls, even with the flag enabled.
-  Conditionally omit disabled controls from the DOM. The contact strip must
-  reclaim More's width and gap, and the chat three-dot button occupies a single
-  44px circle. Without the previews, the composer always displays Send, even
-  when empty. Keep the profile button visible. Sending is implemented only in self chat.
+  Conditionally omit disabled controls from the DOM. The chat three-dot button
+  occupies a single 44px circle without paid attention. Without the previews,
+  the composer always displays Send, even when empty. Keep the profile button visible. Sending is implemented only in self chat.
 
 - `src/components/router.js` owns `url-router`, `useLocation`, and `f-route`.
-  `/` is home, `/chat/user` is real self chat, other `/chat/:contactId` routes are fixture DMs, and unknown routes/contacts
+  `/` is home, `/contacts` is the alphabetical directory, `/contacts/add` opens
+  identifier search with focus, `/chat/user` is real self chat, other
+  `/chat/:contactId` routes are fixture DMs, and unknown routes/contacts
   render a localized unavailable state. No real contact lookup occurs.
 - `z-route-page` scopes one `f-route` to its history entry using reactive
   `paths$`, so different contacts do not share a mounted chat instance. Keep
@@ -289,6 +292,8 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   This is a navigation presentation mode, not an identity/authorization contract.
   Ordinary home navigation marks `fromHome` in History state; Back uses the
   location store's `back`, or `replaceState` to home on an ordinary direct load.
+  Directory navigation marks `fromContacts`, so chat Back restores the retained
+  search/list rather than skipping it for home.
   Key the chat by contact and entry mode within its retained history page;
   replacing that page discards its drafts and timers.
 - Chat fixtures live in `src/components/views/chat/fixtures`. Sample DMs share an
@@ -922,3 +927,22 @@ needed; empty folders mark the initial structure.
 - Self-chat integration keeps development feature flags but sets
   `sourceMaps: false` for its disposable installation. Installing unused multi-MiB maps via
   a CDP expression exceeded the 3 GiB test budget. Normal development keeps maps.
+
+## Contacts visual preview
+
+- `/contacts` shows the real self identity separately, then saved fixtures in
+  locale-aware alphabetical order. Search matches names without accents and
+  partial npub/nprofile/NIP-05 identifiers. Letter headings disappear in search.
+- `/contacts/add` shares the directory search, with a focused input and empty
+  guidance. `data-route-autofocus` lets page transitions focus its input instead
+  of replacing that focus with the route scroll container. Exact identifiers match an unsaved fixture locally; public nip19
+  decoders also match equivalent nprofile pointers with different relay hints.
+  No contact persistence, relay lookup or NIP-05 verification occurs. Fixture
+  identities and portraits live in `views/contacts/fixtures/people.json` and
+  the existing home portrait bundle. `luna@example.com` opens the unsaved preview.
+- Unsaved fixture DMs reuse `z-chat`, its floating header/menu, viewport handling
+  and route retention. They show a profile and Add Contact invitation instead
+  of messages/composer. The button explains that adding is unavailable; it does
+  not mutate contact data. Saved fixture DMs keep their existing sample messages.
+- Do not add bottom navigation. New labels cover all 11 supported locales, and
+  the existing light/dark theme variables provide all authored colors.

@@ -1,24 +1,33 @@
 import { t } from '#i18n/messages.js'
-import { f, useStore, useTask } from '#f'
+import { f, useLocation, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import '#shared/icons/icon-chevron-down.js'
+import '#shared/icons/icon-user-plus.js'
 import './contact.js'
 
 f('z-home-contacts', ({ h, props }) => {
-  const view = useStore({ listRef$: null })
+  const location = useLocation()
+  const view = useStore({
+    listRef$: null, stripRef$: null, slots$: 1,
+    more$ () { return this.slots$() > 1 && props.contacts$().length >= this.slots$() - 1 }
+  })
   useTask(({ track, cleanup }) => {
     const list = track(() => view.listRef$())
-    if (!list) return
+    const strip = track(() => view.stripRef$())
+    if (!list || !strip) return
     let step = 56
     let target = null
     let lastWheelAt = -Infinity
     let lastDirection = 0
     const reset = () => { target = null }
     const resize = () => {
-      const width = list.getBoundingClientRect().width
-      if (!width) return
+      const width = strip.clientWidth - 36
+      if (width <= 0) return
       const index = Math.round(list.scrollLeft / step)
-      step = width / Math.max(1, Math.floor(width / 56))
+      const slots = Math.max(2, Math.floor(width / 56))
+      step = width / slots
+      view.slots$(slots)
+      strip.style.setProperty('--contact-step', `${step}px`)
       list.style.setProperty('--contact-step', `${step}px`)
       list.scrollTo({ left: index * step, behavior: 'instant' })
       reset()
@@ -51,7 +60,7 @@ f('z-home-contacts', ({ h, props }) => {
     }
     resize()
     const observer = new ResizeObserver(resize)
-    observer.observe(list)
+    observer.observe(strip)
     list.addEventListener('wheel', wheel, { passive: false })
     list.addEventListener('keydown', keydown)
     list.addEventListener('pointerdown', reset, { passive: true })
@@ -66,10 +75,10 @@ f('z-home-contacts', ({ h, props }) => {
   }, { after: 'rendering' })
 
   return h`
-    <section class="contact-strip" aria-label=${t('Pinned contacts, then alphabetical contacts')}>
+    <section class="contact-strip" ref=${view.stripRef$} aria-label=${t('Pinned contacts, then alphabetical contacts')}>
       <style>${`
         z-home-contacts .contact-strip {
-          display: flex; gap: 8px; align-items: start;
+          display: flex; align-items: start;
           padding: 0 18px 22px;
           .contact-list {
             flex: 1; min-width: 0; display: grid; grid-auto-flow: column;
@@ -88,7 +97,8 @@ f('z-home-contacts', ({ h, props }) => {
           button:active { background: var(--z-pressed); }
           .contact-list button:focus-visible { outline-offset: -2px; }
           .contact-name { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .more { width: 48px; flex: none; }
+          .more { width: var(--contact-step, 56px); flex: none; }
+          .add-contact { scroll-snap-align: start; }
           .more-icon {
             display: grid; place-items: center; width: 44px; height: 44px;
             border-radius: 50%; background: var(--z-control); color: var(--z-muted);
@@ -103,11 +113,17 @@ f('z-home-contacts', ({ h, props }) => {
             render: ({ h, props }) => h`<z-home-contact props=${{ person$: props.person$, scrollRoot$: view.listRef$ }} />`
           }} />
         `)}
+        ${!view.more$()
+? h`<button class="add-contact" type="button" aria-label=${t('Add contact')} onclick=${() => location.pushState({ fromHome: true }, '', '/contacts/add')}>
+          <span class="more-icon" aria-hidden="true"><icon-user-plus props=${{ size: '22px', weight: 'regular' }} /></span>
+          <span class="contact-name">${t('Add Contact')}</span>
+        </button>`
+: null}
       </div>
-      ${FUTURE_FEATURES_ENABLED
-? h`<button class="more" type="button" aria-label=${t('More contacts')} aria-disabled="true">
+      ${view.more$()
+? h`<button class="more" type="button" aria-label=${t('More contacts')} onclick=${() => location.pushState({ fromHome: true }, '', '/contacts')}>
         <span class="more-icon" aria-hidden="true"><icon-chevron-down props=${{ size: '20px', weight: 'regular' }} /></span>
-        <span>${t('More')}</span>
+        <span class="contact-name">${t('More')}</span>
       </button>`
 : null}
     </section>

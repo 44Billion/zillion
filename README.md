@@ -6,7 +6,7 @@ which combines private messages (`private-message`) with transport over private
 channels (`private-channel`). The entire front-end uses **thenameisf**.
 
 The project is just getting started: this repository contains documentation,
-tooling, localized home and conversation previews with fixed sample DMs, a reactive toast, and
+tooling, localized home, contacts and conversation previews with fixed sample DMs, a reactive toast, and
 reusable avatar/cache foundations.
 Self chat uses the logged-in account and persists text (kind 9) and local file
 metadata (kind 1063) as personal copies in the launcher event store, with live
@@ -45,9 +45,9 @@ The home follows one mobile layout, capped at 718px and centered on wider screen
 It includes the green chat-bubble Z logo, top-right profile portrait, a horizontal contact
 strip (pinned first, then alphabetical), and a DM list sharing its unread counters
 with contact avatars. Touch scrolling snaps to
-whole contacts; mousewheel and arrow keys move by contact. When future-feature
-previews are enabled, More stays fixed in the strip; otherwise contacts occupy
-the freed space. The header and the strip divider remain visible during vertical
+whole contacts; mousewheel and arrow keys move by contact. More stays fixed in
+the final slot when the other visible slots are full; otherwise Add Contact
+follows the last contact. The header and the strip divider remain visible during vertical
 scrolling. Once the divider reaches the header, further scrolling gradually
 compacts the header and logo to 48px including the divider (plus any device
 safe-area inset). The bubble ends at 28px (excluding transparent padding) as the Zillion wordmark fades
@@ -58,8 +58,8 @@ The same logo artwork serves both themes and the launcher icon; its sources and
 safety padding are documented in [design/branding](design/branding/README.md).
 Preview content uses fixed English source keys translated at render time, with
 local portraits. Contacts and conversation rows open a fixture DM, including a
-real conversation with yourself. Search, new-conversation, profile and More
-remain previews. Real user messages never pass through the translation catalog.
+real conversation with yourself. Home Search, new-conversation and profile
+remain inert previews. Real user messages never pass through the translation catalog.
 
 The shared [toast](src/components/shared/toast.md) supports success, error,
 warning and info, expandable details and navigation through unique notices. It
@@ -69,6 +69,21 @@ Import its helpers from `#shared/toast.js`; the app root mounts its host once.
 Typography follows 44billion: the root font is `0.0625em` and body text is
 `16rem`. Author font sizes in `rem` (`16rem` is normally 16px) and fixed layout
 dimensions in `px`, allowing the browser's preferred font size to scale text.
+
+## Contacts preview
+
+`/contacts` lists fixture contacts alphabetically, with a separate self-chat
+shortcut and live search by name, npub, nprofile or NIP-05. More on the home
+strip opens this view whenever the other visible slots are full; otherwise
+Add Contact follows the last contact and opens `/contacts/add` with search
+focused. Both actions are available in production previews.
+
+Try `luna@example.com` to see the unsaved-profile fixture and open `/chat/luna`.
+It shares the existing floating chat header and viewport layout, with an
+Add Contact invitation replacing the composer. The action only explains that
+adding is unavailable. There are no relay searches, saved-contact changes or
+third-party sends. Back/Forward retains directory queries and scroll position.
+
 
 ## Conversation preview
 
@@ -130,12 +145,12 @@ Run `ZILLION_FUTURE_FEATURES=0 npm start` to hide them, or
 `ZILLION_FUTURE_FEATURES=1 npm start` to enable them explicitly. Restart the
 watcher when changing this build-time flag; it also applies to other development
 commands. The flag controls Search and New message beside the home avatar,
-More in the contact strip, the paid-attention header button and menu option,
+the paid-attention header button and menu option,
 Attach, and Camera. These controls are still inert previews.
 
 Production always omits these controls, even with the flag set to `1`.
-The contact list expands into More's space, the three-dot chat button occupies
-a single 44px circle, and the composer always shows Send instead of Camera.
+The three-dot chat button occupies a single 44px circle, and the composer
+always shows Send instead of Camera. Contact-strip navigation remains available.
 Sending works in self chat. The profile button remains visible.
 
 Toast history supports keyboard focus: expiry pauses while browsing its controls

@@ -17,7 +17,7 @@ f('z-chat-header', ({ h, props }) => {
     menuId: `chat-menu-${Math.random().toString(36).slice(2)}`,
     back () {
       if (props.entry$()) return
-      if (props.route$().state?.fromHome) location.back()
+      if (props.route$().state?.fromHome || props.route$().state?.fromContacts) location.back()
       else location.replaceState({}, '', '/')
     },
     key (event) {
@@ -89,7 +89,7 @@ f('z-chat-header', ({ h, props }) => {
       </div>
       <div class="chat-identity header-pill">
         <span class="chat-avatar" aria-hidden="true"><z-home-avatar props=${{ person$: props.person$ }} /></span>
-        <div class="chat-name"><h1>${person.self ? t('You') : person.name}</h1><div class="chat-subtitle">${t(person.self ? 'Notes to yourself' : 'last seen recently')}</div></div>
+        <div class="chat-name"><h1>${person.self ? t('You') : person.name}</h1><div class="chat-subtitle">${person.saved === false ? person.nip05 : t(person.self ? 'Notes to yourself' : 'last seen recently')}</div></div>
       </div>
       <div class="chat-header-actions header-pill">
         ${FUTURE_FEATURES_ENABLED && !person.self ? h`<button class="chat-attention" type="button" aria-label=${t('Get attention')} aria-disabled="true"><icon-bolt props=${{ size: '22px', weight: 'regular' }} /></button>` : null}

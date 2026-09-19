@@ -25,7 +25,7 @@ export function usePageTransition (view) {
       incoming = [...deck.querySelectorAll('.route-page')].find(page => page.dataset.routeId === navigation.to)
       if (stopped || !incoming?.querySelector('main')) return
       observer?.disconnect()
-      if (navigation.from) incoming.querySelector('.route-scroll').focus({ preventScroll: true })
+      if (navigation.from) (incoming.querySelector('[data-route-autofocus]') ?? incoming.querySelector('.route-scroll')).focus({ preventScroll: true })
       if (!animate || !incoming.animate) { finish(); return }
       const backwards = navigation.direction === 'back' && outgoing
       const target = backwards ? outgoing : incoming

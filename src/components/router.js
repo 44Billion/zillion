@@ -6,6 +6,8 @@ import '#shared/route-page.js'
 
 const router = new Router({
   '/': { path: '/', tag: 'z-home', loadModule: () => import('#views/home/index.js') },
+  '/contacts': { path: '/contacts', tag: 'z-contacts', loadModule: () => import('#views/contacts/index.js') },
+  '/contacts/add': { path: '/contacts/add', tag: 'z-contacts', loadModule: () => import('#views/contacts/index.js') },
   '/chat/:contactId': { path: '/chat/:contactId', tag: 'z-chat-route', loadModule: () => import('#views/chat/index.js') },
   '/(.*)': { path: '/(.*)', tag: 'z-chat-route', loadModule: () => import('#views/chat/index.js') }
 })
