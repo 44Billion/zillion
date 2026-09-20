@@ -1,3 +1,5 @@
+import { mediaOpenHandlers } from '#helpers/media-open.js'
+import '#shared/icons/icon-arrows-diagonal.js'
 import { useMediaDownload } from './hooks/use-media-download.js'
 import { f, useStore, useTask, useMemo } from '#f'
 import { thumbHashToDataURL } from 'thumbhash'
@@ -75,6 +77,7 @@ f('z-chat-attachment', ({ h, props }) => {
     const lines = track(() => view.captionLines$())
     if (element) element.style.setProperty('-webkit-line-clamp', lines > 2 ? String(lines) : '2')
   }, { after: 'rendering' })
+  const open = mediaOpenHandlers(props.openMedia, view.file$)
   const file = view.file$()
   const name = fileName(file, t('unnamed-file'))
   const size = fileSize(file.size, i18n.getLocale())
@@ -90,6 +93,11 @@ f('z-chat-attachment', ({ h, props }) => {
       display: block; min-width: 0; max-width: 100%; margin-block: 4px; white-space: normal; container-type: inline-size;
       .attachment-frame { display: block; position: relative; width: 100%; height: min(360px, calc(100cqi / var(--attachment-ratio))); overflow: hidden; border-radius: 8px; background: var(--z-control); }
       .attachment-frame img, .attachment-frame video { display: block; width: 100%; height: 100%; object-fit: contain; }
+      .attachment-frame[role=button] { cursor: zoom-in; }
+      .attachment-frame:focus-visible { outline: 2px solid var(--z-accent-text); outline-offset: -2px; }
+      .media-expand { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 36px; height: 36px; padding: 9px; border: 0; border-radius: 50%; color: var(--z-viewer-text); background: transparent; cursor: pointer; }
+      .media-expand:active { background: var(--z-viewer-overlay); }
+      .media-expand:focus-visible { outline: 2px solid var(--z-viewer-text); outline-offset: 2px; }
       .download-media { cursor: pointer; }
       .download-media video { pointer-events: none; }
       .attachment-placeholder { position: absolute; inset: 0; pointer-events: none; }
@@ -126,7 +134,7 @@ f('z-chat-attachment', ({ h, props }) => {
 : h`${view.size$() && isMedia
   ? forceDownload
     ? h`<a class="attachment-frame download-media" href=${download.href$()} target=${download.target} download=${download.attribute$()} aria-label=${t('Download file')} aria-disabled=${String(!download.href$())} onclick=${download.click}>${visual}</a>`
-    : h`<span class="attachment-frame">${visual}</span>`
+    : h`<span class="attachment-frame" role=${props.openMedia && file.mime.startsWith('image/') ? 'button' : null} tabindex=${props.openMedia && file.mime.startsWith('image/') ? '0' : null} aria-label=${props.openMedia ? t('View media') : null} onpointerdown=${open.down} onclick=${open.click} onkeydown=${open.key}>${visual}${props.openMedia && file.mime.startsWith('video/') ? h`<button class="media-expand" type="button" aria-label=${t('View media')} onclick=${open.expand}><icon-arrows-diagonal props=${{ size: '15px', weight: 'regular' }} /></button>` : null}</span>`
         : null}<a class="attachment-download" href=${download.href$() || null} target=${download.target} download=${download.attribute$()} aria-disabled=${String(!download.href$())} title=${t('Download file')} onclick=${download.click}><icon-file-download props=${{ size: '24px', weight: 'regular' }} /><span class="attachment-name"><z-file-name props=${{ file$: view.file$ }} />${size ? h`<span class="attachment-size">${size}</span>` : null}</span></a>${!props.preview && props.caption$?.() ? h`<button type="button" class="attachment-caption" aria-expanded=${String(view.captionLines$() > 2)} onpointerdown=${event => event.stopPropagation()} onclick=${event => { event.stopPropagation(); view.captionLines$(value => value + 2) }} ref=${view.captionRef$}>${props.caption$()}</button>` : null}`}
   </div>`
 })

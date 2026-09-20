@@ -113,6 +113,17 @@ The [payment identifier notes](docs/profile-payment-identifiers.md) document
 `lud16`/`lud06`, supported LNURL forms, and the selected NIP-BC draft derivation.
 These views do not query payment services or send payments.
 
+## Media viewer
+
+Chat images and videos open in `/chat/:contactId/media`; profile photos open
+alone in `/profile/:contactId/photo`. The viewer fills the available app area
+without browser fullscreen. Close with the button, Escape or browser Back.
+Previous/next controls, arrow keys and horizontal/vertical swipes browse only
+that conversation's expanded media. Selection replaces the URL fragment, so
+Back returns directly to the retained chat and draft. Download-only media keep
+their download action. Original files load on demand; unavailable files show a
+retry state. Videos pause and release their source when leaving the view.
+
 ## Conversation preview
 
 `/chat/:contactId` opens a sample conversation (`maya` or `daniel`, for

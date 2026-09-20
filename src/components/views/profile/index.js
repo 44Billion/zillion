@@ -55,7 +55,7 @@ f('z-profile', ({ h, props }) => {
         }
       `}</style>
       <z-profile-header props=${{ route$: props.route$, title$: view.title$ }} />
-      <z-profile-portrait props=${{ person$: props.person$, banner$: view.banner$ }} />
+      <z-profile-portrait props=${{ person$: props.person$, banner$: view.banner$, viewable: true }} />
       <div class="profile-content">
         <div class="profile-identity">
           <h2 class=${`profile-name${details.name ? '' : ' unnamed'}`}>${details.name || t('No name')}</h2>

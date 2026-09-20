@@ -1,3 +1,5 @@
+import { mediaOpenHandlers } from '#helpers/media-open.js'
+import '#shared/icons/icon-arrows-diagonal.js'
 import { t } from '#i18n/messages.js'
 import { f, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
@@ -31,7 +33,7 @@ f('z-chat-content', ({ h, props }) => {
       }
     `}</style>${items$().map((item, index) => h({ key: index })`<f-to-signals props=${{
       from: { item },
-      render: ({ h, props: data }) => h`<z-chat-content-item props=${{ item$: data.item$, references$: props.references$, resolve$: props.resolve$, source$: props.source$ }} />`
+      render: ({ h, props: data }) => h`<z-chat-content-item props=${{ item$: data.item$, references$: props.references$, resolve$: props.resolve$, source$: props.source$, openMedia: props.openMedia }} />`
     }} />`)}</span>`
 })
 
@@ -51,15 +53,15 @@ f('z-chat-content-item', ({ h, props }) => {
     }
     if (resolved?.kind === CHAT_FILE_KIND) {
       const file = messageAttachment(resolved)
-      if (file) return h`<z-chat-attachment props=${{ attachment$: () => file, caption$: () => file.caption, source$: () => props.source$?.() ?? null }} />`
+      if (file) return h`<z-chat-attachment props=${{ attachment$: () => file, caption$: () => file.caption, source$: () => props.source$?.() ?? null, openMedia: props.openMedia }} />`
     }
     // A `q`-only reference that does not resolve to a chat message adds
     // nothing, exactly like the previous q-tag behavior.
     if (item.prepend) return null
   }
-  if (item.key === 'url' && (item.url.nfile || (item.url.download === '1' && !/^(image|video)\//.test(item.url.m ?? '')))) return h`<z-chat-attachment props=${{ attachment$: view.attachment$ }} />`
+  if (item.key === 'url' && (item.url.nfile || (item.url.download === '1' && !/^(image|video)\//.test(item.url.m ?? '')))) return h`<z-chat-attachment props=${{ attachment$: view.attachment$, openMedia: props.openMedia }} />`
   if (item.key === 'text') return h`${item.text.value}`
-  if (item.key === 'url' && /^(image|video)\//.test(item.url.m ?? '')) return h`<z-chat-media props=${{ item$: props.item$ }} />`
+  if (item.key === 'url' && /^(image|video)\//.test(item.url.m ?? '')) return h`<z-chat-media props=${{ item$: props.item$, openMedia: props.openMedia }} />`
   if (item.key === 'url' || item.key === 'event') return h`<z-chat-link props=${{ item$: props.item$ }} />`
   const reference = item[item.key]
   const label = reference.original ?? (item.key === 'hashtag' ? `#${reference.value}` : reference.value)
@@ -70,7 +72,7 @@ f('z-chat-content-item', ({ h, props }) => {
 f('z-chat-media', ({ h, props }) => {
   const page = useRoutePage()
   const view = useStore({
-    source$: null,
+    source$: null, videoRef$: null,
     prepared$: false,
     loadedFor: null,
     failed$: false,
@@ -107,6 +109,13 @@ f('z-chat-media', ({ h, props }) => {
     resolve()
     cleanup(() => { controller.abort(); stop() })
   })
+  useTask(({ track, cleanup }) => {
+    const [video, source, active] = track(() => [view.videoRef$(), view.source$()?.source, page.isActive$()])
+    if (!video || !source || !active) return
+    video.src = source
+    cleanup(() => { video.pause(); video.removeAttribute('src'); video.load() })
+  }, { after: 'rendering' })
+  const open = mediaOpenHandlers(props.openMedia, () => ({ url: view.url$() }))
   const download = useMediaDownload(view.url$, () => props.item$().url.download === '1')
   const media = props.item$().url
   const image = view.source$()
@@ -115,17 +124,22 @@ f('z-chat-media', ({ h, props }) => {
   const visual = image && !view.failed$()
     ? media.m?.startsWith('image/')
       ? h`<img src=${image.source} width=${image.width} height=${image.height} alt=${media.alt ?? ''} loading="lazy" referrerpolicy="no-referrer" onerror=${() => view.failed$(true)}>`
-      : h`<video src=${image.source} width=${image.width} height=${image.height} ?controls=${!forceDownload} playsinline preload="metadata" onplay=${event => { if (forceDownload) event.target.pause() }} onerror=${() => view.failed$(true)}></video>`
+      : h`<video ref=${view.videoRef$} width=${image.width} height=${image.height} ?controls=${!forceDownload} playsinline preload="metadata" onplay=${event => { if (forceDownload) event.target.pause() }} onerror=${() => view.failed$(true)}></video>`
     : null
   return h`<span class="chat-media" data-chat-prepared=${String(view.prepared$())}><style>${`
       z-chat-media .chat-media {
         a { color: var(--z-accent-text); text-decoration: none; overflow-wrap: anywhere; }
-        .media-frame { display: block; max-width: 100%; margin-block: 6px; }
+        .media-frame { position: relative; display: block; max-width: 100%; margin-block: 6px; }
+        .media-frame[role=button] { cursor: zoom-in; }
+        .media-frame:focus-visible { outline: 2px solid var(--z-accent-text); outline-offset: 2px; }
+        .media-expand { position: absolute; top: 6px; right: 6px; display: grid; place-items: center; width: 36px; height: 36px; padding: 9px; border: 0; border-radius: 50%; color: var(--z-viewer-text); background: transparent; cursor: pointer; }
+        .media-expand:active { background: var(--z-viewer-overlay); }
+        .media-expand:focus-visible { outline: 2px solid var(--z-viewer-text); outline-offset: 2px; }
         .download-media video { pointer-events: none; }
         .media-frame[hidden] { display: none; }
         img, video { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 8px; }
       }
     `}</style><a href=${forceDownload ? download.href$() : media.value} title=${media.value} aria-label=${media.value} target=${forceDownload ? download.target : '_blank'} download=${forceDownload ? download.attribute$() : null} rel=${forceDownload ? null : 'noopener noreferrer'} onclick=${event => { if (forceDownload) download.click(event) }}>${shortUrlLabel(media.value, media.ext)}</a>${forceDownload
       ? h`<a class="media-frame download-media" style=${mediaSizeStyle(dimensions)} ?hidden=${!dimensions} href=${download.href$()} target=${download.target} download=${download.attribute$()} aria-label=${t('Download file')} aria-disabled=${String(!download.href$())} onclick=${download.click}>${visual}</a>`
-      : h`<span class="media-frame" style=${mediaSizeStyle(dimensions)} ?hidden=${!dimensions}>${visual}</span>`}</span>`
+      : h`<span class="media-frame" style=${mediaSizeStyle(dimensions)} ?hidden=${!dimensions} role=${props.openMedia && media.m?.startsWith('image/') ? 'button' : null} tabindex=${props.openMedia && media.m?.startsWith('image/') ? '0' : null} aria-label=${props.openMedia ? t('View media') : null} onpointerdown=${open.down} onclick=${open.click} onkeydown=${open.key}>${visual}${props.openMedia && media.m?.startsWith('video/') ? h`<button class="media-expand" type="button" aria-label=${t('View media')} onclick=${open.expand}><icon-arrows-diagonal props=${{ size: '15px', weight: 'regular' }} /></button>` : null}</span>`}</span>`
 })

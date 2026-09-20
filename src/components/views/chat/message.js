@@ -1,4 +1,5 @@
-import { f, useStore, useTask } from '#f'
+import { f, useLocation, useStore, useTask } from '#f'
+import { conversationMedia } from '#helpers/conversation-media.js'
 import { useAnchoredMenu } from '#hooks/use-anchored-menu.js'
 import { t } from '#i18n/messages.js'
 import { useRoutePage } from '#shared/route-page.js'
@@ -19,9 +20,17 @@ import './quote.js'
 import './message-status.js'
 
 f('z-chat-message', ({ h, props }) => {
+  const location = useLocation()
   const page = useRoutePage()
   const growth = useMessageGrowth()
   const view = useStore(() => ({
+    openMedia (file, time = 0) {
+      if (!page.isActive$()) return
+      const item = conversationMedia(props.messages$(), props.references$?.() ?? {}).find(item => item.messageId === props.message$().id && item.url === file.url)
+      if (!item) return
+      props.activeId$(null)
+      location.pushState({ fromMediaOrigin: true, mediaId: item.id, mediaTime: time }, '', `/chat/${encodeURIComponent(props.person$().id)}/media#${encodeURIComponent(item.id)}`)
+    },
     attachment$ () { return props.message$().attachment },
     source$ () { return props.message$().localSource },
     quoteAttachment$ () { return this.quoted$()?.attachment },
@@ -132,9 +141,9 @@ f('z-chat-message', ({ h, props }) => {
         oncontextmenu=${press.context} onkeydown=${press.key} onclick=${press.click}>
         <div class="message-growth" ref=${growth.outerRef$}><div class="message-growth-inner" ref=${growth.innerRef$}>
         ${!message.real && quoted ? h`<z-chat-quote props=${{ message$: () => ({ text: view.quoteContent$(), content: view.quoteMedia$(), attachment: view.quoteAttachment$() }), author$: view.quoteAuthor$ }} />` : null}
-        ${!message.real && message.attachment ? h`<z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$ }} />` : null}
+        ${!message.real && message.attachment ? h`<z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, openMedia: view.openMedia }} />` : null}
         <div class="message-text">${message.real
-          ? h`<z-chat-content props=${{ text$: view.content$, prepend$: () => props.message$().prepend ?? [], references$: props.references$, resolve$: props.resolve$, source$: view.source$ }} />`
+          ? h`<z-chat-content props=${{ text$: view.content$, prepend$: () => props.message$().prepend ?? [], references$: props.references$, resolve$: props.resolve$, source$: view.source$, openMedia: view.openMedia }} />`
           : t(message.text)}</div>
         ${message.url ? h`<a class="message-link" href=${message.url} title=${message.url} aria-label=${message.url} target="_blank" rel="noopener noreferrer">${shortUrlLabel(message.url)}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}

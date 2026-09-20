@@ -998,3 +998,27 @@ needed; empty folders mark the initial structure.
   Lightning editing is a local raw draft plus mutually exclusive lud16/lud06
   draft fields. Invalid input cannot become a payment row. Bitcoin is read-only
   and never comes from kind-0 metadata. No payment or signing APIs are added.
+
+## In-app media viewer
+
+- `/chat/:contactId/media` and `/profile/:contactId/photo` are pathname routes;
+  the fragment stores only the selected media ID, not routing. Opening pushes
+  one history entry and changing selection replaces that fragment. Back/Close/
+  Escape return to the retained origin; direct entry falls back to chat/profile.
+- The viewer is the sole full-width route, with a neutral dark surround in both
+  themes. It uses available app space and never requests browser fullscreen.
+- `conversationMedia` derives the sequence from that chat's rendered messages
+  and resolved kind-1063 references. Never use the global gallery for navigation.
+  Quotes, link previews and download-intent media are excluded. Profile photos
+  are single items, using the avatar cache and deterministic avatar fallback.
+- Horizontal/vertical swipes (50px threshold), arrow keys and visible buttons
+  navigate without wrapping. Incoming animation follows the swipe axis and
+  honors reduced motion. Preserve native video controls; an explicit expand
+  button offers keyboard access. Inactive videos pause and release their src.
+- The viewer loads original media, not attachment preview thumbnails. Local
+  nostr.alt streams remain local; external images use the existing bounded
+  cache. Cancel preparation on route exit and show retry for unavailable media.
+- Tests: `tests/conversation-media.test.js` and the guarded
+  `tests/browser/media-viewer.browser.js`, plus existing profile/attachment
+  browser regressions. No separate media catalog is stored. Test drivers stay
+  out of published builds.

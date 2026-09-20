@@ -9,6 +9,8 @@ const router = new Router({
   '/contacts': { path: '/contacts', tag: 'z-contacts', loadModule: () => import('#views/contacts/index.js') },
   '/contacts/add': { path: '/contacts/add', tag: 'z-contacts', loadModule: () => import('#views/contacts/index.js') },
   '/profile/user/edit': { path: '/profile/user/edit', tag: 'z-profile-edit', loadModule: () => import('#views/profile/edit.js') },
+  '/profile/:contactId/photo': { path: '/profile/:contactId/photo', tag: 'z-media-viewer-route', loadModule: () => import('#views/media/index.js') },
+  '/chat/:contactId/media': { path: '/chat/:contactId/media', tag: 'z-media-viewer-route', loadModule: () => import('#views/media/index.js') },
   '/profile/:contactId': { path: '/profile/:contactId', tag: 'z-profile-route', loadModule: () => import('#views/profile/index.js') },
   '/chat/:contactId': { path: '/chat/:contactId', tag: 'z-chat-route', loadModule: () => import('#views/chat/index.js') },
   '/(.*)': { path: '/(.*)', tag: 'z-chat-route', loadModule: () => import('#views/chat/index.js') }
@@ -44,6 +46,7 @@ f('z-router', ({ h }) => {
           position: absolute; inset: 0; max-width: var(--z-mobile-width); margin-inline: auto;
           background: var(--z-canvas); visibility: hidden; pointer-events: none;
         }
+        z-router .route-page:has(.media-viewer) { max-width: none; }
         z-router .route-page[data-active=true] { visibility: visible; pointer-events: auto; }
         z-router .route-page[data-transitioning] { visibility: visible; z-index: 1; }
         z-router .route-page[data-active=true][data-transitioning] { z-index: 2; }
