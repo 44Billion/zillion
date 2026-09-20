@@ -1554,5 +1554,83 @@
     "zh-TW": "攝影、安靜的地方和愉快的交談。 我喜歡收集生活中的小瞬間：漫無目的的散步、新發現的咖啡館、朋友分享的一首歌。\n\n通常在戶外，偶爾拿著相機。總是樂於聽一個好故事。",
     "ja": "写真、静かな場所、楽しい会話。 目的のない散歩、新しいカフェ、友達が教えてくれた曲。そんな小さな瞬間を集めるのが好きです。\n\nたいていは外で、ときどきカメラを片手に。素敵な話を聞くのはいつでも大歓迎です。",
     "ko": "사진, 조용한 장소, 좋은 대화. 목적 없는 산책, 새로운 카페, 친구가 공유한 노래처럼 작은 순간들을 모으는 것을 좋아합니다.\n\n주로 야외에 있고 가끔은 카메라 뒤에 있습니다. 좋은 이야기는 언제나 환영합니다."
+  },
+  "Lightning address": {
+    "en": "Lightning address",
+    "fr": "Adresse Lightning",
+    "it": "Indirizzo Lightning",
+    "de": "Lightning-Adresse",
+    "es": "Dirección Lightning",
+    "pt-BR": "Endereço Lightning",
+    "ru": "Lightning-адрес",
+    "zh-CN": "闪电网络地址",
+    "zh-TW": "閃電網路位址",
+    "ja": "Lightningアドレス",
+    "ko": "라이트닝 주소"
+  },
+  "Bitcoin address": {
+    "en": "Bitcoin address",
+    "fr": "Adresse Bitcoin",
+    "it": "Indirizzo Bitcoin",
+    "de": "Bitcoin-Adresse",
+    "es": "Dirección Bitcoin",
+    "pt-BR": "Endereço Bitcoin",
+    "ru": "Биткоин-адрес",
+    "zh-CN": "比特币地址",
+    "zh-TW": "比特幣位址",
+    "ja": "Bitcoinアドレス",
+    "ko": "비트코인 주소"
+  },
+  "Share {{identifier}}": {
+    "en": "Share {{identifier}}",
+    "fr": "Partager {{identifier}}",
+    "it": "Condividi {{identifier}}",
+    "de": "{{identifier}} teilen",
+    "es": "Compartir {{identifier}}",
+    "pt-BR": "Compartilhar {{identifier}}",
+    "ru": "Поделиться: {{identifier}}",
+    "zh-CN": "分享{{identifier}}",
+    "zh-TW": "分享{{identifier}}",
+    "ja": "{{identifier}}を共有",
+    "ko": "{{identifier}} 공유"
+  },
+  "Copy {{identifier}}": {
+    "en": "Copy {{identifier}}",
+    "fr": "Copier {{identifier}}",
+    "it": "Copia {{identifier}}",
+    "de": "{{identifier}} kopieren",
+    "es": "Copiar {{identifier}}",
+    "pt-BR": "Copiar {{identifier}}",
+    "ru": "Копировать: {{identifier}}",
+    "zh-CN": "复制{{identifier}}",
+    "zh-TW": "複製{{identifier}}",
+    "ja": "{{identifier}}をコピー",
+    "ko": "{{identifier}} 복사"
+  },
+  "Accepts name@domain, LNURL or lnurlp://…": {
+    "en": "Accepts name@domain, LNURL or lnurlp://…",
+    "fr": "Accepte nom@domaine, LNURL ou lnurlp://…",
+    "it": "Accetta nome@dominio, LNURL o lnurlp://…",
+    "de": "Akzeptiert name@domain, LNURL oder lnurlp://…",
+    "es": "Acepta nombre@dominio, LNURL o lnurlp://…",
+    "pt-BR": "Aceita nome@domínio, LNURL ou lnurlp://…",
+    "ru": "Принимает имя@домен, LNURL или lnurlp://…",
+    "zh-CN": "支持名称@域名、LNURL 或 lnurlp://…",
+    "zh-TW": "支援名稱@網域、LNURL 或 lnurlp://…",
+    "ja": "名前@ドメイン、LNURL、lnurlp://…に対応",
+    "ko": "이름@도메인, LNURL 또는 lnurlp://… 지원"
+  },
+  "Enter a Lightning address or LNURL-pay.": {
+    "en": "Enter a Lightning address or LNURL-pay.",
+    "fr": "Saisissez une adresse Lightning ou un LNURL-pay.",
+    "it": "Inserisci un indirizzo Lightning o LNURL-pay.",
+    "de": "Gib eine Lightning-Adresse oder LNURL-pay ein.",
+    "es": "Introduce una dirección Lightning o LNURL-pay.",
+    "pt-BR": "Digite um endereço Lightning ou LNURL-pay.",
+    "ru": "Введите Lightning-адрес или LNURL-pay.",
+    "zh-CN": "请输入闪电网络地址或 LNURL-pay。",
+    "zh-TW": "請輸入閃電網路位址或 LNURL-pay。",
+    "ja": "LightningアドレスまたはLNURL-payを入力してください。",
+    "ko": "라이트닝 주소 또는 LNURL-pay를 입력하세요."
   }
 }

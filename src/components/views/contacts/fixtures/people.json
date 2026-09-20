@@ -11,7 +11,8 @@
     "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg7ncw7k",
     "display_name": "Maya Chen",
     "previewCover": true,
-    "about": "Photography, quiet places and good conversations. I like collecting small moments: a walk without a destination, a new coffee shop, a song shared by a friend.\n\nUsually outdoors, sometimes behind a camera. Always happy to hear a good story."
+    "about": "Photography, quiet places and good conversations. I like collecting small moments: a walk without a destination, a new coffee shop, a song shared by a friend.\n\nUsually outdoors, sometimes behind a camera. Always happy to hear a good story.",
+    "lud16": "maya@example.com"
   },
   {
     "id": "daniel",
@@ -125,6 +126,7 @@
     "nip05": "luna@example.com",
     "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9sdnwrq5",
     "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzc4pwtaf",
-    "about": "Photography, quiet places and good conversations."
+    "about": "Photography, quiet places and good conversations.",
+    "lud06": "lnurlp://example.com/lnurlp/luna"
   }
 ]

@@ -89,14 +89,16 @@ third-party sends. Back/Forward retains directory queries and scroll position.
 
 `/profile/:contactId` opens from the home account portrait or either identity
 avatar in a chat. Profiles display an optional cover, avatar, display name,
-NIP-05 (or abbreviated npub), and a bio that reveals two more lines per click.
+NIP-05, npub, optional Lightning information, a derived Bitcoin address, and a
+bio that reveals two more lines per click.
 The adjacent Share/Copy action sends the complete displayed identifier through
 the existing native-share/clipboard fallback. Canceling Share does not copy.
 
 Contact and pin toggles simulate state only within the retained profile page;
 removing a contact also clears its pin. They never update the home, chat or
 persistent data. Reload/eviction resets them. `/profile/user/edit` allows local
-text drafts with Save and image controls disabled; it does not publish kind 0.
+text drafts (including a Lightning address or LNURL) with Save and image controls
+disabled; it does not publish kind 0. Bitcoin and npub remain read-only.
 Self data follows the existing account profile. Third-party data stays bundled,
 without relay lookups or NIP-05 verification. Cover images use the existing
 media cache; missing/failed images use the compact layout.
@@ -106,6 +108,10 @@ missing profile-name/NIP-05 metadata (his saved directory label remains intact).
 The profile and the single Name input prefer trimmed `name`, falling back to
 `display_name` only when it is empty. Name drafts target `name` only; absent
 profile names show an italic localized placeholder. All interface and fixture bio strings cover 11 locales.
+
+The [payment identifier notes](docs/profile-payment-identifiers.md) document
+`lud16`/`lud06`, supported LNURL forms, and the selected NIP-BC draft derivation.
+These views do not query payment services or send payments.
 
 ## Conversation preview
 

@@ -76,6 +76,8 @@
     "@floating-ui/dom": "^1.8.0",
     "@mediabunny/aac-encoder": "1.56.3",
     "@mediabunny/mp3-encoder": "1.56.3",
+    "@scure/base": "2.4.0",
+    "@scure/btc-signer": "2.4.1",
     "libp2r2p": "^0.10.18",
     "mediabunny": "1.56.3",
     "mime": "^4.1.0",

@@ -1,4 +1,5 @@
 import { npubEncode } from 'libp2r2p/nip19'
+import { profileLightning, profileBitcoinAddress } from './profile-payments.js'
 
 const text = value => typeof value === 'string' ? value.trim() : ''
 
@@ -11,6 +12,7 @@ export function profileDetails (person) {
     name: text(metadata.name) || text(metadata.display_name),
     displayName: text(metadata.display_name), username: text(metadata.name),
     nip05, npub, identifier,
+    lightning: profileLightning(metadata), bitcoin: profileBitcoinAddress(person),
     identifierLabel: !nip05 && npub ? `${npub.slice(0, 12)}…${npub.slice(-8)}` : identifier,
     about: text(metadata.about), banner: text(metadata.banner)
   }

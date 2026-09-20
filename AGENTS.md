@@ -985,3 +985,16 @@ needed; empty folders mark the initial structure.
   toggles, editing, share/copy/cancel/failure, bio expansion, themes and narrow
   screens in the guarded launcher/Chrome runtime. Test-only account/API controls
   are injected into that disposable build and never shipped.
+
+- Profile identifier rows live in `views/profile/identifiers.js`, sharing a fixed
+  icon/value/action grid. Use the Nostr/Lightning/Bitcoin theme color tokens and
+  copy the complete value of the selected row; never reuse another row's check.
+  Preserve NIP-05 and expose npub separately when both exist. Both use the user
+  icon: NIP-05 uses the green accent-text token, npub uses the purple Nostr token.
+- `profile-payments.js` maps `lud16`/`lud06` by syntax, without endpoint requests,
+  and derives mainnet key-only Taproot addresses through the public scure API.
+  Read [the protocol notes](docs/profile-payment-identifiers.md) before changing
+  encoding or derivation; the NIP-BC source is a specific draft, not an adopted NIP.
+  Lightning editing is a local raw draft plus mutually exclusive lud16/lud06
+  draft fields. Invalid input cannot become a payment row. Bitcoin is read-only
+  and never comes from kind-0 metadata. No payment or signing APIs are added.
