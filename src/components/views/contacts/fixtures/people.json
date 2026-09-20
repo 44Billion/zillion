@@ -8,7 +8,10 @@
     "saved": true,
     "nip05": "maya@example.com",
     "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqshp52w2",
-    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg7ncw7k"
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqg7ncw7k",
+    "display_name": "Maya Chen",
+    "previewCover": true,
+    "about": "Photography, quiet places and good conversations. I like collecting small moments: a walk without a destination, a new coffee shop, a song shared by a friend.\n\nUsually outdoors, sometimes behind a camera. Always happy to hear a good story."
   },
   {
     "id": "daniel",
@@ -105,9 +108,13 @@
     "avatar": "sam",
     "pinned": false,
     "saved": true,
-    "nip05": "sam@example.com",
+    "nip05": "",
     "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9qcjxm48",
-    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzst428r5"
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzst428r5",
+    "profile": {
+      "name": "",
+      "nip05": ""
+    }
   },
   {
     "id": "luna",
@@ -117,6 +124,7 @@
     "saved": false,
     "nip05": "luna@example.com",
     "npub": "npub1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq9sdnwrq5",
-    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzc4pwtaf"
+    "nprofile": "nprofile1qqsqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqzc4pwtaf",
+    "about": "Photography, quiet places and good conversations."
   }
 ]

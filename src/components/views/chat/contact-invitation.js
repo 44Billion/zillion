@@ -1,26 +1,29 @@
-import { f } from '#f'
+import { f, useLocation } from '#f'
 import { t } from '#i18n/messages.js'
 import { info } from '#shared/toast.js'
 import '#views/home/avatar.js'
 import '#shared/icons/icon-user-plus.js'
 
-f('z-contact-profile', ({ h, props }) => h`
+f('z-contact-profile', ({ h, props }) => {
+  const location = useLocation()
+  return h`
   <div class="contact-profile">
     <style>${`
       z-contact-profile .contact-profile {
         display: flex; flex-direction: column; align-items: center; gap: 10px;
         padding: clamp(28px, 12vh, 100px) 24px 32px; text-align: center;
-        .profile-avatar { width: 88px; height: 88px; border-radius: 50%; overflow: hidden; margin-bottom: 10px; }
+        .profile-avatar { display: block; border: 0; padding: 0; background: transparent; cursor: pointer; width: 88px; height: 88px; border-radius: 50%; overflow: hidden; margin-bottom: 10px; }
         h2 { margin: 0; font-size: 22rem; font-weight: 600; }
         p { margin: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--z-muted); font-size: 14rem; }
       }
     `}</style>
-    <span class="profile-avatar" aria-hidden="true"><z-home-avatar props=${{ person$: props.person$ }} /></span>
+    <button class="profile-avatar" type="button" aria-label=${t('View profile')} onclick=${() => location.pushState({ fromChat: true }, '', `/profile/${encodeURIComponent(props.person$().id)}`)}><z-home-avatar props=${{ person$: props.person$ }} /></button>
     <h2>${props.person$().name}</h2>
     <p>${props.person$().nip05}</p>
     <p>${t('Not in your contacts')}</p>
   </div>
-`)
+`
+})
 
 f('z-contact-invitation', ({ h, props }) => h`
   <div class="contact-invitation">

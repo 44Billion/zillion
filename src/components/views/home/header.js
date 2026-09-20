@@ -1,10 +1,12 @@
 import { t } from '#i18n/messages.js'
-import { f } from '#f'
+import { f, useLocation } from '#f'
 import '#shared/icons/icon-search.js'
 import '#shared/icons/icon-circle-plus.js'
 import './avatar.js'
 
-f('z-home-header', ({ h, props }) => h`
+f('z-home-header', ({ h, props }) => {
+  const location = useLocation()
+  return h`
   <header class="home-header">
     <style>${`
       z-home-header .home-header {
@@ -52,9 +54,10 @@ f('z-home-header', ({ h, props }) => h`
       </button>
       `
 : null}
-      <button type="button" aria-label=${t('Your profile')} aria-disabled="true">
+      <button type="button" aria-label=${t('Your profile')} onclick=${() => location.pushState({ fromHome: true }, '', '/profile/user')}>
         <span class="user-avatar" aria-hidden="true"><z-home-avatar props=${{ person$: props.user$ }} /></span>
       </button>
     </div>
   </header>
-`)
+`
+})

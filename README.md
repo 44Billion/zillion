@@ -58,8 +58,8 @@ The same logo artwork serves both themes and the launcher icon; its sources and
 safety padding are documented in [design/branding](design/branding/README.md).
 Preview content uses fixed English source keys translated at render time, with
 local portraits. Contacts and conversation rows open a fixture DM, including a
-real conversation with yourself. Home Search, new-conversation and profile
-remain inert previews. Real user messages never pass through the translation catalog.
+real conversation with yourself. Home Search and new-conversation remain inert previews. The home profile
+portrait opens the account profile. Real user messages never pass through the translation catalog.
 
 The shared [toast](src/components/shared/toast.md) supports success, error,
 warning and info, expandable details and navigation through unique notices. It
@@ -84,6 +84,27 @@ Add Contact invitation replacing the composer. The action only explains that
 adding is unavailable. There are no relay searches, saved-contact changes or
 third-party sends. Back/Forward retains directory queries and scroll position.
 
+
+## Profile preview
+
+`/profile/:contactId` opens from the home account portrait or either identity
+avatar in a chat. Profiles display an optional cover, avatar, display name,
+NIP-05 (or abbreviated npub), and a bio that reveals two more lines per click.
+The adjacent Share/Copy action sends the complete displayed identifier through
+the existing native-share/clipboard fallback. Canceling Share does not copy.
+
+Contact and pin toggles simulate state only within the retained profile page;
+removing a contact also clears its pin. They never update the home, chat or
+persistent data. Reload/eviction resets them. `/profile/user/edit` allows local
+text drafts with Save and image controls disabled; it does not publish kind 0.
+Self data follows the existing account profile. Third-party data stays bundled,
+without relay lookups or NIP-05 verification. Cover images use the existing
+media cache; missing/failed images use the compact layout.
+
+Maya demonstrates a cover and long bio, Luna an unsaved profile, and Sam
+missing profile-name/NIP-05 metadata (his saved directory label remains intact).
+The profile uses `display_name` before `name`; absent names show an italic
+localized placeholder. All interface and fixture bio strings cover 11 locales.
 
 ## Conversation preview
 

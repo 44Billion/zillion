@@ -64,7 +64,8 @@ f('z-chat-header', ({ h, props }) => {
           button[aria-disabled=true] { cursor: default; }
           button:active { background: var(--z-pressed); }
           .chat-identity { min-width: 0; height: 44px; display: flex; flex: 1; align-items: center; gap: 8px; padding: 4px 10px 4px 5px; }
-          .chat-avatar { width: 36px; height: 36px; border-radius: 50%; overflow: hidden; flex: none; }
+          .chat-avatar { margin: -4px; }
+          .chat-avatar-picture { width: 36px; height: 36px; border-radius: 50%; overflow: hidden; }
           .chat-name { min-width: 0; }
           h1 { margin: 0; font-size: 15rem; line-height: 1.25; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .chat-subtitle { font-size: 11rem; line-height: 1.25; color: var(--z-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -88,7 +89,7 @@ f('z-chat-header', ({ h, props }) => {
         </button>
       </div>
       <div class="chat-identity header-pill">
-        <span class="chat-avatar" aria-hidden="true"><z-home-avatar props=${{ person$: props.person$ }} /></span>
+        <button class="chat-avatar" type="button" aria-label=${t('View profile')} onclick=${() => location.pushState({ fromChat: true }, '', `/profile/${encodeURIComponent(person.id)}`)}><span class="chat-avatar-picture" aria-hidden="true"><z-home-avatar props=${{ person$: props.person$ }} /></span></button>
         <div class="chat-name"><h1>${person.self ? t('You') : person.name}</h1><div class="chat-subtitle">${person.saved === false ? person.nip05 : t(person.self ? 'Notes to yourself' : 'last seen recently')}</div></div>
       </div>
       <div class="chat-header-actions header-pill">

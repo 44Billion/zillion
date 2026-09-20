@@ -8,6 +8,8 @@ const router = new Router({
   '/': { path: '/', tag: 'z-home', loadModule: () => import('#views/home/index.js') },
   '/contacts': { path: '/contacts', tag: 'z-contacts', loadModule: () => import('#views/contacts/index.js') },
   '/contacts/add': { path: '/contacts/add', tag: 'z-contacts', loadModule: () => import('#views/contacts/index.js') },
+  '/profile/user/edit': { path: '/profile/user/edit', tag: 'z-profile-edit', loadModule: () => import('#views/profile/edit.js') },
+  '/profile/:contactId': { path: '/profile/:contactId', tag: 'z-profile-route', loadModule: () => import('#views/profile/index.js') },
   '/chat/:contactId': { path: '/chat/:contactId', tag: 'z-chat-route', loadModule: () => import('#views/chat/index.js') },
   '/(.*)': { path: '/(.*)', tag: 'z-chat-route', loadModule: () => import('#views/chat/index.js') }
 })

@@ -198,7 +198,8 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   and history use the runtime. `a-avatar`
   receives provided data-URL profiles without public keys, so no Nostr lookup is
   triggered. Contact and conversation controls navigate to fixture DMs or real self chat.
-  Home Search, compose and profile remain inert; More opens the contacts view.
+  Home Search and compose remain inert; the profile portrait opens the account
+  profile and More opens the contacts view.
 - Keep the main column at a maximum of 718px, centered with vertical borders on
   wider screens. Use the same mobile composition at every width. The contact
   strip fits whole items while keeping 44px portraits. More occupies the final cell when all other visible cells are filled. Otherwise
@@ -946,3 +947,38 @@ needed; empty folders mark the initial structure.
   not mutate contact data. Saved fixture DMs keep their existing sample messages.
 - Do not add bottom navigation. New labels cover all 11 supported locales, and
   the existing light/dark theme variables provide all authored colors.
+
+## Profile preview and editor
+
+- `/profile/:contactId` reads the existing account person or bundled contacts.
+  `/profile/user/edit` is a separate local-draft form with Save and image controls
+  disabled. Never publish kind 0, resolve third-party metadata or verify NIP-05
+  as a side effect of these views. Native Share/Copy is functional.
+- `profileDetails` normalizes presentation strings: `display_name`, then `name`,
+  with an italic translated absent-name label in the view. Share the complete
+  NIP-05 if present, otherwise npub; shortening is display-only. Missing owner
+  identity disables sharing. Do not add verification badges. Profile metadata
+  is independent of a fixture's local directory label. Real bios are not translated.
+- The shared portrait uses existing avatar/media caches and an abortable banner
+  task. Missing, invalid or failed covers keep the compact layout; loaded covers
+  are 160px with a 96px avatar overlapping by 32px. Do not reserve missing covers.
+  Fixture cover bytes are bundled, with no external dependencies.
+- Contact/pin simulation belongs to each retained profile component, never the
+  account/global store: removing clears pin, noncontacts cannot pin, and self
+  cannot add/remove itself. Retained Back/Forward preserves simulation and edit
+  drafts; eviction/reload discards them. Key self views by owner to prevent drafts
+  or simulation leaking between accounts. Untouched edit fields follow incoming
+  account metadata; touched fields preserve drafts without changing account data.
+- Home and chat avatars navigate with `fromHome`/`fromChat`; Edit uses
+  `fromProfile`. Back restores the retained origin. Direct profile loads return
+  home, direct editor loads return `/profile/user`. Keep the chat header geometry
+  unchanged, with a 44px avatar target around its existing 36px picture.
+- Bio expansion starts at two lines and adds two per activation, preserving
+  whitespace and using normal text weight/style. Hide Show more when exhausted;
+  remeasure on width changes and reset on text changes. Share follows the existing
+  canShareText/shareText contract with a 1600ms copy check and translated error
+  toast; cancellation never copies. Cancel banner work and feedback on teardown.
+- `tests/browser/profile.browser.js` covers routing, retained chat drafts, local
+  toggles, editing, share/copy/cancel/failure, bio expansion, themes and narrow
+  screens in the guarded launcher/Chrome runtime. Test-only account/API controls
+  are injected into that disposable build and never shipped.
