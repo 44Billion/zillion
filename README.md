@@ -103,8 +103,9 @@ media cache; missing/failed images use the compact layout.
 
 Maya demonstrates a cover and long bio, Luna an unsaved profile, and Sam
 missing profile-name/NIP-05 metadata (his saved directory label remains intact).
-The profile uses `display_name` before `name`; absent names show an italic
-localized placeholder. All interface and fixture bio strings cover 11 locales.
+The profile and the single Name input prefer trimmed `name`, falling back to
+`display_name` only when it is empty. Name drafts target `name` only; absent
+profile names show an italic localized placeholder. All interface and fixture bio strings cover 11 locales.
 
 ## Conversation preview
 

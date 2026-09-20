@@ -3,15 +3,16 @@ import assert from 'node:assert/strict'
 import { npubEncode } from 'libp2r2p/nip19'
 import { profileDetails } from '../src/helpers/profile-presentation.js'
 
-test('profile metadata prefers display_name and preserves a full shareable identity', () => {
+test('profile metadata prefers name and preserves a full shareable identity', () => {
   const pubkey = 'a'.repeat(64)
-  const person = { self: true, pubkey, name: 'Old name', profile: { display_name: '  Display  ', name: 'username', nip05: '  me@example.com ', about: 'A\n\nB', banner: 'https://example.com/banner.jpg' } }
+  const person = { self: true, pubkey, name: 'Old name', profile: { display_name: '  Display  ', name: '  username  ', nip05: '  me@example.com ', about: 'A\n\nB', banner: 'https://example.com/banner.jpg' } }
   const data = profileDetails(person)
-  assert.equal(data.name, 'Display')
+  assert.equal(data.name, 'username')
   assert.equal(data.identifier, 'me@example.com')
   assert.equal(data.npub, npubEncode(pubkey))
   assert.equal(data.about, 'A\n\nB')
   assert.equal(person.profile.nip05, '  me@example.com ')
+  assert.equal(person.profile.name, '  username  ')
 })
 
 test('missing or malformed metadata stays absent and npub is shortened only for display', () => {
@@ -23,6 +24,9 @@ test('missing or malformed metadata stays absent and npub is shortened only for 
   assert.ok(data.identifierLabel.length < npub.length)
   assert.equal(data.about, '')
   assert.equal(data.banner, '')
+  for (const name of [undefined, null, {}, '', ' \t\n']) {
+    assert.equal(profileDetails({ profile: { name, display_name: '  Fallback  ' } }).name, 'Fallback')
+  }
   assert.equal(profileDetails({ self: true, profile: {} }).identifier, '')
   assert.equal(profileDetails({ profile: { display_name: ' ', name: 'username' } }).name, 'username')
 })

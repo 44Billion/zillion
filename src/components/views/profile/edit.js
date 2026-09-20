@@ -9,7 +9,7 @@ import '#shared/icons/icon-camera.js'
 import '#shared/icons/icon-photo-plus.js'
 
 const fields = [
-  ['display_name', 'Display name'], ['name', 'Name'], ['nip05', 'NIP-05']
+  ['name', 'Name'], ['nip05', 'NIP-05']
 ]
 
 f('z-profile-edit', ({ h, props }) => {
@@ -25,7 +25,7 @@ f('z-profile-editor', ({ h, props }) => {
     banner$ () { return this.details$().banner },
     value (field) {
       const metadata = props.person$().profile ?? {}
-      return this.draft$()[field] ?? (typeof metadata[field] === 'string' ? metadata[field] : '')
+      return this.draft$()[field] ?? (field === 'name' ? this.details$().name : typeof metadata[field] === 'string' ? metadata[field] : '')
     },
     change (field, value) { this.draft$(draft => ({ ...draft, [field]: value })) }
   }))

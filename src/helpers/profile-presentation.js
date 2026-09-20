@@ -8,7 +8,7 @@ export function profileDetails (person) {
   const nip05 = text(metadata.nip05)
   const identifier = nip05 || npub
   return {
-    name: text(metadata.display_name) || text(metadata.name),
+    name: text(metadata.name) || text(metadata.display_name),
     displayName: text(metadata.display_name), username: text(metadata.name),
     nip05, npub, identifier,
     identifierLabel: !nip05 && npub ? `${npub.slice(0, 12)}…${npub.slice(-8)}` : identifier,

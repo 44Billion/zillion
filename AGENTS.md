@@ -954,7 +954,7 @@ needed; empty folders mark the initial structure.
   `/profile/user/edit` is a separate local-draft form with Save and image controls
   disabled. Never publish kind 0, resolve third-party metadata or verify NIP-05
   as a side effect of these views. Native Share/Copy is functional.
-- `profileDetails` normalizes presentation strings: `display_name`, then `name`,
+- `profileDetails` normalizes presentation strings: trimmed `name`, then `display_name`,
   with an italic translated absent-name label in the view. Share the complete
   NIP-05 if present, otherwise npub; shortening is display-only. Missing owner
   identity disables sharing. Do not add verification badges. Profile metadata
@@ -969,6 +969,9 @@ needed; empty folders mark the initial structure.
   drafts; eviction/reload discards them. Key self views by owner to prevent drafts
   or simulation leaking between accounts. Untouched edit fields follow incoming
   account metadata; touched fields preserve drafts without changing account data.
+  The editor has one Name input using the same name fallback as the profile.
+  Its drafts target `name` only, never `display_name`; an explicitly cleared draft
+  stays empty instead of reapplying the metadata fallback.
 - Home and chat avatars navigate with `fromHome`/`fromChat`; Edit uses
   `fromProfile`. Back restores the retained origin. Direct profile loads return
   home, direct editor loads return `/profile/user`. Keep the chat header geometry
