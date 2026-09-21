@@ -16,6 +16,6 @@ export function prepareMediaPreview (input, mime, { signal, onProgress } = {}) {
       : await (await import('./video.js')).videoPreview(source, { signal: current, input })
     current.throwIfAborted()
     const thumbhash = bytesToBase64(rgbaToThumbHash(result.hashWidth, result.hashHeight, result.pixels))
-    return { blob: result.blob, width: result.width, height: result.height, thumbhash, backend: result.backend }
+    return { blob: result.blob, width: result.width, height: result.height, thumbhash, animated: result.animated === true, backend: result.backend }
   }, current)
 }

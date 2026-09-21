@@ -34,6 +34,14 @@ test('PNG rows preserve every legal color/depth layout through Adam7 and normal 
   }
 })
 
+test('APNG preview keeps animation metadata without retaining animated thumbnail bytes', async () => {
+  const animated = await pngPreview(await mediaSource(await fixture('animated.png')))
+  assert.equal(animated.animated, true)
+  assert.equal((await pngPreview(await mediaSource(animated.blob))).animated, false)
+  const still = await pngPreview(await mediaSource(await fixture('png-c2-d8-i0.png')))
+  assert.equal(still.animated, false)
+})
+
 test('PNG refuses malformed CRC and truncated bytes instead of silently accepting partial pixels', async () => {
   for (const name of ['png-bad-crc.png', 'png-truncated.png']) {
     await assert.rejects(pngPreview(await mediaSource(await fixture(name))))
@@ -96,10 +104,12 @@ test('local range reader preserves localOnly and rejects oversized or incomplete
 
 test('cached thumbnails share a synchronous stable URL and leases survive replacement', async () => {
   const file = { root: 'test-cache-root', mime: 'image/png' }
-  rememberAttachmentPreview(file, { blob: new Blob(['thumbnail']), width: 2, height: 3 })
+  rememberAttachmentPreview(file, { blob: new Blob(['thumbnail']), width: 2, height: 3, animated: true })
   const controller = new AbortController()
   const first = acquireCachedAttachmentPreview(file, { signal: controller.signal })
   const second = await acquireAttachmentPreview(file)
+  assert.equal(first.animated, true)
+  assert.equal(second.animated, true)
   assert.equal(first.source, second.source)
   assert.deepEqual([first.width, first.height], [2, 3])
   controller.abort()
@@ -110,6 +120,7 @@ test('cached thumbnails share a synchronous stable URL and leases survive replac
   assert.equal(third.source, first.source, 'reopening requires no decode or new URL')
   rememberAttachmentPreview(file, { blob: new Blob(['replacement']), width: 4, height: 5 })
   const replacement = acquireCachedAttachmentPreview(file)
+  assert.equal(replacement.animated, false)
   assert.notEqual(replacement.source, third.source)
   assert.equal(await (await fetch(third.source)).text(), 'thumbnail', 'replacement cannot revoke active leases')
   third.close()

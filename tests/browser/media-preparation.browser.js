@@ -62,6 +62,7 @@ test('production media preparation covers image variants, video workers, cancell
         assert.ok(result.error, `${name}: corrupted input should fail`)
       } else {
         assert.ok(!result.error, `${name}: ${result.error}`)
+        assert.equal(result.animated, /^(animated[.-]|compression\.(gif|png)$)/.test(name), name + ': animation metadata')
         assert.ok(result.thumbnailWidth <= 320 && result.thumbnailHeight <= 320, name)
         assert.ok(result.width > 0 && result.height > 0 && result.hash.length > 0, name)
         if (/orientation-[5-8]/.test(name)) assert.deepEqual([result.width, result.height], [128, 192])

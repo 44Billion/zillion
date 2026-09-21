@@ -18,7 +18,7 @@ import { attachmentSizeStyle, fileCategory, fileName, fileSize } from '#helpers/
 f('z-chat-attachment', ({ h, props }) => {
   const page = useRoutePage()
   const view = useStore({
-    loadedFor: null, videoRef$: null, captionRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false,
+    loadedFor: null, imageRef$: null, videoRef$: null, captionRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false,
     // Caption starts clamped to two lines; each click reveals two more.
     captionLines$: 2,
     file$ () { return props.attachment$() || {} },
@@ -52,7 +52,15 @@ f('z-chat-attachment', ({ h, props }) => {
         if (localSource || new URL(url).origin === 'https://nostr.alt') {
           // All prepared local previews are images, including video posters.
           const prepared = localSource ? { source: localSource, ...mediaDimensions(file) } : await acquireAttachmentPreview(file, { signal: controller.signal })
-          if (!controller.signal.aborted && prepared) { view.dimensions$({ width: prepared.width, height: prepared.height }); view.poster$(true); view.source$(prepared.source); if (file.mime.startsWith('video/') && !props.preview) view.loaded$(true) }
+          if (!controller.signal.aborted && prepared) {
+            view.dimensions$({ width: prepared.width, height: prepared.height })
+            view.poster$(true)
+            // The thumbnail stays still; only a confirmed image bubble plays
+            // the original. Pending sends still own an unpublished preview.
+            const animate = prepared.animated && !props.preview && file.download !== '1'
+            view.source$(animate ? url : prepared.source)
+            if (file.mime.startsWith('video/') && !props.preview) view.loaded$(true)
+          }
         } else {
           const signal = preparationSignal(controller.signal)
           const prepared = file.mime.startsWith('image/') ? await prepareImage(url, { signal }) : await prepareVideo(url, { signal })
@@ -70,6 +78,21 @@ f('z-chat-attachment', ({ h, props }) => {
     video.src = poster ? view.file$().url : source
     cleanup(() => { video.pause(); video.removeAttribute('src'); video.load() })
   }, { after: 'rendering' })
+  // The template engine retains detached nodes. Explicitly clear original
+  // animated image sources as well as thumbnails when the route is inactive.
+  useTask(({ track, cleanup }) => {
+    const [image, source, active, failed] = track(() => [view.imageRef$(), view.source$(), page.isActive$(), view.failed$()])
+    if (!image || !source || !active || failed) return
+    const loaded = () => { if (image.complete && image.naturalWidth) view.loaded$(true) }
+    const error = () => { if (image.complete && !image.naturalWidth) view.failed$(true) }
+    image.addEventListener('load', loaded)
+    image.addEventListener('error', error)
+    image.src = source
+    cleanup(() => {
+      image.removeEventListener('load', loaded); image.removeEventListener('error', error)
+      image.removeAttribute('src')
+    })
+  }, { after: 'rendering' })
   // The clamp is set on the node: it is a vendor-prefixed property that the
   // template's style attribute cache does not own.
   useTask(({ track }) => {
@@ -85,7 +108,7 @@ f('z-chat-attachment', ({ h, props }) => {
   const isMedia = /^(image|video)\//.test(file.mime)
   const visual = h`${view.placeholder$() && !view.loaded$() ? h`<img class="attachment-placeholder" src=${view.placeholder$()} alt="">` : null}${view.source$() && !view.failed$() && isMedia
     ? file.mime.startsWith('image/') || (view.poster$() && (props.preview || forceDownload))
-      ? h`<img src=${view.source$()} alt=${file.alt || name.full} onload=${() => view.loaded$(true)} onerror=${() => view.failed$(true)}>`
+      ? h`<img ref=${view.imageRef$} alt=${file.alt || name.full}>`
       : h`<video ref=${view.videoRef$} poster=${view.poster$() ? view.source$() : null} ?controls=${!forceDownload && !props.preview} ?muted=${forceDownload || props.preview} playsinline preload=${view.poster$() ? 'none' : 'metadata'} onplay=${event => { if (forceDownload || props.preview) event.target.pause() }} onloadeddata=${() => view.loaded$(true)} onerror=${() => view.failed$(true)}></video>`
     : null}`
   return h`<div class=${`chat-attachment ${props.preview ? 'attachment-preview' : ''}`} style=${props.preview ? null : attachmentSizeStyle(view.size$())} data-category=${fileCategory(file.mime)} data-chat-prepared=${String(view.ready$())}><style>${`

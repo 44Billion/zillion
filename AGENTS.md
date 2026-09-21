@@ -722,6 +722,13 @@ needed; empty folders mark the initial structure.
   never restore a revoked URL from a cached signal or clear a valid same-media
   preview during unrelated updates. Reuse selected thumbnails in pending/confirmed bubbles, gallery and
   replies; do not reopen the original just to display the composer thumbnail.
+  Preview metadata retains an animation flag: confirmed animated image bubbles
+  play the original local file (GIF/WebP/APNG), while gallery, reply, composer,
+  pending-send and download-only thumbnails stay still. Native image decoding
+  discovers animation; WebP flags, PNG acTL and a conservative GIF fallback also
+  work without ImageDecoder. Never persist this derived flag in kind 1063.
+  Image source tasks clear even detached template nodes on route deactivation;
+  returning reacquires the preview lease and restores animation.
   Local video players use preload=none and a reduced poster. After-render tasks
   own video src setup/cleanup so retained elements restore it after confirmation.
 - The composer owns one raw preparation outside useStore until Send transfers it

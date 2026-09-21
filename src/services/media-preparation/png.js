@@ -153,6 +153,7 @@ async function pngPreview (file, signal, maxDimension = 320, { linear = false, o
   let offset = 8
   let chunks = 0
   let ended = false
+  let animated = false
   let seenHeader = false
   let seenData = false
   let closedData = false
@@ -165,6 +166,7 @@ async function pngPreview (file, signal, maxDimension = 320, { linear = false, o
     offset += 8
     if (!/^[a-zA-Z]{4}$/.test(type) || (!seenHeader && type !== 'IHDR') || (type === 'IHDR' && (seenHeader || length !== 13))) throw Error('INVALID_PNG_CHUNK')
     if (type === 'IHDR') seenHeader = true
+    if (type === 'acTL') animated = true
     if (!['IHDR', 'PLTE', 'IDAT', 'IEND'].includes(type) && type[0] === type[0].toUpperCase()) throw Error('UNKNOWN_PNG_CRITICAL_CHUNK')
     if (type === 'IDAT') {
       if (closedData || (colorType === 3 && !palette)) throw Error('INVALID_PNG_IDAT')
@@ -248,7 +250,7 @@ async function pngPreview (file, signal, maxDimension = 320, { linear = false, o
   const raw = new Uint8Array(th * (tw * 4 + 1))
   for (let y2 = 0; y2 < th; y2++) raw.set(pixels.subarray(y2 * tw * 4, (y2 + 1) * tw * 4), y2 * (tw * 4 + 1) + 1)
   const blob = new Blob([head.subarray(0, 8), chunk('IHDR', ihdr), ...(linear ? [chunk('sRGB', Uint8Array.of(0))] : []), ...colorChunks, chunk('IDAT', deflate(raw)), chunk('IEND', new Uint8Array())], { type: 'image/png' })
-  return { blob, width, height, thumbnailWidth: tw, thumbnailHeight: th }
+  return { blob, width, height, animated, thumbnailWidth: tw, thumbnailHeight: th }
 }
 export {
   pngPreview

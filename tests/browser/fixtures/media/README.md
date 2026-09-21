@@ -11,7 +11,10 @@ palette/tRNS, AdobeRGB ICC and malformed CRC/truncation. JPEG fixtures cover
 subsampling, progressive/baseline, restart markers, EXIF orientations, CMYK and
 ICC, separate DC scans and truncation. Profiles come from the host's colord ICC
 profiles used in the original investigation. Animated fixtures test first/default
-frame preview, not animation playback. See docs/media-memory-variants-and-plan.md
+frame preview and animation metadata. The `animated-playback` GIF/WebP/APNG
+fixtures are two solid 96x64 frames (green/magenta), 300ms each, looping forever;
+browser tests compare actual rendered pixels across bubble/viewer navigation
+and offline reload. See docs/media-memory-variants-and-plan.md
 and the locally preserved tmp/media-memory-variants generators for provenance.
 
 

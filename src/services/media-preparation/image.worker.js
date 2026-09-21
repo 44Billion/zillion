@@ -23,12 +23,18 @@ self.onmessage = async ({ data }) => {
 }
 
 async function preview (source, mime, target) {
-  const header = await source.read(0, Math.min(16, source.size))
+  const header = await source.read(0, Math.min(32, source.size))
   const png = header[0] === 137 && header[1] === 80 && header[2] === 78 && header[3] === 71
   const jpeg = header[0] === 255 && header[1] === 216
+  // Container hints preserve GIF/WebP playback without ImageDecoder too.
+  // GIF without that API conservatively uses the original, even if still.
+  const signature = String.fromCharCode(...header.subarray(0, 6))
+  const webp = String.fromCharCode(...header.subarray(8, 16)) === 'WEBPVP8X'
+  let animated = /^GIF8[79]a$/.test(signature) || (webp && Boolean(header[20] & 2))
   let imageSource = source; let nativeOptions = {}; let metadata
   if (png) {
     metadata = await pngPreview(source, undefined, target)
+    animated = metadata.animated
     imageSource = { size: metadata.blob.size, read: async (start, end) => new Uint8Array(await metadata.blob.slice(start, end).arrayBuffer()) }
     mime = 'image/png'
   } else if (jpeg) {
@@ -41,6 +47,7 @@ async function preview (source, mime, target) {
     if (typeof ImageDecoder !== 'undefined' && await ImageDecoder.isTypeSupported(mime)) {
       decoder = new ImageDecoder({ data: sourceStream(imageSource), type: mime, preferAnimation: false, ...nativeOptions })
       ;({ image: frame } = await decoder.decode({ frameIndex: 0 }))
+      if (!png) animated = Array.from(decoder.tracks).some(track => track.animated)
     } else {
       // Preserve browser-supported formats without ImageDecoder (e.g. SVG).
       // This compatibility backend retains a format-dependent native decode cost.
@@ -61,7 +68,7 @@ async function preview (source, mime, target) {
     try {
       const context = tiny.getContext('2d', { willReadFrequently: true })
       context.drawImage(canvas, 0, 0, tiny.width, tiny.height)
-      return { blob, width, height, pixels: context.getImageData(0, 0, tiny.width, tiny.height).data, hashWidth: tiny.width, hashHeight: tiny.height, backend: png ? 'png-rows' : jpeg ? metadata.progressive ? 'jpeg-progressive-native' : 'jpeg-scaled' : 'native' }
+      return { blob, width, height, animated, pixels: context.getImageData(0, 0, tiny.width, tiny.height).data, hashWidth: tiny.width, hashHeight: tiny.height, backend: png ? 'png-rows' : jpeg ? metadata.progressive ? 'jpeg-progressive-native' : 'jpeg-scaled' : 'native' }
     } finally { tiny.width = tiny.height = 0 }
   } finally { frame?.close(); decoder?.close(); if (canvas) canvas.width = canvas.height = 0 }
 }

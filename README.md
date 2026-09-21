@@ -37,7 +37,9 @@ FIFO cache; chat images, previews and thumbnails share a separate 64 MiB FIFO
 cache. Both store decoded dimensions. Conversation media cannot evict avatars
 from their reserved budget. External videos render online and remain links offline. Local attachments,
 including videos, use launcher storage instead of these HTTP caches.
-Remote uploads and third-party messaging remain planned.
+Animated local images play inside confirmed message bubbles as well as the
+media viewer. Compact previews remain still, and leaving the chat releases its
+image sources. Remote uploads and third-party messaging remain planned.
 
 ## Home preview
 

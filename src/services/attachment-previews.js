@@ -52,7 +52,7 @@ function acquire (entry, signal) {
     release(entry)
   }
   signal?.addEventListener('abort', close, { once: true })
-  return { source: entry.source, width: entry.preview.width, height: entry.preview.height, close, get closed () { return closed } }
+  return { source: entry.source, width: entry.preview.width, height: entry.preview.height, animated: entry.preview.animated === true, close, get closed () { return closed } }
 }
 
 export function acquireCachedAttachmentPreview (file, { signal } = {}) {

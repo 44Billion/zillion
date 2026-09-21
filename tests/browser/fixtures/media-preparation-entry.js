@@ -12,7 +12,7 @@ window.runMediaPreview = async name => {
     const context = canvas.getContext('2d')
     context.drawImage(img, 0, 0)
     const pixels = context.getImageData(0, 0, img.width, img.height).data
-    const result = { name, backend: preview.backend, width: preview.width, height: preview.height, thumbnailWidth: img.width, thumbnailHeight: img.height, hash: preview.thumbhash, pixel: [...pixels.slice(0, 4)] }
+    const result = { name, animated: preview.animated, backend: preview.backend, width: preview.width, height: preview.height, thumbnailWidth: img.width, thumbnailHeight: img.height, hash: preview.thumbhash, pixel: [...pixels.slice(0, 4)] }
     if (/^png-c/.test(name)) {
       // These fixtures fit at native size. Compare every premultiplied pixel,
       // independently of the row decoder, against Chrome's original decode.
