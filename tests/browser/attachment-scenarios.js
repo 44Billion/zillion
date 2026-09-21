@@ -200,6 +200,20 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.until(() => evaluate('!document.querySelector(".attachment-gallery")'), 'gallery closed before sending')
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'reuse saved', 60000)
+    // Reopening on a newly sent occurrence must render the older occurrence
+    // on the first backward navigation, without closing/reopening the viewer.
+    await evaluate('[...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png")).at(-1).querySelector(".attachment-frame").click()')
+    const viewerImageReady = () => evaluate(`(() => {
+      const asset = document.querySelector('.route-page[data-active=true] .viewer-asset[data-current=true]');
+      const image = asset?.querySelector('img');
+      return asset && !asset.hidden && image && !image.hidden && image.hasAttribute('src') && image.complete && image.naturalWidth === 1;
+    })()`)
+    await browser.until(viewerImageReady, 'new image occurrence visible in viewer')
+    await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .viewer-previous:not(:disabled)") && !document.querySelector("[data-transitioning]")'), 'previous image available')
+    await evaluate('document.querySelector(".route-page[data-active=true] .viewer-previous").click()')
+    await browser.until(viewerImageReady, 'previous image visible after a new send')
+    await evaluate('document.querySelector(".route-page[data-active=true] .viewer-close").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .chat-screen") && !document.querySelector("[data-transitioning]")'), 'return after navigating newly sent image')
     // Reply with an image: the single break between the two URIs must not
     // paint as a blank line between the quote and the attachment.
     const imageReply = `[...document.querySelectorAll('.message-row')]

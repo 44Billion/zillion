@@ -24,6 +24,21 @@ f('z-viewer-test-driver', ({ h }) => {
       account.profile$({ name: 'Viewer test', picture: 'https://viewer.example.com/portrait.jpg' })
       account.historyLoaded$(true)
     },
+    seedUrls (urls) {
+      account.messages$(urls.map((url, n) => ({ id: `controlled-${n}`, kind: 9, content: url, tags: [], created_at: 2000000000 + n })))
+    },
+    stageFile () {
+      const template = { kind: 1063, created_at: 2000000010, tags: [['url', 'https://viewer.example.com/pending.jpg'], ['m', 'image/jpeg']], content: '' }
+      const file = { ...template, pubkey: account.pubkey$(), id: getEventHash({ ...template, pubkey: account.pubkey$() }) }
+      account.references$({ ...account.references$(), [file.id]: file })
+      account.messages$([{ id: 'controlled-pending', kind: 9, content: '', tags: [['q', file.id]], created_at: template.created_at, status: 'pending' }])
+      window.viewerTest.finishFile = async () => {
+        const result = await window.napp.eventStore.addPersonalCopy(template, { context: `dm:${account.pubkey$()}` })
+        if (!result.result.ok) throw new Error('Fixture write failed')
+        account.messages$(messages => messages.map(message => ({ ...message, status: 'saved' })))
+      }
+      return `file:${file.id}`
+    },
     async remove () {
       await window.napp.eventStore.addPersonalCopy({ kind: 5, created_at: Math.floor(Date.now() / 1000), tags: [['e', window.viewerTest.fileId.slice(5)], ['k', '1063']], content: '' }, { context: `dm:${account.pubkey$()}` })
     },

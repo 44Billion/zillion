@@ -129,8 +129,11 @@ download. Quotes, the global catalog and unloaded kind-9 content are not scanned
 Files use event-store counts and three-item metadata pages, with a 12-descriptor
 cache. Three reusable media slots keep only the previous/current/next resources;
 neighboring videos use existing posters, never background video decoding.
-Leaving a slot or route releases its sources. The existing persistent image
-cache remains separate from decoded browser memory.
+Leaving a slot or route releases its sources; the animated layer follows route
+visibility and releases finished effects. The existing persistent image
+cache remains separate from decoded browser memory. Failed neighbor preloads are
+retried when selected; newly sent attachments remain loading until their local
+write settles.
 
 Ordering is best-effort by file/message timestamp, descending wrapper/message ID
 and URL position. File links reopen directly without the referring message;

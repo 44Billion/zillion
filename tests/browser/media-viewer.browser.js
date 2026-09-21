@@ -14,6 +14,10 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
+  let inspectViewer
+  const heldMedia = []
+  let releaseHeldMedia = false
+  let rejectNeighbor = true
   try {
     let files
     const options = buildOptions({ onEnd: result => { files = result } })
@@ -35,10 +39,13 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
         const url = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(url.hostname)) return null
         if (url.hostname === 'viewer.example.com') {
-          return {
+          if (url.pathname === '/flaky.jpg' && rejectNeighbor) return { responseCode: 503, responseHeaders: [], body: '' }
+          const response = {
             responseCode: 200, responseHeaders: [{ name: 'Content-Type', value: url.pathname.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg' }, { name: 'Access-Control-Allow-Origin', value: '*' }],
             body: url.pathname.endsWith('.mp4') ? mp4 : jpeg
           }
+          if (url.pathname === '/held.jpg' && !releaseHeldMedia) return new Promise(resolve => heldMedia.push(() => resolve(response)))
+          return response
         }
         if (['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(url.hostname)) return { responseCode: 204, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '' }
         return false
@@ -77,6 +84,19 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
     const url = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app frame')
     const origin = new URL(url).origin
     const evaluate = expression => browser.evaluate(expression, origin)
+    inspectViewer = () => evaluate(`(() => {
+      const properties = element => {
+        const css = getComputedStyle(element), rect = element.getBoundingClientRect();
+        return { tag: element.tagName, class: element.className, hidden: element.hidden, display: css.display, visibility: css.visibility, opacity: css.opacity, contentVisibility: css.contentVisibility, rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } };
+      };
+      const slide = document.querySelector('.route-page[data-active=true] .viewer-slide');
+      return { inline: slide?.style.cssText, animations: slide?.getAnimations().map(animation => ({ state: animation.playState, frames: animation.effect?.getKeyframes() })), url: location.href, assets: [...document.querySelectorAll('.route-page[data-active=true] .viewer-asset[data-current=true]')].map(asset => {
+        const ancestors = []; for (let node = asset; node; node = node.parentElement) ancestors.push(properties(node));
+        return { id: asset.dataset.mediaId, current: asset.dataset.current, loaded: asset.dataset.loaded, ancestors,
+          media: [...asset.querySelectorAll('img, video')].map(element => ({ ...properties(element), source: element.getAttribute('src')?.slice(0, 250), complete: element.complete, naturalWidth: element.naturalWidth, readyState: element.readyState, error: element.error?.code, visible: element.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}) })) };
+      }) };
+    })()`)
+
     // Reloading the launcher also reloads the vault; unlock through its real UI.
     await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("lock-overlay .lock-unlock"))', vaultOrigin), 'vault unlock UI')
@@ -98,7 +118,12 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
     const push = async (url, selector) => { await evaluate(`testNavigation.pushState({}, '', ${JSON.stringify(url)})`); await ready(selector) }
     const frame = '.message-row[data-message-id=first] .media-frame'
     const selected = () => evaluate('decodeURIComponent(location.hash.slice(1))')
-    const loaded = () => browser.until(() => evaluate(`document.querySelector('${active}.viewer-asset[data-current=true]')?.dataset.loaded === 'true'`), 'full media loaded')
+    const loaded = () => browser.until(() => evaluate(`(() => {
+      const asset = document.querySelector('${active}.viewer-asset[data-current=true]');
+      const media = asset?.querySelector('img:not([hidden]), video:not([hidden])');
+      return asset && !asset.hidden && asset.dataset.loaded === 'true' && media?.hasAttribute('src') && media.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }) && (location.pathname.endsWith('/photo') || asset.dataset.mediaId === decodeURIComponent(location.hash.slice(1))) &&
+        (media.tagName === 'IMG' ? media.complete && media.naturalWidth > 0 : media.readyState >= 2);
+    })()`), 'full media visible and loaded')
     const swipe = async (dx, dy) => {
       await evaluate(`(() => {
         const stage = document.querySelector('${active}.viewer-stage');
@@ -195,7 +220,7 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
       if (probe.result.value) { appContext = context; break }
     }
     assert.ok(appContext)
-    const appSession = appContext.sessionId
+    let appSession = appContext.sessionId
     const appNodes = async () => {
       // Renderer DOM counters also include the launcher's/vault's audit UI.
       // Inspect this app realm, releasing every debugger handle afterward.
@@ -278,6 +303,7 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
       const probe = await browser.send('Runtime.evaluate', { expression: 'Boolean(window.viewerTest)', contextId: context.id, returnByValue: true }, context.sessionId)
       if (probe.result.value) { appContext = context; break }
     }
+    appSession = appContext.sessionId
     const many = await evaluate('viewerTest.seedMany()')
     await push('/chat/user/media#' + encodeURIComponent(many[0]), '.media-viewer')
     await loaded()
@@ -332,11 +358,88 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
     await click('.viewer-close')
     await ready('.chat-screen')
     assert.equal(await evaluate('liveVideo.paused && !liveVideo.hasAttribute("src")'), true)
+    // Send real local attachments after previous viewer sessions, then open the
+    // latest bubble and move backward through slots that were only neighbors.
+    for (let n = 0; n < 4; n++) {
+      // A reload can replace the frame/session while the old realm still
+      // appears in CDP. Mark the document chosen by the runtime's evaluator.
+      const marker = await evaluate('window.viewerPickerMarker = crypto.randomUUID()')
+      const input = await browser.until(async () => {
+        for (const context of browser.contexts.values()) {
+          if (context.origin !== origin || !context.auxData?.isDefault) continue
+          const result = await browser.send('Runtime.evaluate', { expression: `window.viewerPickerMarker === ${JSON.stringify(marker)} ? document.querySelector('.chat-composer input[type=file]') : null`, contextId: context.id }, context.sessionId)
+          if (result.result.objectId) return { objectId: result.result.objectId, sessionId: context.sessionId }
+        }
+      }, 'file picker in the current app document')
+      try {
+        await browser.send('DOM.setFileInputFiles', { files: [path.join(root, `tests/browser/fixtures/media/jpeg-orientation-${n + 1}.jpg`)], objectId: input.objectId }, input.sessionId)
+      } finally { await browser.send('Runtime.releaseObject', { objectId: input.objectId }, input.sessionId) }
+      await browser.until(() => evaluate(`!!document.querySelector('${active}.composer-attachment .attachment-remove') && document.querySelector('${active}.compose-action')?.getAttribute('aria-disabled') === 'false' && !document.querySelector('${active}.preparing-file')`), 'new local attachment prepared', 30000)
+      await click('.compose-action')
+      // Alternate opening immediately and waiting for the real write to finish.
+      if (n % 2) await browser.until(() => evaluate(`document.querySelectorAll('${active}.message-row .message-status[data-status=saved]').length === ${n + 1}`), 'new kind 9 saved', 60000)
+      await browser.until(() => evaluate(`document.querySelectorAll('${active}.message-row .attachment-frame').length === ${n + 1}`), 'new bubble rendered')
+      await evaluate(`document.querySelectorAll('${active}.message-row .attachment-frame').item(${n}).click()`)
+      await ready('.media-viewer')
+      await loaded()
+      for (let previous = 0; previous < 6; previous++) {
+        await browser.until(() => evaluate(`document.querySelector('${active}.viewer-previous')?.disabled === false`), 'previous slot available')
+        const before = await selected()
+        await click('.viewer-previous')
+        await browser.until(async () => await selected() !== before, 'previous selection applied')
+        await loaded()
+      }
+      await click('.viewer-close')
+      await ready('.chat-screen')
+    }
+    // A controlled pending bubble uses real store persistence, delayed until
+    // after opening. It must not be presented as a permanently missing file.
+    const pendingId = await evaluate('viewerTest.stageFile()')
+    await click('.message-row[data-message-id=controlled-pending] .attachment-frame')
+    await ready('.media-viewer')
+    await evaluate('new Promise(resolve => setTimeout(resolve, 500))')
+    assert.equal(await evaluate(`document.querySelector('${active}.viewer-slide > .viewer-state p')?.textContent`), 'Loading media')
+    await evaluate('viewerTest.finishFile()')
+    await loaded()
+    assert.equal(await selected(), pendingId)
+    await click('.viewer-close')
+    await ready('.chat-screen')
+
+    // Hold actual image responses while delivering late native notifications.
+    // An unloaded video/image in a reused slot must not mark its new image ready
+    // or failed; a failed neighbor prefetch gets one fresh attempt on selection.
+    await evaluate('viewerTest.seedUrls([\'https://viewer.example.com/held.jpg\', \'https://viewer.example.com/flaky.jpg\']); testNavigation.pushState({}, \'\', \'/chat/user/media#controlled-0%3A0\')')
+    await ready('.media-viewer')
+    await browser.until(() => heldMedia.length > 0, 'image preparation held at network boundary')
+    await browser.until(() => evaluate(`!!document.querySelector('${active}.viewer-asset[data-media-id="controlled-1:0"] .viewer-state p')`), 'neighbor prefetch failed')
+    await evaluate(`(() => {
+      const asset = document.querySelector('${active}.viewer-asset[data-current=true]');
+      asset.querySelector('img').dispatchEvent(new Event('load'));
+      asset.querySelector('video').dispatchEvent(new Event('loadeddata'));
+    })()`)
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    assert.equal(await evaluate(`!!document.querySelector('${active}.viewer-asset[data-current=true] .loading')`), true, 'stale readiness does not hide the loading state')
+    await evaluate(`document.querySelector('${active}.viewer-asset[data-current=true] video').dispatchEvent(new Event('error'))`)
+    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    assert.equal(await evaluate(`!!document.querySelector('${active}.viewer-asset[data-current=true] .loading')`), true, 'inactive decoder errors do not fail the image')
+    releaseHeldMedia = true
+    heldMedia.splice(0).forEach(release => release())
+    await loaded()
+    rejectNeighbor = false
+    await click('.viewer-next')
+    await browser.until(async () => await selected() === 'controlled-1:0', 'failed neighbor selected')
+    await loaded()
+    await click('.viewer-previous')
+    await loaded()
+    await click('.viewer-close')
+    await ready('.chat-screen')
     assert.deepEqual(browser.logs.filter(log => log.method === 'Runtime.exceptionThrown'), [])
   } catch (error) {
+    if (inspectViewer) console.log('Viewer failure state', JSON.stringify(await inspectViewer().catch(() => null)))
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/media-viewer'))
     throw error
   } finally {
+    heldMedia.splice(0).forEach(release => release())
     clearInterval(permissions)
     await browser?.close()
     await runtime.close()

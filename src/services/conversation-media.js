@@ -210,7 +210,10 @@ export function createConversationMediaReader ({ pubkey, signer, eventStore, con
       return snapshot(id ? await find(id) : await adjacent(null, 1))
     }),
     move: step => serial(async () => {
-      const current = step > 0 ? state.next : state.previous
+      let current = step > 0 ? state.next : state.previous
+      // A neighbor may have failed to decrypt while permissions or the bridge
+      // were temporarily unavailable. Retry it once when actually selected.
+      if (current?.unavailable) current = await find(current.id) ?? current
       return current ? snapshot(current, state.index + (step > 0 ? 1 : -1)) : state
     }),
     refresh: () => serial(async () => {

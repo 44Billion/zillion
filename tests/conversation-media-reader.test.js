@@ -201,3 +201,25 @@ test('an empty session discovers a new file, while an explicit unavailable URL s
   assert.equal((await reader.refresh()).current, null)
   reader.close()
 })
+
+test('selecting an unreadable prefetched neighbor retries its metadata without reopening the viewer', async () => {
+  const f = fixture()
+  const files = [f.add(0), f.add(1), f.add(2)]
+  const decrypt = f.signer.nip44v3.decrypt
+  let fail = true
+  f.signer.nip44v3.decrypt = async (...args) => {
+    if (fail && JSON.parse(args[3]).content === 'File 1') { fail = false; throw new Error('Temporary bridge failure') }
+    return decrypt(...args)
+  }
+  const reader = f.reader()
+  try {
+    const opened = await reader.open(files[2].id)
+    assert.equal(opened.previous.unavailable, true)
+    const selected = await reader.move(-1)
+    assert.equal(selected.current.id, files[1].id)
+    assert.equal(selected.current.unavailable, false)
+    assert.equal(selected.index, 1)
+    assert.equal(selected.total, 3)
+    assert.equal((await reader.move(-1)).current.id, files[0].id)
+  } finally { reader.close() }
+})

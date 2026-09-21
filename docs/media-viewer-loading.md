@@ -56,6 +56,14 @@ Three reusable component slots retain only previous/current/next sources. Each
 slot also reuses its image and video DOM elements across loading/error states;
 removing and recreating an image for each source can retain detached ref nodes.
 Hash-only route changes keep the same reader session and URL snapshot.
+Native load/error listeners belong to a source assignment and are removed before
+unloading it. They verify the current source and decoder state: late events from
+an empty image or inactive video cannot hide Loading or fail a replacement item.
+A failed neighbor is retried once on selection, including transient metadata
+decryption failures. No automatic failure loop or unbounded retry is introduced.
+A locally pending kind-9 attachment shows Loading while its 1063 is not yet
+committed; settlement triggers a new lookup, and missing items offer Retry.
+Counts still include only persisted eligible wrappers and the URL snapshot.
 Neighbor images can be prepared; neighbor videos acquire only already cached
 posters. They never start a decoder or fetch a playable video source. Only the
 current video can play. Cleanup aborts work, unloads video, clears image sources
@@ -107,3 +115,22 @@ These are controlled Chrome fixtures, not measurements of arbitrary large files,
 Safari/Firefox codecs, mobile native decoder memory or a fixed application RAM
 ceiling. Same-second ID groups and the loaded-URL snapshot have separate metadata
 costs described above.
+
+## Intermittent-load regression coverage
+
+The real-send/backward-navigation scenario reproduced a blank viewport before
+fault injection: the image was complete with nonzero natural dimensions, but
+its `.viewer-slide` ancestor still computed to `visibility: hidden` while the
+viewer route was visible. Canceling the animation alone did not resolve it;
+detaching its effect on completion/cleanup did, without recreating media nodes. Readiness assertions
+check computed visibility as well as the selected ID and decoder state.
+
+The reader test injects a temporary decryption failure during neighbor prefetch
+and verifies recovery on selection; it fails against the previous reader.
+Chrome holds an image response while delivering late load/error notifications,
+checks that Loading remains visible, and then releases the real response. A
+neighbor that initially receives HTTP 503 must recover on selection. A staged
+pending message is opened before its file is committed through the real event
+store and must transition from Loading to its original image without reopening.
+The existing real attachment tests also exercise new sends followed by backward
+navigation; readiness checks include source, decoder state and visibility.

@@ -1037,12 +1037,21 @@ needed; empty folders mark the initial structure.
   Abort preparations, clear detached image/video sources and release preview
   leases when slots change or routes deactivate. Neighbor videos may acquire
   cached posters only; only the current video receives a playable source.
+  Scope native load/error listeners to each source's active lifetime and verify
+  actual decoder state before changing slot status; unloaded elements must not
+  report readiness/failure for a later item. Retry a failed neighbor once when
+  selected (both metadata and bytes), never in an unbounded error loop. Pending
+  kind-9 attachments with missing metadata remain loading; re-read the
+  selected file on settlement without adding it to the persistent-file count.
   Direct chat media also release sources while inactive, retaining dimensions
   so scroll position and drafts survive. This does not paginate chat messages.
 - Horizontal/vertical swipes (50px threshold), arrow keys and visible buttons
   navigate without wrapping. Incoming animation follows the swipe axis and
   honors reduced motion. Preserve native video controls; an explicit expand
   button offers keyboard access. Inactive videos pause and release their src.
+  Detach animation effects (effect = null) on completion and cleanup so the
+  reused slide does not retain stale inherited visibility. Browser checks
+  must verify computed visibility, not only src/naturalWidth/loaded flags.
 - The viewer loads original media, not attachment preview thumbnails. Local
   nostr.alt streams remain local; external images use the existing bounded
   cache. Cancel preparation on route exit and show retry for unavailable media.

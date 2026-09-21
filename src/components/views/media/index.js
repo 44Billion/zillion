@@ -20,7 +20,7 @@ f('z-media-viewer-route', ({ h, props }) => {
   const account = useAccount()
   const page = useRoutePage()
   const location = useLocation()
-  const runtime = useMemo(() => ({ pointer: null, animation: null, direction: null, reader: null, request: 0, selected: null, sessionKey: null }))
+  const runtime = useMemo(() => ({ pointer: null, animation: null, direction: null, reader: null, request: 0, selected: null, pendingFile: null, sessionKey: null }))
   const photo = props.route$().url.pathname.endsWith('/photo')
   const view = useStore({
     stageRef$: null,
@@ -32,6 +32,12 @@ f('z-media-viewer-route', ({ h, props }) => {
     slots$ () { return [this.slot0$(), this.slot1$(), this.slot2$()] },
     result$: null,
     busy$: true,
+    pendingFile$ () {
+      if (photo || props.route$().params.contactId !== 'user') return null
+      const id = selectedMediaId(props.route$().url.hash)
+      if (!id.startsWith('file:')) return null
+      return account.messages$().some(message => message.status === 'pending' && message.tags?.some(tag => tag[0] === 'q' && tag[1] === id.slice(5))) ? id : null
+    },
     restart$: 0,
     failed$: false,
     photo$ () {
@@ -66,8 +72,9 @@ f('z-media-viewer-route', ({ h, props }) => {
     },
     dispose () {
       runtime.request++
-      runtime.reader?.close(); runtime.reader = null; runtime.selected = null
+      runtime.reader?.close(); runtime.reader = null; runtime.selected = null; runtime.pendingFile = null
       this.slot0$(null); this.slot1$(null); this.slot2$(null); this.result$(null)
+      this.busy$(true); this.failed$(false)
     },
     retry () {
       if (runtime.reader) this.load(() => runtime.reader.open(selectedMediaId(props.route$().url.hash)))
@@ -139,6 +146,15 @@ f('z-media-viewer-route', ({ h, props }) => {
     runtime.selected = id
     view.load(() => runtime.reader.open(id))
   })
+  // A bubble exists before its file is committed. Keep the pending state and
+  // re-read once the send settles, including when a live notification was missed.
+  useTask(({ track }) => {
+    const [pending, active] = track(() => [view.pendingFile$(), page.isActive$()])
+    if (!active) return
+    const previous = runtime.pendingFile
+    runtime.pendingFile = pending
+    if (!pending && previous && previous === runtime.selected && runtime.reader) view.load(() => runtime.reader.open(previous))
+  })
   useTask(({ track, cleanup }) => {
     if (!track(() => page.isActive$())) return
     const key = event => {
@@ -155,11 +171,20 @@ f('z-media-viewer-route', ({ h, props }) => {
     const direction = runtime.direction
     runtime.direction = null
     if (!stage || !direction || !active || matchMedia('(prefers-reduced-motion: reduce)').matches) return
-    runtime.animation = stage.animate([
+    const animation = stage.animate([
       { transform: `translate${direction.axis.toUpperCase()}(${direction.step * 12}%)`, opacity: 0.35 },
       { transform: 'none', opacity: 1 }
     ], { duration: 200, easing: 'cubic-bezier(.2,.7,.3,1)' })
-    cleanup(() => { runtime.animation?.cancel(); runtime.animation = null })
+    runtime.animation = animation
+    const stop = () => {
+      animation.cancel()
+      animation.effect = null
+      if (runtime.animation === animation) runtime.animation = null
+    }
+    // Canceling alone can retain the effect and stale inherited visibility on
+    // this reused layer. Detach its target on both completion and cleanup.
+    animation.finished.then(stop, () => {})
+    cleanup(stop)
   }, { after: 'rendering' })
   const item = view.item$()
   const count = view.result$()?.total ?? 0
@@ -176,7 +201,7 @@ f('z-media-viewer-route', ({ h, props }) => {
           item$: view[`slot${slot}$`], selected$: () => view.slots$()[slot]?.id === view.item$()?.id,
           photo, retryMetadata: view.retry, startTime$: () => view.slots$()[slot]?.id === props.route$().state?.mediaId ? props.route$().state?.mediaTime ?? 0 : 0
         }} />`)}
-        ${!item || view.failed$() ? h`<div class="viewer-state" role="status"><p>${t(view.busy$() ? 'Loading media' : 'Media unavailable')}</p>${view.failed$() ? h`<button type="button" onclick=${view.retry}>${t('Retry')}</button>` : null}</div>` : null}
+        ${!item || view.failed$() ? h`<div class="viewer-state" role="status"><p>${t(view.busy$() || view.pendingFile$() ? 'Loading media' : 'Media unavailable')}</p>${!view.busy$() && !view.pendingFile$() && (view.failed$() || !photo) ? h`<button type="button" onclick=${view.retry}>${t('Retry')}</button>` : null}</div>` : null}
       </div>
       ${!photo && count > 1 ? h`<button class="viewer-previous" type="button" ?disabled=${view.busy$() || !view.result$()?.previous} aria-label=${t('Previous media')} onclick=${() => view.move(-1)}><icon-chevron-down props=${{ rotate: 90, size: '24px', weight: 'regular' }} /></button><button class="viewer-next" type="button" ?disabled=${view.busy$() || !view.result$()?.next} aria-label=${t('Next media')} onclick=${() => view.move(1)}><icon-chevron-down props=${{ rotate: -90, size: '24px', weight: 'regular' }} /></button>` : null}
     </div>
