@@ -119,10 +119,26 @@ Chat images and videos open in `/chat/:contactId/media`; profile photos open
 alone in `/profile/:contactId/photo`. The viewer fills the available app area
 without browser fullscreen. Close with the button, Escape or browser Back.
 Previous/next controls, arrow keys and horizontal/vertical swipes browse only
-that conversation's expanded media. Selection replaces the URL fragment, so
-Back returns directly to the retained chat and draft. Download-only media keep
-their download action. Original files load on demand; unavailable files show a
-retry state. Videos pause and release their source when leaving the view.
+that conversation. Selection replaces the URL fragment, so Back returns directly
+to the retained chat, scroll position and draft.
+
+The sequence combines MIME-filtered kind-1063 personal copies in `dm:<peer>` with
+a snapshot of direct media URLs from already loaded messages. Orphans and
+image/video files marked for download participate; their chat cards still
+download. Quotes, the global catalog and unloaded kind-9 content are not scanned.
+Files use event-store counts and three-item metadata pages, with a 12-descriptor
+cache. Three reusable media slots keep only the previous/current/next resources;
+neighboring videos use existing posters, never background video decoding.
+Leaving a slot or route releases its sources. The existing persistent image
+cache remains separate from decoded browser memory.
+
+Ordering is best-effort by file/message timestamp, descending wrapper/message ID
+and URL position. File links reopen directly without the referring message;
+unavailable URL occurrences after reload show the return-to-chat state.
+Unsupported codecs or failed media keep their counted position, with Retry and
+Download when possible. No relay discovery, persistent URL index or chat-history
+pagination is introduced. See [viewer pagination and memory](docs/media-viewer-loading.md)
+for the reader contract, MIME policy and validation limits.
 
 ## Conversation preview
 

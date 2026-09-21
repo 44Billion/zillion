@@ -121,6 +121,7 @@ export function chatTimeline (events, { locale, now = Date.now(), t = value => v
     const prepend = refs.filter(reference => reference.position === 'start' && isChatInnerKind(references[reference.id]?.kind))
     const message = {
       id: event.id,
+      created_at: event.created_at,
       kind: event.kind ?? CHAT_TEXT_KIND,
       real: true,
       outgoing: true,

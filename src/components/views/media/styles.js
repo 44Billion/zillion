@@ -19,6 +19,8 @@ export const viewerStyles = `
     .viewer-stage { position: relative; min-height: 0; min-width: 0; touch-action: pinch-zoom; overflow: hidden; }
     .viewer-slide, .viewer-asset { position: absolute; inset: 0; }
     .viewer-asset img, .viewer-asset video { display: block; width: 100%; height: 100%; object-fit: contain; user-select: none; }
+    .viewer-asset[hidden], .viewer-empty, .viewer-asset img[hidden], .viewer-asset video[hidden] { display: none; }
+    .viewer-state a { color: inherit; }
     .viewer-asset video { touch-action: pinch-zoom; }
     .viewer-stage > button { position: absolute; top: calc(50% - 22px); z-index: 2; box-shadow: 0 1px 8px var(--z-viewer-shadow); }
     .viewer-previous { left: max(12px, env(safe-area-inset-left)); }

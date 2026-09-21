@@ -26,7 +26,7 @@ f('z-chat-message', ({ h, props }) => {
   const view = useStore(() => ({
     openMedia (file, time = 0) {
       if (!page.isActive$()) return
-      const item = conversationMedia(props.messages$(), props.references$?.() ?? {}).find(item => item.messageId === props.message$().id && item.url === file.url)
+      const item = conversationMedia([props.message$()], props.references$?.() ?? {}).find(item => item.messageId === props.message$().id && item.url === file.url)
       if (!item) return
       props.activeId$(null)
       location.pushState({ fromMediaOrigin: true, mediaId: item.id, mediaTime: time }, '', `/chat/${encodeURIComponent(props.person$().id)}/media#${encodeURIComponent(item.id)}`)

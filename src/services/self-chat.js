@@ -1,3 +1,4 @@
+import { createConversationMediaReader } from './conversation-media.js'
 import { encodedFileName } from '#helpers/attachment-presentation.js'
 import { parseChatContent } from '#helpers/chat-content.js'
 import { getRandomId } from '#helpers/random-id.js'
@@ -352,6 +353,7 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     close,
     // Pending/local events and store lookups share one resolver.
     resolveReference: reference => references.resolve(reference),
-    readFiles: options => catalog.readFiles(options)
+    readFiles: options => catalog.readFiles(options),
+    createMediaReader: options => createConversationMediaReader({ ...options, pubkey, signer, eventStore, context })
   }
 }

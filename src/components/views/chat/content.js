@@ -72,13 +72,13 @@ f('z-chat-content-item', ({ h, props }) => {
 f('z-chat-media', ({ h, props }) => {
   const page = useRoutePage()
   const view = useStore({
-    source$: null, videoRef$: null,
+    source$: null, videoRef$: null, imageRef$: null, retainedDimensions$: null,
     prepared$: false,
     loadedFor: null,
     failed$: false,
     url$ () { return props.item$().url.value },
     type$ () { return props.item$().url.m },
-    dimensions$ () { return mediaDimensions(this.source$()) || (!this.prepared$() ? mediaDimensions(props.item$().url) : null) }
+    dimensions$ () { return mediaDimensions(this.source$()) || this.retainedDimensions$() || (!this.prepared$() ? mediaDimensions(props.item$().url) : null) }
   })
   useTask(({ track, cleanup }) => {
     const active = track(() => page.isActive$())
@@ -88,6 +88,7 @@ f('z-chat-media', ({ h, props }) => {
       view.source$(null)
       view.failed$(false)
       view.prepared$(false)
+      view.retainedDimensions$(null)
       view.loadedFor = url
     }
     if (!active) return
@@ -107,13 +108,19 @@ f('z-chat-media', ({ h, props }) => {
     }
     const stop = onOnline(resolve)
     resolve()
-    cleanup(() => { controller.abort(); stop() })
+    cleanup(() => { controller.abort(); stop(); view.retainedDimensions$(mediaDimensions(view.source$()) || view.retainedDimensions$()); view.source$(null) })
   })
   useTask(({ track, cleanup }) => {
     const [video, source, active] = track(() => [view.videoRef$(), view.source$()?.source, page.isActive$()])
     if (!video || !source || !active) return
     video.src = source
     cleanup(() => { video.pause(); video.removeAttribute('src'); video.load() })
+  }, { after: 'rendering' })
+  useTask(({ track, cleanup }) => {
+    const [image, source, active] = track(() => [view.imageRef$(), view.source$()?.source, page.isActive$()])
+    if (!image || !source || !active) return
+    image.src = source
+    cleanup(() => image.removeAttribute('src'))
   }, { after: 'rendering' })
   const open = mediaOpenHandlers(props.openMedia, () => ({ url: view.url$() }))
   const download = useMediaDownload(view.url$, () => props.item$().url.download === '1')
@@ -123,7 +130,7 @@ f('z-chat-media', ({ h, props }) => {
   const forceDownload = media.download === '1'
   const visual = image && !view.failed$()
     ? media.m?.startsWith('image/')
-      ? h`<img src=${image.source} width=${image.width} height=${image.height} alt=${media.alt ?? ''} loading="lazy" referrerpolicy="no-referrer" onerror=${() => view.failed$(true)}>`
+      ? h`<img ref=${view.imageRef$} width=${image.width} height=${image.height} alt=${media.alt ?? ''} loading="lazy" referrerpolicy="no-referrer" onerror=${() => view.failed$(true)}>`
       : h`<video ref=${view.videoRef$} width=${image.width} height=${image.height} ?controls=${!forceDownload} playsinline preload="metadata" onplay=${event => { if (forceDownload) event.target.pause() }} onerror=${() => view.failed$(true)}></video>`
     : null
   return h`<span class="chat-media" data-chat-prepared=${String(view.prepared$())}><style>${`

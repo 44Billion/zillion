@@ -39,3 +39,17 @@ test('video control strip and keyboard clicks remain native', () => {
   assert.equal(isVideoControlPointer({ ...event, clientY: 150 }), false)
   assert.equal(isVideoControlPointer({ ...event, detail: 0, clientY: 150 }), true)
 })
+
+test('URL snapshots exclude known file references, preserve occurrence order and do not keep messages', () => {
+  const event = { kind: 1063, content: '', tags: [['url', 'https://example.com/file.jpg'], ['m', 'image/jpeg'], ['download', '1']] }
+  const message = { id: 'message', real: true, created_at: 50, prepend: [{ id: 'file' }], references: [{ id: 'file' }], text: 'https://example.com/file.jpg https://example.com/extra.jpg https://example.com/extra.jpg', largeUnusedField: 'discard' }
+  const extras = conversationMedia([message], { file: event }, { urlsOnly: true })
+  assert.equal(extras.length, 1)
+  assert.equal(extras[0].url, 'https://example.com/extra.jpg')
+  assert.equal(extras[0].created_at, 50)
+  assert.equal(extras[0].orderId, 'message')
+  assert.equal(extras[0].largeUnusedField, undefined)
+  const all = conversationMedia([message], { file: event })
+  assert.equal(all[0].id, 'file:file')
+  assert.equal(all[0].download, '1')
+})

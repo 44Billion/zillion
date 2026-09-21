@@ -26,6 +26,10 @@ export function useInitAccount () {
   account.retryMessage = id => runtime.chat?.retry(id)
   account.deleteMessage = id => runtime.chat?.deleteMessage(id) ?? Promise.resolve(false)
   account.resolveReference = reference => runtime.chat?.resolveReference(reference) ?? null
+  account.createMediaReader = options => {
+    if (!runtime.chat) throw new Error('Account unavailable')
+    return runtime.chat.createMediaReader(options)
+  }
   account.readFiles = options => runtime.chat?.readFiles(options) ?? Promise.resolve([])
   account.recover = () => runtime.recover?.() ?? Promise.resolve(false)
   useTask(({ cleanup }) => {

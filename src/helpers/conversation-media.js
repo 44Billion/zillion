@@ -1,29 +1,36 @@
 import { parseChatContent } from './chat-content.js'
+import { isViewerMime } from './viewer-media.js'
 import { messageAttachment } from '#services/chat-attachments.js'
 
-// Only media expanded in this conversation belongs to its viewer. Quotes,
-// previews, download-only links and the owner's global file catalog are excluded.
-export function conversationMedia (messages, references = {}) {
+// Extract lightweight occurrences from loaded messages only. The viewer reads
+// persisted files separately; chat activation can also identify a resolved file.
+export function conversationMedia (messages, references = {}, { urlsOnly = false } = {}) {
   return messages.flatMap(message => {
     const media = []
     const seen = new Set()
-    const add = (file, slot) => {
-      if (!file || !/^(image|video)\//.test(file.mime ?? '') || file.download === '1' || seen.has(file.url)) return
+    const add = (file, slot, eventId) => {
+      if (!file || !isViewerMime(file.mime) || (!eventId && file.download === '1') || seen.has(file.url)) return
       try { if (new URL(file.url).protocol !== 'https:') return } catch { return }
       seen.add(file.url)
-      media.push({ ...file, id: `${message.id}:${slot}`, messageId: message.id, type: file.mime.startsWith('video/') ? 'video' : 'image', time: message.time })
+      if (urlsOnly && eventId) return
+      media.push({ ...file, id: eventId ? `file:${eventId}` : `${message.id}:${slot}`, messageId: message.id, type: file.mime.startsWith('video/') ? 'video' : 'image', time: message.time, created_at: message.created_at ?? 0, orderId: message.id, slot: typeof slot === 'number' ? slot : -1 })
     }
     if (!message.real) add(message.attachment, 'attachment')
+    // A URL repeated beside its known file reference is the same occurrence.
+    const fileUrls = new Set((message.references ?? message.prepend ?? []).flatMap(reference => {
+      const file = messageAttachment(references[reference.id])
+      return file ? [file.url] : []
+    }))
     for (const reference of message.prepend ?? []) {
       const event = references[reference.id]
-      if (event?.kind === 1063) add(messageAttachment(event), `q-${reference.id}`)
+      if (event?.kind === 1063) add(messageAttachment(event), `q-${reference.id}`, reference.id)
     }
     if (!message.real) return media
     parseChatContent(message.text ?? '').forEach((item, index) => {
       if (item.key === 'event') {
         const event = references[item.event.id]
-        if (event?.kind === 1063) add(messageAttachment(event), index)
-      } else if (item.key === 'url') {
+        if (event?.kind === 1063) add(messageAttachment(event), index, item.event.id)
+      } else if (item.key === 'url' && !fileUrls.has(item.url.value)) {
         add({ ...item.url.nfile, ...item.url, url: item.url.value, mime: item.url.m }, index)
       }
     })

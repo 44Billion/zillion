@@ -1007,10 +1007,38 @@ needed; empty folders mark the initial structure.
   Escape return to the retained origin; direct entry falls back to chat/profile.
 - The viewer is the sole full-width route, with a neutral dark surround in both
   themes. It uses available app space and never requests browser fullscreen.
-- `conversationMedia` derives the sequence from that chat's rendered messages
-  and resolved kind-1063 references. Never use the global gallery for navigation.
-  Quotes, link previews and download-intent media are excluded. Profile photos
-  are single items, using the avatar cache and deterministic avatar fallback.
+- `conversationMedia` extracts lightweight occurrences from loaded messages;
+  its `urlsOnly` mode snapshots direct URLs once per active viewer session.
+  Resolved 1063 references use `file:<inner-id>` routes and do not become extras.
+  Quotes and download-only direct URLs stay excluded. Repeated sends remain
+  distinct; duplicate URLs within a message are one occurrence. Profile photos
+  remain isolated and use the avatar cache and deterministic fallback.
+- `services/conversation-media.js` owns one reader per active conversation viewer.
+  Query/count personal copies in `dm:<peer>` using the SAME exact MIME mirrors
+  (`m` -> `o`), never the context-empty catalog. Orphan and download-only 1063s
+  qualify. Validate decrypted inners as before; invalid/unreadable items keep a
+  counted unavailable slot. No full reference sweep or account-cache population.
+- Reader API: `open(id)`, `move(step)`, `refresh()`, `close()`, returning
+  `{ current, previous, next, index, total }`. `index` is zero-based, -1 when
+  unavailable. `onInvalidate` requests refresh after live additions/deletions;
+  closing cancels subscriptions and discards caches, and ignores pending results.
+  Changes preserve current ID, then prefer next/previous if it is deleted.
+- Metadata pages contain three files, with at most 12 cached descriptors. Ties
+  use ID-only queries in batches of 200 with `!ids`; retain at most three active
+  timestamp groups, not visited history. This is proportional to the largest
+  same-second groups, not a strict byte budget. Count older timestamps and rank
+  within the group only at open/refresh; moves advance the known ordinal.
+  Order by ascending timestamp, descending wrapper/message ID, then URL slot.
+  Do not seek unloaded kind 9s to reconstruct exact message order.
+- `helpers/viewer-media.js` centralizes exact MIME values/aliases supported by
+  at least one modern browser; never vary the counted set by runtime codec tests.
+  Decoder failure keeps the item, Retry and a native download when possible.
+  Keep three fixed template keys (slots), never one key per visited file.
+  Abort preparations, clear detached image/video sources and release preview
+  leases when slots change or routes deactivate. Neighbor videos may acquire
+  cached posters only; only the current video receives a playable source.
+  Direct chat media also release sources while inactive, retaining dimensions
+  so scroll position and drafts survive. This does not paginate chat messages.
 - Horizontal/vertical swipes (50px threshold), arrow keys and visible buttons
   navigate without wrapping. Incoming animation follows the swipe axis and
   honors reduced motion. Preserve native video controls; an explicit expand
