@@ -170,3 +170,18 @@ test('catalog context derivation retries after unlocking the signer', async () =
   locked = false
   assert.deepEqual((await references.readFiles()).map(event => event.id), [file.id])
 })
+
+test('visible preparation awaits the same targeted lookup while cache reads remain synchronous', async () => {
+  const event = innerEvent({ kind: 1063, content: 'file' })
+  const read = Promise.withResolvers()
+  let queries = 0
+  const references = createChatReferences({ pubkey, signer, eventStore: { query: () => { queries++; return read.promise } } })
+  assert.equal(references.resolve(event), null)
+  const prepared = references.prepare(event)
+  assert.equal(references.prepare(event), prepared)
+  read.resolve({ results: [wrapper(event)] })
+  assert.equal((await prepared).id, event.id)
+  assert.equal(references.resolve(event).id, event.id)
+  assert.equal(queries, 1)
+  references.clear()
+})

@@ -1,4 +1,6 @@
 import { f, useLocation, useStore, useTask } from '#f'
+import { CHAT_TEXT_KIND, CHAT_FILE_KIND, isResolvableChatReference } from '#services/chat-references.js'
+import { chatMessageReferences } from '#helpers/chat-timeline.js'
 import { conversationMedia } from '#helpers/conversation-media.js'
 import { useAnchoredMenu } from '#hooks/use-anchored-menu.js'
 import { t } from '#i18n/messages.js'
@@ -34,6 +36,7 @@ f('z-chat-message', ({ h, props }) => {
     attachment$ () { return props.message$().attachment },
     source$ () { return props.message$().localSource },
     quoteAttachment$ () { return this.quoted$()?.attachment },
+    referencesPrepared$: true,
     copied$: false,
     busy$: false,
     keyboard$: false,
@@ -95,11 +98,31 @@ f('z-chat-message', ({ h, props }) => {
     const element = track(() => view.selected$() && view.keyboard$() && floating.position$() && floating.floatingRef$())
     if (element) element.querySelector('button')?.focus({ preventScroll: true })
   }, { after: 'rendering' })
+  // The bubble remains observable even when a q-only reference has no child
+  // yet. Pending visible references participate in the initial layout settle.
+  useTask(({ track, cleanup }) => {
+    const active = track(() => page.isActive$())
+    const [references, known] = track(() => [props.message$().references ?? [], props.references$?.() ?? {}])
+    // A quoted message outside the loaded pages can still have a file caption
+    // or thumbnail. Resolve only its direct file pointers, never its history.
+    const quotedFiles = references.flatMap(reference => known[reference.id]?.kind === CHAT_TEXT_KIND
+      ? chatMessageReferences(known[reference.id]).references.filter(child => child.kind == null || child.kind === CHAT_FILE_KIND)
+      : [])
+    let cancelled = false
+    cleanup(() => { cancelled = true; view.referencesPrepared$(true) })
+    if (!active) return
+    const missing = [...references, ...quotedFiles].filter(reference => !known[reference.id] && isResolvableChatReference(reference))
+    if (!missing.length) return
+    view.referencesPrepared$(false)
+    Promise.allSettled(missing.map(reference => props.resolve$?.(reference))).then(() => {
+      if (!cancelled) view.referencesPrepared$(true)
+    })
+  }, { when: 'visible', rootMargin: '0px' })
   const message = props.message$()
   const quoted = view.quoted$()
   const canShare = canShareText(view.text$())
   return h`
-    <li class=${`message-row ${message.outgoing ? 'outgoing' : 'incoming'}`} data-message-id=${message.id}>
+    <li class=${`message-row ${message.outgoing ? 'outgoing' : 'incoming'}`} data-message-id=${message.id} data-chat-prepared=${String(view.referencesPrepared$())}>
       <style>${`
         z-chat-message .message-row {
           display: flex; margin: 5px 0; list-style: none;

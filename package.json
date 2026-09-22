@@ -78,7 +78,7 @@
     "@mediabunny/mp3-encoder": "1.56.3",
     "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
-    "libp2r2p": "^0.10.18",
+    "libp2r2p": "^0.10.19",
     "mediabunny": "1.56.3",
     "mime": "^4.1.0",
     "pako": "2.1.0",

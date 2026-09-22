@@ -38,7 +38,11 @@ export async function decryptPersonalCopy (wrapper, { pubkey, signer, encodedCon
   const innerKind = Number(kindTags[0][1])
   if (!Number.isInteger(innerKind) || innerKind < 0) return null
   const plaintext = await signer.nip44v3.decrypt(pubkey, innerKind, '', wrapper.content)
-  const inner = JSON.parse(new TextDecoder().decode(plaintext))
+  // Signer/transport failures above remain retryable. Malformed plaintext is
+  // an invalid item, so it must not permanently block a history page.
+  let inner
+  try { inner = JSON.parse(new TextDecoder().decode(plaintext)) } catch { return null }
+  if (!inner || typeof inner !== 'object' || Array.isArray(inner)) return null
   const event = { ...inner, pubkey: inner.pubkey ?? pubkey }
   if (event.pubkey !== pubkey || String(event.kind) !== kindTags[0][1]) return null
   if (event.created_at !== wrapper.created_at || !isSerializableEvent(event)) return null
@@ -148,6 +152,13 @@ export function createChatReferences ({
           .finally(() => pending.delete(id)))
       }
       return null
+    },
+    // UI layout can await the targeted lookup without changing the synchronous
+    // cache-peek contract used by reference models.
+    prepare (reference) {
+      const value = this.resolve(reference)
+      const id = typeof reference === 'string' ? reference : reference?.id
+      return value ?? pending.get(id) ?? null
     },
     // Inner kind-1063 events of this context, newest first, for the composer
     // attachment catalog. Decryption is required before any mime filtering.

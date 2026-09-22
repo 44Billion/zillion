@@ -63,7 +63,9 @@ export function createConversationMediaReader ({ pubkey, signer, eventStore, con
         const stream = eventStore.subscribe(selection)
         streams.push(stream)
         ;(async () => {
-          for await (const { result } of stream) {
+          for await (const item of stream) {
+            if (item.type !== 'event') continue
+            const result = item.event
             check()
             if (deletion) {
               const event = await decrypt(result)

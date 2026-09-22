@@ -19,13 +19,14 @@ function fixture (history = [], options = {}) {
   let deliver
   let deliverDeletion
   let returned = false
+  let initial = []
   const writes = []
   const errors = []
   let messages = []
   let initialMessages = null
   const subscription = {
     [Symbol.asyncIterator] () { return this },
-    next: () => new Promise(resolve => { deliver = resolve }),
+    next: () => initial.length ? Promise.resolve({ value: initial.shift(), done: false }) : new Promise(resolve => { deliver = resolve }),
     return: async () => { returned = true; deliver?.({ done: true }); return { done: true } }
   }
   const deletionSubscription = {
@@ -36,9 +37,10 @@ function fixture (history = [], options = {}) {
   const publicEvents = options.publicEvents ?? []
   const eventStore = {
     subscribe (filter, options) {
-      assert.deepEqual(options, { initial: true })
       if (filter['#k'][0] === '9') {
-        assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'] })
+        assert.deepEqual(options, { initial: true })
+        initial = [...history.filter(event => event.tags.some(tag => tag[0] === 'k' && tag[1] === '9')).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, 50).map(event => ({ type: 'event', event })), { type: 'eose' }]
+        assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'], limit: 50 })
         return subscription
       }
       assert.deepEqual(filter, {
@@ -75,8 +77,8 @@ function fixture (history = [], options = {}) {
     get initialMessages () { return initialMessages },
     get messages () { return messages },
     get returned () { return returned },
-    deliver: event => deliver({ done: false, value: { result: event } }),
-    deliverDeletion: event => deliverDeletion({ done: false, value: { result: event } })
+    deliver: event => deliver({ done: false, value: { type: 'event', event } }),
+    deliverDeletion: event => deliverDeletion({ done: false, value: { type: 'event', event } })
   }
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
@@ -91,7 +93,7 @@ test('self history and live copies deduplicate, order by inner ID and exclude he
   f.deliver(wrapper(first)); await tick()
   assert.equal(f.messages.length, 1)
   f.deliver(wrapper(inner('Earlier note', 5))); await tick()
-  assert.deepEqual(f.messages.map(event => event.content), ['Earlier note', 'Private note'])
+  assert.deepEqual(f.messages.map(event => event.content), ['Private note'], 'older backfills do not automatically load history')
   f.chat.close(); await tick()
   assert.equal(f.returned, true)
   assert.deepEqual(f.errors, [])
@@ -370,13 +372,14 @@ test('history recovery shares work, retains failed outbox entries, and waits for
 test('recovering subscriptions ignores replaced streams and late decryptions after close', async () => {
   const f = fixture()
   const streams = []
-  f.eventStore.subscribe = () => {
+  f.eventStore.subscribe = (filter, options) => {
+    let initial = !!options?.initial
     let next = Promise.withResolvers()
     const stream = {
       returned: false,
       [Symbol.asyncIterator] () { return this },
-      next: () => next.promise,
-      emit: result => { const previous = next; next = Promise.withResolvers(); previous.resolve({ value: { result }, done: false }) },
+      next: () => { if (initial) { initial = false; return Promise.resolve({ value: { type: 'eose' }, done: false }) }; return next.promise },
+      emit: result => { const previous = next; next = Promise.withResolvers(); previous.resolve({ value: { type: 'event', event: result }, done: false }) },
       return: async () => { stream.returned = true; next.resolve({ done: true }); return { done: true } }
     }
     streams.push(stream)
@@ -387,7 +390,7 @@ test('recovering subscriptions ignores replaced streams and late decryptions aft
   assert.equal(streams[0].returned, true)
   assert.equal(streams[1].returned, true)
   assert.deepEqual(f.errors, [])
-  streams[2].emit(wrapper(inner('Current stream')))
+  streams[3].emit(wrapper(inner('Current stream')))
   await tick()
   assert.equal(f.messages[0].content, 'Current stream')
   f.chat.close()
@@ -690,4 +693,15 @@ test('history and live events seed the newest boundary regardless of arrival ord
   assert.equal(reopened.messages.at(-1).id, afterReload)
   assert.ok(reopened.messages.at(-1).created_at >= saved.at(-1).event.created_at)
   reopened.chat.close()
+})
+
+test('malformed decrypted JSON is skipped without failing initial history', async () => {
+  const valid = wrapper(inner('Valid note'))
+  const broken = ['not json', 'null'].map(content => finalizeEvent({ ...valid, content: bytesToBase64(new TextEncoder().encode(content)) }, secret))
+  const f = fixture([...broken, valid])
+  try {
+    assert.equal(await f.chat.start(), true)
+    assert.deepEqual(f.messages.map(event => event.content), ['Valid note'])
+    assert.deepEqual(f.errors, [])
+  } finally { f.chat.close() }
 })

@@ -137,6 +137,8 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
     await browser.until(() => evaluate('Boolean(window.viewerTest)'), 'viewer test driver')
     await evaluate('viewerTest.seed().then(() => { window.noReload = true })')
     await push('/chat/user', '.chat-screen')
+    await ready('.message-row[data-message-id=first]')
+    await evaluate(`document.querySelector('${active}.message-row[data-message-id=first]').scrollIntoView({block:'center'})`)
     await ready(frame + ' img')
     await evaluate(`(() => {
       const input = document.querySelector('${active}textarea'); input.value = 'Retained media draft'; input.dispatchEvent(new Event('input', { bubbles: true }));
@@ -177,6 +179,8 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
 
     // Video body opens the route; its bottom control strip keeps native behavior.
     const videoSelector = '.message-row[data-message-id=video] video'
+    await ready('.message-row[data-message-id=video]')
+    await evaluate(`document.querySelector('${active}.message-row[data-message-id=video]').scrollIntoView({block:'center'})`)
     await ready(videoSelector)
     await evaluate(`(() => {
       const video = document.querySelector('${active}${videoSelector}'); video.scrollIntoView(); window.inlineVideo = video;

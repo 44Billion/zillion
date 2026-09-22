@@ -503,7 +503,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.10.18`
+This checkout consumes the public APIs from the published `libp2r2p@^0.10.19`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -566,3 +566,23 @@ bytes determine the filename, MIME, dimensions, ThumbHash and nfile root. Histor
 reuse does not recompress. `prepareAttachment(file, { compress: false })` is the
 internal opt-out; there is no user-facing switch yet. Downloads remain native.
 See [compression validation and limitations](docs/media-compression-validation.md).
+
+### Incremental self-chat history
+
+Uses libp2r2p 0.10.19 and the launcher's typed event-store subscriptions. Opening
+uses a single `initial: true, limit: 50` kind-9 wrapper subscription; readiness
+waits for `eose` and processing. Four shared workers bound decryption. Older
+pages of 50 use inclusive `until` plus `!ids` at the boundary timestamp, so
+same-second groups are not skipped. Presentation still sorts inner timestamps
+and IDs; a later page can interleave within a tied group. Older live backfills
+only reopen history availability. Page failures preserve the cursor and offer
+Retry without blocking Send. Recovery revalidates retained wrappers in bounded
+queries and reconciles the recent snapshot; kind-5 live registration comes first.
+
+The active chat requests another page near the top, preserving its visible
+anchor through the existing viewport controller. Visited pages remain in memory:
+this is pagination, not virtualization. Reference/media preparation starts near
+visibility; the media viewer still pages 1063 independently and snapshots URL
+extras only from loaded messages. Draft, reply and outbox survive retained routes.
+
+See [history regression and real-vault measurements](tests/browser/HISTORY.md).

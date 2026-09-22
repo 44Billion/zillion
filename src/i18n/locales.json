@@ -1749,5 +1749,31 @@
     "zh-TW": "{{current}} / {{total}}",
     "ja": "{{total}}件中{{current}}件目",
     "ko": "{{total}}개 중 {{current}}개"
+  },
+  "Loading earlier messages": {
+    "en": "Loading earlier messages",
+    "fr": "Chargement des messages précédents",
+    "it": "Caricamento dei messaggi precedenti",
+    "de": "Frühere Nachrichten werden geladen",
+    "es": "Cargando mensajes anteriores",
+    "pt-BR": "Carregando mensagens anteriores",
+    "ru": "Загрузка предыдущих сообщений",
+    "zh-CN": "正在加载更早的消息",
+    "zh-TW": "正在載入較早的訊息",
+    "ja": "以前のメッセージを読み込み中",
+    "ko": "이전 메시지 불러오는 중"
+  },
+  "Could not load earlier messages": {
+    "en": "Could not load earlier messages",
+    "fr": "Impossible de charger les messages précédents",
+    "it": "Impossibile caricare i messaggi precedenti",
+    "de": "Frühere Nachrichten konnten nicht geladen werden",
+    "es": "No se pudieron cargar los mensajes anteriores",
+    "pt-BR": "Não foi possível carregar as mensagens anteriores",
+    "ru": "Не удалось загрузить предыдущие сообщения",
+    "zh-CN": "无法加载更早的消息",
+    "zh-TW": "無法載入較早的訊息",
+    "ja": "以前のメッセージを読み込めませんでした",
+    "ko": "이전 메시지를 불러오지 못했습니다"
   }
 }

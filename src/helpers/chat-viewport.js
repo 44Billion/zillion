@@ -1,6 +1,6 @@
 // Own both bottom following and the reading anchor; native anchoring must not
 // apply a second adjustment to the same layout change.
-export function createChatViewport (timeline, { active = true, historyLoaded = false, onInitialChange = () => {}, onScroll = () => {} } = {}) {
+export function createChatViewport (timeline, { active = true, historyLoaded = false, messageCount = () => 0, onInitialChange = () => {}, onScroll = () => {} } = {}) {
   const content = timeline.querySelector('.timeline-content')
   const previousPadding = content.style.paddingTop
   let following = true
@@ -63,8 +63,13 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
     settleFrame = requestAnimationFrame(() => {
       settleFrame = requestAnimationFrame(() => {
         if (!active || !initial || revision !== currentRevision) return
+        // Snapshot delivery can precede nested component rendering by several
+        // frames. An empty DOM is not settled while messages await mounting.
+        if (timeline.querySelectorAll('[data-message-id]').length < messageCount()) return
         const pending = [...timeline.querySelectorAll('[data-chat-prepared="false"]')]
-          .some(element => visible(element, timeline.clientHeight / 2))
+          // Visibility tasks are clipped by this scroll container. Waiting for
+          // offscreen placeholders would prevent initial settling indefinitely.
+          .some(element => visible(element))
         if (!pending) endInitial()
       })
     })
@@ -76,7 +81,9 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
       const delta = anchor.element.getBoundingClientRect().top - timeline.getBoundingClientRect().top - anchor.top
       if (Math.abs(delta) > 0.1) writeScroll(timeline.scrollTop + delta)
     }
-    remember()
+    // A layout adjustment must not select a different anchor while neighboring
+    // media is growing. Only user scrolling chooses a new reading position.
+    if (following || !anchor?.element.isConnected) remember()
     revision++
     checkInitial()
   }
@@ -88,10 +95,10 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
     if (!own || inputPending || dragging) {
       following = gap() < 24
       if (!following) endInitial()
+      remember()
       onScroll()
     }
     inputPending = false
-    remember()
     checkInitial()
   }
   const intent = away => {

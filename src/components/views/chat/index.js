@@ -60,7 +60,18 @@ f('z-chat', ({ h, props }) => {
     canSend$ () { return this.real$() && account.ready$() && !!account.pubkey$() },
     send (text, attachment) { return account.send(text, this.replyTo$(), attachment) }
   }))
-  useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null))
+  const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length)
+  useTask(({ track, cleanup }) => {
+    const [timeline, active, initial, loaded, older] = track(() => [view.timelineRef$(), page.isActive$(), layout.initial$(), account.historyState$(), account.older$()])
+    if (!timeline || !active || initial || loaded !== 'loaded' || !view.real$() || older.loading || older.error || !older.hasOlder) return
+    const check = () => {
+      if (timeline.scrollTop <= timeline.clientHeight) account.loadOlder()
+    }
+    // Defer until the viewport controller has reconciled the last insertion.
+    const frame = requestAnimationFrame(check)
+    timeline.addEventListener('scroll', check, { passive: true })
+    cleanup(() => { cancelAnimationFrame(frame); timeline.removeEventListener('scroll', check) })
+  }, { after: 'rendering' })
   useTask(({ track, cleanup }) => {
     if (!track(() => page.isActive$())) { view.activeId$(null); return }
     view.now$(Date.now())
@@ -127,6 +138,7 @@ f('z-chat', ({ h, props }) => {
       <z-chat-header props=${{ person$: props.person$, entry$: props.entry$, route$: props.route$ }} />
       <div class="chat-timeline" ref=${view.timelineRef$} data-history-loaded=${String(!view.real$() || account.historyLoaded$())}><div class="timeline-content">
         ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!account.error$() && account.ready$() && !!account.pubkey$() && view.messages$().length > 0}>${account.error$() ? t('Could not load conversation') : !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t('Notes to yourself') : ''}${account.error$() ? h` <button type="button" class="retry-btn" onclick=${() => account.retry$(value => value + 1)}>${t('Retry')}</button>` : null}</div>` : props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : h`<div class="chat-date">${t('Today')}</div>`}
+        ${view.real$() && account.historyLoaded$() ? h`<div class="chat-date" role="status" ?hidden=${!account.older$().loading && !account.older$().error}>${account.older$().error ? t('Could not load earlier messages') : t('Loading earlier messages')}${account.older$().error ? h` <button type="button" class="retry-btn" onclick=${account.loadOlder}>${t('Retry')}</button>` : null}</div>` : null}
         <ol class="message-list" aria-label=${t('Messages')}>
           <span hidden></span>
           ${view.days$().map(day => h({ key: day.key })`

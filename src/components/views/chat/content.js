@@ -38,13 +38,17 @@ f('z-chat-content', ({ h, props }) => {
 })
 
 f('z-chat-content-item', ({ h, props }) => {
+  const page = useRoutePage()
   const view = useStore({ attachment$ () { const url = props.item$().url; return { ...url?.nfile, ...url, url: url?.value, mime: url?.m || 'application/octet-stream' } } })
   const item = props.item$()
   const eventReference = item.key === 'event' ? item.event : null
   const resolved = eventReference ? props.references$?.()?.[eventReference.id] : null
-  useTask(() => {
-    if (!resolved && eventReference && isResolvableChatReference(eventReference)) props.resolve$?.(eventReference)
-  })
+  useTask(({ track }) => {
+    const active = track(() => page.isActive$())
+    const item = track(() => props.item$())
+    const reference = item.key === 'event' ? item.event : null
+    if (active && reference && !props.references$?.()?.[reference.id] && isResolvableChatReference(reference)) props.resolve$?.(reference)
+  }, { when: 'visible', rootMargin: '0px' })
   if (eventReference) {
     // Kind 9 renders as a quote and kind 1063 as its attachment card, in place
     // of the URI. Other kinds keep today's inline link/label behavior.
@@ -109,7 +113,7 @@ f('z-chat-media', ({ h, props }) => {
     const stop = onOnline(resolve)
     resolve()
     cleanup(() => { controller.abort(); stop(); view.retainedDimensions$(mediaDimensions(view.source$()) || view.retainedDimensions$()); view.source$(null) })
-  })
+  }, { when: 'visible', rootMargin: '50%' })
   useTask(({ track, cleanup }) => {
     const [video, source, active] = track(() => [view.videoRef$(), view.source$()?.source, page.isActive$()])
     if (!video || !source || !active) return

@@ -170,6 +170,9 @@ f('z-media-viewer-route', ({ h, props }) => {
     const [stage, , active] = track(() => [view.stageRef$(), view.item$()?.id, page.isActive$()])
     const direction = runtime.direction
     runtime.direction = null
+    // This animated layer survives hidden routes. Own its visibility explicitly:
+    // Chromium can retain the inherited hidden value on a reused animation layer.
+    if (stage) stage.style.visibility = active ? 'visible' : 'hidden'
     if (!stage || !direction || !active || matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const animation = stage.animate([
       { transform: `translate${direction.axis.toUpperCase()}(${direction.step * 12}%)`, opacity: 0.35 },

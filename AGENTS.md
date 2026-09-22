@@ -146,7 +146,7 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Probes cannot guarantee any particular relay/server is reachable, nor can
   background timers guarantee immediate detection. Handle each request failure
   and clean up listeners, timers, and stale async work when consumers unmount.
-- The installed libp2r2p 0.10.11 includes the shared connectivity monitor.
+- The installed libp2r2p 0.10.19 includes the shared connectivity monitor.
   Validate against the lockfile-managed dependency; do not require a sibling link
   for this capability.
 
@@ -656,7 +656,7 @@ needed; empty folders mark the initial structure.
   of the same author/kind exist, since there is no personal-copy address index. Missing/unreadable njump pages keep the
   original pointer label and nostr: destination. No new persistent app store exists.
 - The attachment catalog uses context `''`, alongside future private contact/follow events.
-  Reactions, paginated history and third-party messaging remain
+  Reactions and third-party messaging remain
   unimplemented. All user-facing status/error/reply labels cover 11 locales.
 
 
@@ -767,7 +767,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.18`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.19`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1066,3 +1066,21 @@ needed; empty folders mark the initial structure.
   `tests/browser/media-viewer.browser.js`, plus existing profile/attachment
   browser regressions. No separate media catalog is stored. Test drivers stay
   out of published builds.
+
+### Incremental self-chat history
+
+Uses libp2r2p 0.10.19 and the launcher's typed event-store subscriptions. Opening
+uses a single `initial: true, limit: 50` kind-9 wrapper subscription; readiness
+waits for `eose` and processing. Four shared workers bound decryption. Older
+pages of 50 use inclusive `until` plus `!ids` at the boundary timestamp, so
+same-second groups are not skipped. Presentation still sorts inner timestamps
+and IDs; a later page can interleave within a tied group. Older live backfills
+only reopen history availability. Page failures preserve the cursor and offer
+Retry without blocking Send. Recovery revalidates retained wrappers in bounded
+queries and reconciles the recent snapshot; kind-5 live registration comes first.
+
+The active chat requests another page near the top, preserving its visible
+anchor through the existing viewport controller. Visited pages remain in memory:
+this is pagination, not virtualization. Reference/media preparation starts near
+visibility; the media viewer still pages 1063 independently and snapshots URL
+extras only from loaded messages. Draft, reply and outbox survive retained routes.

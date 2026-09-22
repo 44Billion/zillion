@@ -199,7 +199,9 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate('document.querySelector(".chat-composer .attach").click()')
     await browser.until(() => evaluate('!document.querySelector(".attachment-gallery")'), 'gallery closed before sending')
     await evaluate('document.querySelector(".compose-action").click()')
-    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'reuse saved', 60000)
+    // Offscreen references now resolve on visibility. Bring the sent occurrence
+    // into view before asserting its metadata or opening its attachment.
+    await browser.until(() => evaluate('document.querySelectorAll(".route-page[data-active=true] .message-row").item(document.querySelectorAll(".route-page[data-active=true] .message-row").length - 1)?.scrollIntoView({block:"end"}); [...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'reuse saved', 60000)
     // Reopening on a newly sent occurrence must render the older occurrence
     // on the first backward navigation, without closing/reopening the viewer.
     await evaluate('[...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png")).at(-1).querySelector(".attachment-frame").click()')

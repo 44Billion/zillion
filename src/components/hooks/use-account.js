@@ -5,7 +5,7 @@ import { eventToProfile, selectPreferredProfile } from '#helpers/nostr/queries.j
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
-    retry$: 0,
+    retry$: 0, older$: { loading: false, error: null, hasOlder: false },
     // Inner events resolved from kind-9 references, keyed by event id.
     references$: {},
     person$ () {
@@ -31,6 +31,7 @@ export function useInitAccount () {
     return runtime.chat.createMediaReader(options)
   }
   account.readFiles = options => runtime.chat?.readFiles(options) ?? Promise.resolve([])
+  account.loadOlder = () => runtime.chat?.loadOlder() ?? Promise.resolve(false)
   account.recover = () => runtime.recover?.() ?? Promise.resolve(false)
   useTask(({ cleanup }) => {
     let closed = false
@@ -46,11 +47,10 @@ export function useInitAccount () {
       const update = event => {
         if (current() && event?.pubkey === pubkey) account.profile$(previous => selectPreferredProfile(previous, eventToProfile(event)))
       }
-      const filter = { kinds: [0], authors: [pubkey] }
+      const filter = { kinds: [0], authors: [pubkey], limit: 1 }
       profiles = eventStore.subscribe(filter, { initial: true })
       const stream = profiles
-      ;(async () => { for await (const { result } of stream) { if (!current()) return; update(result) } })().catch(() => {})
-      eventStore.query({ ...filter, limit: 1 }).then(({ results }) => { for (const event of results) update(event) }).catch(() => {})
+      ;(async () => { for await (const item of stream) { if (!current()) return; if (item.type === 'event') update(item.event) } })().catch(() => {})
     }
     runtime.recover = () => {
       if (closed) return Promise.resolve(false)
@@ -82,6 +82,7 @@ export function useInitAccount () {
                 account.messages$(list => list.filter(message => !removed.has(message.id)))
               },
               onInitialLoad: () => { if (!closed) account.historyLoaded$(true) },
+              onOlderState: account.older$,
               onHistoryState: state => { if (!closed) account.historyState$(state) }
             })
           }

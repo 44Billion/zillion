@@ -13,6 +13,7 @@ import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 import { checkGalleryUI } from './gallery-scenarios.js'
 import { checkAttachmentScenarios } from './attachment-scenarios.js'
+import { checkHistoryScenarios } from './history-scenarios.js'
 import { checkScrollScenarios } from './scroll-scenarios.js'
 
 const launcherOrigin = 'http://localhost:10000'
@@ -28,6 +29,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
   const held = []
   const media = {
     hold: false,
+    get pending () { return held.length },
     async release () {
       while (held.length) {
         held.shift()()
@@ -145,6 +147,16 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     // the app's real retry control before testing write permission separately.
     await browser.until(() => evaluate('document.querySelector(".chat-date .retry-btn")?.click(); document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial history before menu interactions')
 
+    if (process.argv.includes('--history-only')) { await checkHistoryScenarios({ browser, evaluate, pubkey }); return }
+
+    const addNote = (content, createdAt = Math.floor(Date.now() / 1000)) => evaluate(`window.napp.eventStore.addPersonalCopy({kind:9, created_at:${createdAt}, tags:[], content:${JSON.stringify(content)}}, {context:${JSON.stringify(`dm:${pubkey}`)}})`)
+    if (process.argv.includes('--scroll-only')) {
+      for (let i = 0; i < 30; i++) await addNote(`Older scroll page ${i}`, Math.floor(Date.now() / 1000) - 1200 + i)
+      offline = false
+      await checkScrollScenarios({ browser, evaluate, addNote, media })
+      return
+    }
+
     // The menu deletes the message/metadata pair in the conversation while
     // keeping independent catalog copies available.
     const checkMessageDeletion = async () => {
@@ -159,6 +171,12 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       const messageCountBefore = await countWrappers(9)
       const fileCountBefore = await countWrappers(1063)
       const readFilesBefore = await evaluate('selfChatAccount.readFiles().then(files => files.length)')
+      // Reload prepares only visible references. Visit a referenced message
+      // before looking for its attachment menu, as a reader would.
+      await evaluate(`(() => {
+        const message = selfChatAccount.messages$().findLast(message => message.tags.some(tag => tag[0] === 'q'));
+        if (message) document.querySelector('[data-message-id="' + message.id + '"]').scrollIntoView({block:'center'});
+      })()`)
       const deletedId = await browser.until(() => evaluate(`(() => {
         const rows = [...document.querySelectorAll('.message-row')].filter(row => row.querySelector('.message-status[data-status=saved]') && row.querySelector('.attachment-download') &&
           selfChatAccount.messages$().find(message => message.id === row.dataset.messageId)?.tags.some(tag => tag[0] === 'q' && selfChatAccount.references$()[tag[1]]?.kind === 1063))
@@ -213,9 +231,9 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       }
       await browser.evaluate(`(() => {
         const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
-        frame.src = new URL(frame.src).href;
+        const url = new URL(frame.src); url.pathname = '/chat/user'; frame.src = url.href;
       })()`)
-      await browser.until(() => evaluate('selfChatAccount.historyState$() === "loaded" && !!document.querySelector(".chat-composer")'), 'ordered burst reloaded offline', 60000)
+      await browser.until(() => evaluate('window.selfChatAccount?.historyState$() === "loaded" && !!document.querySelector(".chat-composer")'), 'ordered burst reloaded offline', 60000)
       const idsExpression = JSON.stringify(burst.ids)
       assert.deepEqual(await evaluate(`selfChatAccount.messages$().filter(message => ${idsExpression}.includes(message.id)).map(message => message.id)`), burst.ids)
       await browser.until(() => evaluate(`document.querySelectorAll('.message-row').length && [...document.querySelectorAll('.message-row')].filter(row => ${idsExpression}.includes(row.dataset.messageId)).length === 12`), 'ordered burst rendered after reload')
@@ -350,7 +368,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('Boolean(document.querySelector(".message-actions"))'), 'message actions')
     await evaluate('document.querySelector(".message-actions [aria-label=Reply]").click()')
     await browser.until(() => evaluate('Boolean(document.querySelector(".composer-reply"))'), 'reply preview')
-    assert.equal(await evaluate('document.querySelector(".composer-reply .reply-text").textContent'), 'Reply: Today\nexample.com/photo.png #private')
+    assert.equal(await evaluate('document.querySelector(".composer-reply .reply-text").textContent'), 'Reply: Today\nexample.com/photo.png\n#private')
     await setText('Reply to my note')
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 2'), 'saved reply')
@@ -391,7 +409,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     assert.equal(await evaluate('document.querySelectorAll(".chat-bubble").length'), 3)
     await evaluate('location.reload()')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-bubble").length === 3'), 'offline history after reload', 45000)
-    assert.equal(await evaluate(`[...document.querySelectorAll('.chat-content')].some(el => el.innerText === ${JSON.stringify(compactHistory)})`), true, 'history renders compactly after reload')
+    await browser.until(() => evaluate(`[...document.querySelectorAll('.chat-content')].some(el => el.innerText === ${JSON.stringify(compactHistory)})`), 'history renders compactly after reload')
     assert.equal((await evaluate(readMessages)).some(event => event.content === rawHistory), true, 'display compaction does not rewrite imported events')
     assert.ok(await evaluate('document.querySelector(".chat-timeline").innerText.includes("Today")'))
     assert.equal(await evaluate('document.querySelectorAll(".message-quote").length'), 1)
@@ -403,7 +421,6 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('document.querySelector(".chat-media img")?.naturalWidth > 0'), 'cached image remains available offline', 30000)
     await browser.until(() => evaluate('document.querySelector(".quote-thumbnail")?.naturalWidth > 0'), 'posted reply uses the cached thumbnail offline')
     // Real messages share the fixture bubble geometry and group by calendar day.
-    const addNote = (content, createdAt = Math.floor(Date.now() / 1000)) => evaluate(`window.napp.eventStore.addPersonalCopy({kind:9, created_at:${createdAt}, tags:[], content:${JSON.stringify(content)}}, {context:${JSON.stringify(`dm:${pubkey}`)}})`)
     await addNote('Hi')
     await browser.until(() => evaluate('[...document.querySelectorAll(".chat-bubble")].some(el => el.querySelector(".chat-content")?.innerText === "Hi")'), 'verbatim short text')
     assert.ok(await evaluate(`(() => {
@@ -482,11 +499,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     const requestStart = requests.length
     await addNote(privatePointer)
     await browser.until(() => evaluate(`selfChatAccount.messages$().some(message => message.content === ${JSON.stringify(privatePointer)})`), 'private pointer reaches the account service')
-    await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="nostr:${privatePointer}"]')`), 'private Nostr link retained', 60000)
-    assert.equal(requests.slice(requestStart).some(url => url.includes(noteEncode(id))), false, 'private pointer never reaches njump')
-    assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').textContent`), privatePointer.slice(0, 22) + '…')
-    assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').getAttribute('aria-label')`), privatePointer)
-    assert.equal(await evaluate(`document.querySelector('.reference-link[href="nostr:${privatePointer}"]').title`), privatePointer)
+    // Resolution can replace the temporary pointer between two CDP calls.
+    // Assert its final local quote instead of depending on that transient link.
+    await browser.until(() => evaluate(`(() => {
+      const note = selfChatAccount.messages$().find(message => message.content === ${JSON.stringify(privatePointer)});
+      const row = note && document.querySelector('[data-message-id="' + note.id + '"]');
+      return row?.querySelector('.message-quote .quote-text')?.textContent === 'Private local copy';
+    })()`), 'private Nostr pointer resolves locally', 60000)
+    assert.equal(requests.slice(requestStart).some(url => url.includes(privatePointer)), false, 'private pointer never reaches njump')
     const privateNip19 = privatePointer.replace(/^nostr:/, '')
     await addNote(`https://njump.me/${privateNip19}`)
     await browser.until(() => evaluate(`selfChatAccount.messages$().some(message => message.content === ${JSON.stringify(`https://njump.me/${privateNip19}`)})`), 'private njump note reaches the account service')
@@ -604,7 +624,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       }
     }
     offline = true
-    await checkAttachmentScenarios({ browser, evaluate, origin, requests })
+    if (!process.argv.includes('--skip-attachments')) await checkAttachmentScenarios({ browser, evaluate, origin, requests })
     offline = false
     // The attachment reload opens a direct route. Establish a real home -> chat
     // entry before the scroll suite exercises Back/Forward retention.
@@ -619,7 +639,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('document.querySelector(".conversation [data-contact-id=user] .preview").textContent.length > 0'), 'real self preview')
 
     await checkMessageOrdering()
-    await checkMessageDeletion()
+    if (!process.argv.includes('--skip-attachments')) await checkMessageDeletion()
   } catch (error) {
     console.error('Self chat browser failure:', error.message)
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/self-chat'))

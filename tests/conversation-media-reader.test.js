@@ -34,7 +34,7 @@ function fixture () {
         [Symbol.asyncIterator] () { return this },
         next () { return messages.length ? Promise.resolve({ value: messages.shift(), done: false }) : new Promise(resolve => { finish = resolve }) },
         async return () { this.closed = true; finish?.({ done: true }) },
-        send (event) { if (this.closed || !matches(event, filter)) return; const value = { result: event }; if (finish) { const resolve = finish; finish = null; resolve({ value, done: false }) } else messages.push(value) }
+        send (event) { if (this.closed || !matches(event, filter)) return; const value = { type: 'event', event }; if (finish) { const resolve = finish; finish = null; resolve({ value, done: false }) } else messages.push(value) }
       }
       subscriptions.push(stream)
       return stream

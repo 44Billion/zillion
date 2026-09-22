@@ -1,3 +1,4 @@
+import { createChatHistory, createChatWorkers } from './chat-history.js'
 import { createConversationMediaReader } from './conversation-media.js'
 import { encodedFileName } from '#helpers/attachment-presentation.js'
 import { parseChatContent } from '#helpers/chat-content.js'
@@ -24,7 +25,7 @@ function compareMessages (a, b) {
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.
-export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, verifyFile = verifyLocalFile }) {
+export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile }) {
   const context = `dm:${pubkey}`
   const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference })
   const catalog = createChatReferences({ pubkey, eventStore, signer, context: '' })
@@ -34,7 +35,9 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   const outbox = new Map()
   const controller = new AbortController()
   let closed = false
-  let subscription
+  const retained = new Map()
+  const workers = createChatWorkers()
+  let history
   let deletionSubscription
   let generation = 0
   let loading
@@ -47,23 +50,24 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   const emit = () => {
     if (!closed) onMessages([...messages.values()].sort(compareMessages))
   }
-  const confirm = (id, event) => {
+  const confirm = (id, event, notify = true) => {
     if (closed || deleted.has(id) || messages.get(id)?.status === 'saved') return
     rememberOrder({ ...event, id })
     messages.set(id, { ...event, id, status: 'saved' })
     outbox.get(id)?.attachment?.close?.()
     outbox.delete(id)
-    emit()
+    if (notify) emit()
   }
   async function accept (wrapper, filter, current) {
     if (!current()) return
     const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: filter['#c'][0] })
     if (!current()) return
     if (!event || event.kind !== CHAT_TEXT_KIND) return
-    confirm(event.id, event)
+    confirm(event.id, event, false)
     // A message may have arrived before the personal copy it references, and a
     // missed lookup is cached. Revalidate misses as new copies land.
     references.retryMisses()
+    return event.id
   }
   // A private deletion request is an ordinary personal copy whose inner is a
   // kind-5 event; the store applies it, and this subscription keeps the
@@ -111,9 +115,8 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     if (loading) return loading
     const version = ++generation
     const current = () => !closed && generation === version
-    const previous = subscription
-    subscription = null
-    previous?.return().catch(() => {})
+    history?.close()
+    history = null
     const previousDeletions = deletionSubscription
     deletionSubscription = null
     previousDeletions?.return().catch(() => {})
@@ -121,9 +124,8 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     const fail = error => {
       if (!current()) return
       generation++
-      const failed = subscription
-      subscription = null
-      failed?.return().catch(() => {})
+      history?.close()
+      deletionSubscription?.return().catch(() => {})
       onHistoryState('unavailable')
       onError(error)
     }
@@ -134,20 +136,6 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
         // The feed is driven by kind 9 messages only. File metadata (1063) is
         // fetched lazily through the references of those messages.
         const filter = { kinds: [PERSONAL_COPY], authors: [pubkey], '#k': ['9'], '#c': [encodedContext], '#v': ['0', '1'] }
-        // Settle read permissions first; initial subscription replay closes the
-        // snapshot/live race. Recovery retains the messages and their outbox.
-        const { results } = await eventStore.query(filter)
-        if (!current()) return false
-        const stream = eventStore.subscribe(filter, { initial: true })
-        subscription = stream
-        const live = (async () => {
-          for await (const { result } of stream) {
-            if (!current()) return
-            await accept(result, filter, current)
-          }
-          if (current()) throw new Error('Self chat subscription ended')
-        })()
-        live.catch(fail)
         // The envelope's inner carries `k` tags for the kinds it targets; those
         // values are mirrored into `o`, so the subscription only decrypts
         // deletions that can affect chat messages or their file metadata. The
@@ -166,22 +154,27 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
           ))
           deletionFilter = { ...deletionFilter, '#o': deletionKindMirrors }
         } catch {
-          // Keep the unfiltered subscription; the main history already loaded.
+          // Keep deletion tracking even without the optional kind mirrors.
         }
-        const deletions = eventStore.subscribe(deletionFilter, { initial: true })
+        const deletions = eventStore.subscribe(deletionFilter)
         deletionSubscription = deletions
         const deletionLive = (async () => {
-          for await (const { result } of deletions) {
+          for await (const item of deletions) {
+            if (item.type !== 'event') continue
             if (!current()) return
-            await acceptDeletion(result, deletionFilter, current)
+            await workers(() => acceptDeletion(item.event, deletionFilter, current))
           }
         })()
         deletionLive.catch(fail)
-        for (const wrapper of results) {
-          if (!current()) return false
-          await accept(wrapper, filter, current)
-        }
         if (!current()) return false
+        history = createChatHistory({
+          eventStore, filter, retained, workers,
+          accept: (wrapper, active) => accept(wrapper, filter, () => current() && active()),
+          onMissing: id => remove([id]), onBatch: emit,
+          onState: onOlderState, onError: fail
+        })
+        const loaded = await history.start()
+        if (!current() || !loaded) return false
         onInitialLoad()
         onHistoryState('loaded')
         return true
@@ -314,7 +307,7 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     outbox.clear()
     references.clear()
     catalog.clear()
-    subscription?.return().catch(() => {})
+    history?.close()
     deletionSubscription?.return().catch(() => {})
   }
 
@@ -347,12 +340,13 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   }
   return {
     start,
+    loadOlder: () => history?.loadOlder() ?? Promise.resolve(false),
     send,
     deleteMessage,
     retry: write,
     close,
     // Pending/local events and store lookups share one resolver.
-    resolveReference: reference => references.resolve(reference),
+    resolveReference: reference => references.prepare(reference),
     readFiles: options => catalog.readFiles(options),
     createMediaReader: options => createConversationMediaReader({ ...options, pubkey, signer, eventStore, context })
   }

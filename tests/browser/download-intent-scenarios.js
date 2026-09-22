@@ -56,7 +56,7 @@ export async function checkDownloadIntent ({ browser, evaluate, origin, download
   }
   // Downloading must never materialize the file as an object URL. File
   // selection/ThumbHash setup happened earlier and legitimately uses Blobs.
-  await evaluate('(() => { const original = URL.createObjectURL; window.restoreDownloadObjectURL = () => { URL.createObjectURL = original }; URL.createObjectURL = blob => { if (blob.type === \'application/javascript\' || (blob.type === \'image/png\' && blob.size < 1024 * 1024)) return original.call(URL, blob); throw new Error(\'Unexpected download Blob\') }; })()')
+  await evaluate('(() => { const original = URL.createObjectURL; window.restoreDownloadObjectURL = () => { URL.createObjectURL = original }; URL.createObjectURL = blob => { if ([\'application/javascript\', \'text/javascript\'].includes(blob.type) || (blob.type === \'image/png\' && blob.size < 1024 * 1024)) return original.call(URL, blob); throw new Error(\'Unexpected download Blob\') }; })()')
   try {
     const clean = tags => tags.filter(tag => !['download', 'q'].includes(tag[0]))
     const imageRow = await insert('Download-only image', [...clean(photo.tags), ['download']])

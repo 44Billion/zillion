@@ -5,6 +5,11 @@ import { rememberAttachmentPreview } from '#services/attachment-previews.js'
 import { f, useStore, useClosestStore, useMemo } from '#f'
 import { useAccount } from '#hooks/use-account.js'
 
+// Measurements use the real event-store bridge and vault. The serial baseline
+// measures one full query + sequential decryption (without its old duplicate replay).
+import { createSelfChat } from '#services/self-chat.js'
+import { decryptPersonalCopy } from '#services/chat-references.js'
+
 // Test-only access to app state; launcher identity, storage and permissions stay real.
 f('z-self-chat-fixture', ({ h }) => {
   window.selfChatAccount = useAccount()
@@ -65,3 +70,40 @@ f('z-gallery-ui-fixture', ({ h }) => {
     canSend$: view.canSend$, recover: view.recover, readFiles
   }} /></div>`
 })
+window.measureChatHistory = async () => {
+  const pubkey = await window.nostr.peekPublicKey()
+  const context = await window.nostr.obfuscate(`dm:${pubkey}`, '1006', '')
+  const metrics = () => ({ queries: 0, queryMs: 0, deliveryMs: 0, decryptMs: 0, decryptions: 0, maxConcurrent: 0, updates: 0, totalMs: 0 })
+  async function measure (serial) {
+    const measured = metrics()
+    let concurrent = 0
+    const signer = {
+      ...window.nostr, nip44v3: {
+        ...window.nostr.nip44v3, async decrypt (...args) {
+          const start = performance.now(); measured.decryptions++; concurrent++; measured.maxConcurrent = Math.max(measured.maxConcurrent, concurrent)
+          try { return await window.nostr.nip44v3.decrypt(...args) } finally { measured.decryptMs += performance.now() - start; concurrent-- }
+        }
+      }
+    }
+    const store = {
+      ...window.napp.eventStore,
+      async query (...args) { const start = performance.now(); measured.queries++; try { return await window.napp.eventStore.query(...args) } finally { measured.queryMs += performance.now() - start } },
+      subscribe (...args) {
+        const stream = window.napp.eventStore.subscribe(...args)
+        const start = performance.now()
+        return { [Symbol.asyncIterator] () { return this }, async next () { const item = await stream.next(); if (item.value?.type === 'eose') measured.deliveryMs = performance.now() - start; return item }, return: () => stream.return() }
+      }
+    }
+    const start = performance.now()
+    if (serial) {
+      const { results } = await store.query({ kinds: [1006], '#k': ['9'], '#c': [context], '#v': ['0', '1'], authors: [pubkey] })
+      for (const wrapper of results) await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: context })
+    } else {
+      const chat = createSelfChat({ pubkey, eventStore: store, signer, onMessages: () => measured.updates++, onError: error => { throw error } })
+      try { await chat.start() } finally { chat.close() }
+    }
+    measured.totalMs = performance.now() - start
+    return measured
+  }
+  return { paged: await measure(false), serial: await measure(true) }
+}
