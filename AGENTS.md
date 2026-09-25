@@ -560,6 +560,13 @@ needed; empty folders mark the initial structure.
   event content.
 - Root-managed real chats share the encrypted durable outbox in `chat-outbox.js`
   and coordinator in `private-chats.js`. Status is UI state, never Nostr metadata.
+  The adapter uses `libp2r2p/idb-queue` with prefix `zillion:outbox:<owner>`,
+  unique `byId` index and `evictionPolicy: 'reject'`, without a logical byte cap.
+  Keep encryption in the adapter and storage transactions in the library.
+  Use atomic `putBy(..., { existingOnly: true })` for checkpoints so cancellation
+  cannot be undone by a late write. List non-destructively in ID-index order.
+  Await queue closure; the coordinator does not use queue reservations. The old
+  custom database is not migrated or read and may be removed manually.
   Accept only after durable preparation; preserve composer state on rejection.
   Retried stages reuse identity and track local and remote commits separately.
   Direct standalone `createSelfChat` without a coordinator remains a local service

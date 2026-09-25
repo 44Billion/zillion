@@ -36,7 +36,7 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
     storage = await openOutbox({ owner, signer })
     for (const entry of await storage.list()) entries.set(entry.id, entry)
     emit()
-  })().catch(error => { initialized = null; storage?.close(); storage = null; throw error }))
+  })().catch(async error => { await storage?.close(); storage = null; initialized = null; throw error }))
   async function configure () {
     if (closed || !available) return
     await ready()
@@ -216,7 +216,7 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
       await messenger?.pause('closed')
       if (sending || draining) await new Promise(resolve => idleWaiters.add(resolve))
       await messenger?.close()
-      storage?.close()
+      await storage?.close()
     }
   }
 }

@@ -105,7 +105,7 @@ test('outbox stores ciphertext and recovers records under the same owner', async
   }
   const first = await createChatOutbox({ owner, signer, indexedDB })
   const entry = { id: getEventHash(event), peer, event }
-  await first.put(entry); first.close()
+  await first.put(entry); await first.close()
   const second = await createChatOutbox({ owner, signer, indexedDB })
   assert.deepEqual(await second.list(), [entry])
   assert.equal(await second.has(entry.id), true)
@@ -113,7 +113,7 @@ test('outbox stores ciphertext and recovers records under the same owner', async
   await second.put(entry, { existing: true })
   assert.equal(await second.has(entry.id), false, 'late checkpoints never resurrect a cancelled record')
   assert.deepEqual(await second.list(), [])
-  second.close()
+  await second.close()
 })
 
 test('self chat uses the durable outbox without publishing to its own channel', async () => {

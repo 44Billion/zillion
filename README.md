@@ -36,6 +36,13 @@ Animated local images play inside confirmed message bubbles as well as the
 media viewer. Compact previews remain still, and leaving the chat releases its
 image sources. Remote upload services remain outside this delivery; peer attachments use the private channel.
 
+The encrypted outbox also uses `libp2r2p/idb-queue`, with a unique event-ID index
+and `evictionPolicy: 'reject'` so pending messages are never evicted for capacity.
+Atomic conditional checkpoints prevent cancelled messages from reappearing.
+Encryption stays in the app; queue storage and transactions belong to the library.
+There is no migration from the old custom outbox database; see
+[delivery and storage](docs/private-chats.md#delivery-and-storage).
+
 ## Home preview
 
 The home follows one mobile layout, capped at 718px and centered on wider screens.

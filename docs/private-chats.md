@@ -31,13 +31,22 @@ then acknowledges the persistent reservation. Interrupted saves are redelivered.
 Hearsay supplies reference context only, never a new main timeline message or an
 authoritative deletion. Matching direct/signed copies take precedence.
 
-The outbox is IndexedDB `zillion:outbox:<owner>`, version 1, store `entries` with
-keyPath `id`. Rows contain only an opaque event ID and ciphertext. The plaintext
+The outbox uses `libp2r2p/idb-queue`, database
+`zillion:outbox:<owner>:idb-queue`, with library-owned `items` and `state` stores
+and a unique `byId` index. Item payloads contain only an opaque event ID and
+ciphertext; ordering and byte accounting are queue metadata. The plaintext
 entry is encrypted via the owner's NIP-44v3 signer using kind 9 and scope
 `zillion:outbox`. It records peer, stable inner events, local-save flags, publication
 cursor and IRFS chunk progress. No plaintext message or attachment bytes are
-stored in this app database. It is durable user data, not an evictable cache.
-No data migration or compatibility aliases are introduced.
+stored in this app database. `evictionPolicy: 'reject'` prevents capacity
+eviction, with no configured logical byte limit; browser quota failures still
+propagate. Atomic `putBy` upserts preserve IDs, and `existingOnly` checkpoints
+cannot recreate a cancelled record. Reads use the ID index without consuming
+entries. Encryption remains in the app adapter; the library owns storage and
+transactions. This replaces the custom store because the queue now supports
+the required atomic updates by unique key. The coordinator does not use leases.
+No migration or fallback reads are provided for the old `zillion:outbox:<owner>`
+database; it may be deleted manually. Closing the coordinator awaits the queue.
 
 Attachment preparation persists and verifies chunks and metadata in launcher
 storage before outbox acceptance. The outgoing personal message commits before
