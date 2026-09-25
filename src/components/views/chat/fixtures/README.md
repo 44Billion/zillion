@@ -7,6 +7,14 @@ reactions, presence and the example.com card are sample content; no profile,
 message, payment or preview data is fetched. Explicitly opening a sample link
 uses an ordinary external link.
 
+Daniel's promised photo uses `weekend-coffee.webp`: coffee and a brownie at an
+outdoor table, matching the conversation's weekend coffee plans. Photo by
+[Yulia Khlebnikova on Unsplash](https://unsplash.com/photos/b48p11jrWMw), used under
+the [Unsplash License](https://unsplash.com/license). The bundled WebP is 540 × 720
+pixels and 69,464 bytes, providing twice the resolution of its 270 × 360 CSS-pixel
+chat bubble without a runtime download. It preserves the original composition.
+Source rendition: `https://images.unsplash.com/photo-1578239864516-b9b3482dd60b?fit=max&w=960&h=720&fm=webp&q=50`.
+
 English text is translated through `src/i18n/locales.json` in the render path.
 This is preview localization, not automatic translation of real user messages.
 When implementing messaging, replace this fixture provider with real data and

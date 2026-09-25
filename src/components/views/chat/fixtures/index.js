@@ -1,6 +1,6 @@
-import portraits from '#views/home/fixtures/portraits.js'
 import home from '#views/home/fixtures/home.json'
 import fixture from './messages.json'
+import weekendCoffee from './weekend-coffee.webp'
 
 // Each fixture DM shares the sample exchange but ends with its home preview.
 export function getMessages (person) {
@@ -14,6 +14,12 @@ export function getMessages (person) {
       : {}),
     time: new Date(latest - (messages.length - 1 - index) * 180000).toISOString().slice(11, 16)
   }))
-  if (/photo/i.test(preview.message)) messages.push({ id: 'promised-photo', outgoing: false, text: '', demo: true, attachment: { url: portraits[person.avatar], mime: 'image/jpeg', filename: 'photo.jpg', width: 300, height: 300 }, time: new Date(latest + 60000).toISOString().slice(11, 16) })
+  if (/photo/i.test(preview.message)) {
+    messages.push({
+      id: 'promised-photo', outgoing: false, text: '', demo: true,
+      attachment: { url: weekendCoffee, mime: 'image/webp', filename: 'weekend-coffee.webp', width: 540, height: 720 },
+      time: new Date(latest + 60000).toISOString().slice(11, 16)
+    })
+  }
   return messages
 }
