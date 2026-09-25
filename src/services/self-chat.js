@@ -25,8 +25,10 @@ function compareMessages (a, b) {
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.
-export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile }) {
-  const context = `dm:${pubkey}`
+export function createSelfChat (options) { return createChat(options) }
+
+export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile }) {
+  const context = `dm:${peer}`
   const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference })
   const catalog = createChatReferences({ pubkey, eventStore, signer, context: '' })
   const catalogWrites = new Map()
@@ -53,17 +55,18 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   const confirm = (id, event, notify = true) => {
     if (closed || deleted.has(id) || messages.get(id)?.status === 'saved') return
     rememberOrder({ ...event, id })
-    messages.set(id, { ...event, id, status: 'saved' })
+    messages.set(id, { ...event, id, status: transport && outbox.has(id) ? outbox.get(id).status : 'saved' })
     outbox.get(id)?.attachment?.close?.()
-    outbox.delete(id)
+    if (!transport) outbox.delete(id)
     if (notify) emit()
   }
   async function accept (wrapper, filter, current) {
     if (!current()) return
-    const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: filter['#c'][0] })
+    const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: filter['#c'][0], authors: [pubkey, peer] })
     if (!current()) return
     if (!event || event.kind !== CHAT_TEXT_KIND) return
     confirm(event.id, event, false)
+    references.refresh(event)
     // A message may have arrived before the personal copy it references, and a
     // missed lookup is cached. Revalidate misses as new copies land.
     references.retryMisses()
@@ -74,12 +77,12 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
   // in-memory list in step with removals that arrived from other devices.
   async function acceptDeletion (wrapper, filter, current) {
     if (!current()) return
-    const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: filter['#c'][0] })
+    const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: filter['#c'][0], authors: [pubkey, peer] })
     if (!current() || !event || event.kind !== DELETION_KIND) return
     const ids = event.tags
       .filter(tag => tag?.[0] === 'e' && typeof tag[1] === 'string')
       .map(tag => tag[1])
-    if (ids.length > 0) remove(ids)
+    if (ids.length > 0) remove(ids.filter(id => event.pubkey === pubkey || (messages.get(id) || references.peek(id))?.pubkey === event.pubkey))
   }
   function remove (ids) {
     for (const id of ids) {
@@ -175,12 +178,52 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
         })
         const loaded = await history.start()
         if (!current() || !loaded) return false
+        references.retryMisses()
         onInitialLoad()
         onHistoryState('loaded')
         return true
       } catch (error) { fail(error); return false }
     })().finally(() => { loading = null })
     return loading
+  }
+  async function prepareEntry (entry) {
+    if (entry.attachment) {
+      const { prepared, metadata } = entry.attachment
+      if (prepared) {
+        // Each batch settles before the next is constructed. No unbounded
+        // queue of encoded chunks, and retries retain the original template.
+        let batch = []
+        const saveChunk = async chunk => {
+          controller.signal.throwIfAborted()
+          const d = chunk.tags.find(tag => tag[0] === 'd')[1]
+          const existing = await eventStore.query({ kinds: [34601], '#d': [d], limit: 1 })
+          if (existing.results?.some(event => {
+            try { return decodeIrfsChunk(event).root === metadata.root } catch { return false }
+          })) return
+          const saved = await eventStore.addPersonalCopy(chunk, { context })
+          if (!saved?.result?.ok) throw new Error(`Chunk storage failed: ${saved?.result?.code ?? 'unknown'}`)
+        }
+        const settle = async () => {
+          const results = await Promise.all(batch)
+          batch = []
+          const failed = results.find(result => result.status === 'rejected')
+          if (failed) throw failed.reason
+        }
+        for await (const chunk of prepared.chunks({ created_at: entry.event.created_at, signal: controller.signal })) {
+          batch.push(saveChunk(chunk).then(() => ({ status: 'fulfilled' }), reason => ({ status: 'rejected', reason })))
+          if (batch.length === 3) await settle()
+        }
+        await settle()
+      }
+      await verifyFile(metadata, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]) })
+      controller.signal.throwIfAborted()
+    }
+    // The file metadata is committed before the kind 9 that references it.
+    if (entry.fileEvent) {
+      const savedFile = await eventStore.addPersonalCopy(entry.fileEvent, { context })
+      if (!savedFile?.result?.ok) throw new Error(`File storage failed: ${savedFile?.result?.code ?? 'unknown'}`)
+      await saveCatalogFile(entry.fileEvent, entry.attachment.metadata)
+    }
   }
   function write (id) {
     const entry = outbox.get(id)
@@ -190,43 +233,7 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     emit()
     entry.work = Promise.resolve().then(async () => {
       if (closed) return
-      if (entry.attachment) {
-        const { prepared, metadata } = entry.attachment
-        if (prepared) {
-          // Each batch settles before the next is constructed. No unbounded
-          // queue of encoded chunks, and retries retain the original template.
-          let batch = []
-          const saveChunk = async chunk => {
-            controller.signal.throwIfAborted()
-            const d = chunk.tags.find(tag => tag[0] === 'd')[1]
-            const existing = await eventStore.query({ kinds: [34601], '#d': [d], limit: 1 })
-            if (existing.results?.some(event => {
-              try { return decodeIrfsChunk(event).root === metadata.root } catch { return false }
-            })) return
-            const saved = await eventStore.addPersonalCopy(chunk, { context })
-            if (!saved?.result?.ok) throw new Error(`Chunk storage failed: ${saved?.result?.code ?? 'unknown'}`)
-          }
-          const settle = async () => {
-            const results = await Promise.all(batch)
-            batch = []
-            const failed = results.find(result => result.status === 'rejected')
-            if (failed) throw failed.reason
-          }
-          for await (const chunk of prepared.chunks({ created_at: entry.event.created_at, signal: controller.signal })) {
-            batch.push(saveChunk(chunk).then(() => ({ status: 'fulfilled' }), reason => ({ status: 'rejected', reason })))
-            if (batch.length === 3) await settle()
-          }
-          await settle()
-        }
-        await verifyFile(metadata, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]) })
-        controller.signal.throwIfAborted()
-      }
-      // The file metadata is committed before the kind 9 that references it.
-      if (entry.fileEvent) {
-        const savedFile = await eventStore.addPersonalCopy(entry.fileEvent, { context })
-        if (!savedFile?.result?.ok) throw new Error(`File storage failed: ${savedFile?.result?.code ?? 'unknown'}`)
-        await saveCatalogFile(entry.fileEvent, entry.attachment.metadata)
-      }
+      await prepareEntry(entry)
       controller.signal.throwIfAborted()
       const saved = await eventStore.addPersonalCopy(entry.event, { context })
       if (!saved?.result?.ok) throw new Error(`Message storage failed: ${saved?.result?.code ?? 'unknown'}`)
@@ -257,7 +264,7 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     const saltTag = ['salt', getRandomId()]
     let fileEvent = null
     const buildEvent = createdAt => {
-      const tags = reply ? [['q', reply.id, '', pubkey]] : []
+      const tags = reply ? [['q', reply.id, '', reply.pubkey]] : []
       // NIP-21 URIs come first: the replied kind 9, then the attached 1063.
       // Rebuild the file ID and both pointers if the timestamp must advance.
       const uris = reply ? [chatReferenceUri(reply)] : []
@@ -289,6 +296,26 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
       id = getEventHash({ ...event, pubkey })
     }
     rememberOrder({ ...event, id })
+    if (transport) {
+      const entry = { event, fileEvent, attachment }
+      return (async () => {
+        await prepareEntry(entry)
+        const context = []
+        if (reply) {
+          // One quoted level only, with the metadata of its direct attachments.
+          for (const part of parseChatContent(reply.content)) {
+            if (part.key !== 'event' || part.event.kind !== CHAT_FILE_KIND) continue
+            const file = await Promise.resolve(references.prepare(part.event)).catch(() => null)
+            if (file) context.push(file)
+          }
+          context.push(reply)
+        }
+        if (fileEvent) context.push(fileEvent)
+        await transport.enqueue({ peer, event: { ...event, pubkey }, context, requiredFiles: fileEvent ? [getEventHash({ ...fileEvent, pubkey })] : [] })
+        attachment?.close?.()
+        return id
+      })()
+    }
     messages.set(id, { ...event, pubkey, id, status: 'pending', localSource: attachment?.source, localAttachment: attachment?.metadata })
     if (fileEvent) {
       const fileId = getEventHash({ ...fileEvent, pubkey })
@@ -313,15 +340,15 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
 
   // Delete the message and its direct attachment only in the conversation.
   // The independent catalog copy and quoted messages keep their own lifetime.
-  function deleteMessage (id) {
+  function deleteMessage (id, { everyone = false } = {}) {
     if (closed) throw new Error('Self chat is closed')
     const message = messages.get(id)
-    if (!message || message.status !== 'saved') return Promise.resolve(false)
+    if (!message || (everyone && message.pubkey !== pubkey) || (!transport && message.status !== 'saved')) return Promise.resolve(false)
     messages.delete(id)
     emit()
-    const quoted = new Set(message.tags.filter(tag => tag[0] === 'q' && tag[3] === pubkey).map(tag => tag[1]))
+    const quoted = new Set(message.tags.filter(tag => tag[0] === 'q' && tag[3] === message.pubkey).map(tag => tag[1]))
     const files = [...new Set(parseChatContent(message.content)
-      .filter(part => part.key === 'event' && part.event.kind === CHAT_FILE_KIND && part.event.author === pubkey && quoted.has(part.event.id))
+      .filter(part => part.key === 'event' && part.event.kind === CHAT_FILE_KIND && part.event.author === message.pubkey && quoted.has(part.event.id))
       .map(part => part.event.id))]
     const request = {
       kind: DELETION_KIND,
@@ -329,7 +356,11 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
       tags: [['e', id], ...files.map(fileId => ['e', fileId]), ['k', String(message.kind ?? SELF_CHAT_KIND)], ...(files.length ? [['k', String(CHAT_FILE_KIND)]] : [])],
       content: ''
     }
-    return Promise.resolve().then(() => eventStore.addPersonalCopy(request, { context }))
+    return Promise.resolve().then(async () => {
+      await transport?.cancel(id)
+      if (everyone && transport) await transport.enqueue({ peer, event: { ...request, pubkey }, deletion: true })
+      return eventStore.addPersonalCopy(request, { context })
+    })
       .then(result => result?.result?.ok === true)
       .catch(error => { onError(error); return false })
       .then(saved => {
@@ -343,7 +374,24 @@ export function createSelfChat ({ pubkey, eventStore, signer, onMessages, onErro
     loadOlder: () => history?.loadOlder() ?? Promise.resolve(false),
     send,
     deleteMessage,
-    retry: write,
+    retry: transport ? id => transport.retry(id) : write,
+    applyOutbox (entries) {
+      const pending = new Set()
+      for (const entry of entries) {
+        if (entry.peer !== peer || deleted.has(entry.id)) continue
+        pending.add(entry.id)
+        outbox.set(entry.id, entry)
+        rememberOrder(entry.event)
+        messages.set(entry.id, { ...entry.event, status: entry.status })
+      }
+      for (const id of outbox.keys()) {
+        if (!pending.has(id)) {
+          outbox.delete(id)
+          if (messages.has(id) && !deleted.has(id)) messages.set(id, { ...messages.get(id), status: 'saved' })
+        }
+      }
+      emit()
+    },
     close,
     // Pending/local events and store lookups share one resolver.
     resolveReference: reference => references.prepare(reference),

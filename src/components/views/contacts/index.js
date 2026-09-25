@@ -1,3 +1,4 @@
+import { demoEnabled } from '#services/demo.js'
 import { f, useLocation, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import { t } from '#i18n/messages.js'
@@ -9,7 +10,8 @@ import '#shared/icons/icon-chevron-down.js'
 import '#shared/icons/icon-user-plus.js'
 import '#shared/icons/icon-search.js'
 import '#shared/icons/icon-x.js'
-import people from './fixtures/people.json'
+import { npubDecode } from 'libp2r2p/nip19'
+import { queryProfile } from 'libp2r2p/nip05'
 import './row.js'
 
 f('z-contacts', ({ h, props }) => {
@@ -17,23 +19,24 @@ f('z-contacts', ({ h, props }) => {
   const page = useRoutePage()
   const account = useAccount()
   const view = useStore(() => ({
-    query$: '',
+    query$: '', foundId$: null,
     inputRef$: null,
     add$ () { return props.route$().url.pathname === '/contacts/add' },
     search$ () { return contactQuery(this.query$()) },
     contacts$ () {
       const own = { ...account.person$(), nip05: account.person$().profile?.nip05 }
-      return [own, ...people.filter(person => person.saved)].filter(person => matchesContact(person, this.search$()))
+      return [own, ...account.people$().filter(person => person.saved)].filter(person => matchesContact(person, this.search$()))
         .toSorted((a, b) => Number(!!b.self) - Number(!!a.self) || a.name.localeCompare(b.name, i18n.getLocale()))
     },
     found$ () {
       if (!this.search$().text || this.contacts$().some(person => matchesProfile(person, this.search$()))) return []
-      return people.filter(person => !person.saved && matchesProfile(person, this.search$()))
+      const found = this.foundId$() ? account.personFor(this.foundId$()) : null
+      return [...account.people$().filter(person => !person.saved && matchesProfile(person, this.search$())), ...(found && !found.saved ? [found] : [])]
     },
     rows$ () {
       let previous = ''
       return this.contacts$().map(person => {
-        const letter = person.self || this.search$().text ? '' : person.name[0].toLocaleUpperCase(i18n.getLocale())
+        const letter = person.self || this.search$().text ? '' : (person.name[0] || '#').toLocaleUpperCase(i18n.getLocale())
         const heading = letter !== previous ? letter : ''
         previous = letter
         return { person, heading }
@@ -49,6 +52,21 @@ f('z-contacts', ({ h, props }) => {
     const input = track(() => page.isActive$() && view.add$() && view.inputRef$())
     if (input) input.focus({ preventScroll: true })
   }, { after: 'rendering' })
+  useTask(({ track, cleanup }) => {
+    const query = track(() => view.search$())
+    if (demoEnabled) return
+    view.foundId$(null)
+    const controller = new AbortController()
+    const timer = setTimeout(async () => {
+      try {
+        const pubkey = query.npub ? npubDecode(query.npub) : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query.text) ? (await queryProfile(query.text, { signal: controller.signal }))?.pubkey : null
+        if (!pubkey || controller.signal.aborted) return
+        view.foundId$(pubkey)
+        await account.loadPerson(pubkey)
+      } catch {}
+    }, 300)
+    cleanup(() => { clearTimeout(timer); controller.abort() })
+  })
   const searching = !!view.search$().text
   const showList = searching || !view.add$()
   return h`

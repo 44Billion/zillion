@@ -201,7 +201,7 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await evaluate('document.querySelector(".compose-action").click()')
     // Offscreen references now resolve on visibility. Bring the sent occurrence
     // into view before asserting its metadata or opening its attachment.
-    await browser.until(() => evaluate('document.querySelectorAll(".route-page[data-active=true] .message-row").item(document.querySelectorAll(".route-page[data-active=true] .message-row").length - 1)?.scrollIntoView({block:"end"}); [...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'reuse saved', 60000)
+    await browser.until(() => evaluate('document.querySelectorAll(".route-page[data-active=true] .message-row").item(document.querySelectorAll(".route-page[data-active=true] .message-row").length - 1)?.scrollIntoView({block:"end"}); [...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'reuse saved', 60000).catch(async error => { console.log('Reuse diagnostic', await evaluate('({ references: selfChatAccount.references$(), messages: selfChatAccount.messages$().map(({id,status,content}) => ({id,status,content})), rows: [...document.querySelectorAll(".message-row")].map(row => ({text:row.innerText,status:row.querySelector(".message-status")?.dataset.status})), composer: document.querySelector(".chat-composer")?.innerText })')); throw error })
     // Reopening on a newly sent occurrence must render the older occurrence
     // on the first backward navigation, without closing/reopening the viewer.
     await evaluate('[...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png")).at(-1).querySelector(".attachment-frame").click()')
@@ -302,17 +302,12 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await browser.evaluate('document.querySelector("vault-lock-button button").click()', 'http://localhost:4000')
     await browser.until(() => browser.evaluate('!!document.querySelector("lock-overlay .lock-unlock")', 'http://localhost:4000'), 'vault locked')
     await evaluate('document.querySelector(".compose-action").click()')
-    const failedId = await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].find(row => row.querySelector(".attachment-name")?.textContent.includes("locked.mp3") && row.querySelector(".message-status")?.dataset.status === "error")?.dataset.messageId'), 'file outbox error with locked vault')
-    await evaluate('selfChatAccount.recover()')
-    assert.equal(await evaluate(`selfChatAccount.messages$().find(message => message.id === ${JSON.stringify(failedId)})?.status`), 'error', 'history recovery preserves failed attachment outbox')
+    await browser.until(() => evaluate('!!document.querySelector(".composer-attachment .attachment-remove") && !document.querySelector(".composer-attachment .attachment-cancel")'), 'failed preparation keeps the attachment in composer')
+    assert.equal(await evaluate('selfChatAccount.messages$().some(message => message.status === "error")'), false, 'nothing is reported queued before durable preparation')
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', 'http://localhost:4000')
-    await browser.until(() => browser.evaluate('!document.querySelector("vault-lock-button").hidden', 'http://localhost:4000'), 'vault unlocked for retry')
-    await evaluate('document.querySelector(".chat-date .retry-btn").click()')
-    await browser.until(() => evaluate('selfChatAccount.historyState$() === "loaded"'), 'conversation Retry restores history')
-    await evaluate(`document.querySelector('[data-message-id="${failedId}"] .chat-bubble').dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true}))`)
-    await browser.until(() => evaluate('!!document.querySelector(".message-actions .message-retry")'), 'file retry menu')
-    await evaluate('document.querySelector(".message-actions .message-retry").click()')
-    await browser.until(() => evaluate(`document.querySelector('[data-message-id="${failedId}"] .message-status')?.dataset.status === 'saved'`), 'same file event saved after unlock')
+    await browser.until(() => evaluate('selfChatAccount.signerState$()?.isLocked === false && selfChatAccount.historyState$() === "loaded"'), 'unlock automatically restores conversation')
+    await evaluate('document.querySelector(".compose-action").click()')
+    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].some(row => row.querySelector(".attachment-name")?.textContent.includes("locked.mp3") && row.querySelector(".message-status")?.dataset.status === "saved")'), 'prepared file saved after unlock')
     assert.equal(await evaluate('previewWorkerCount'), workersBeforeRetry, 'retry reuses compression and preview')
     const compressedUrl = await browser.until(() => evaluate('[...document.querySelectorAll(\'.attachment-download\')].find(a => a.textContent.includes(\'locked.mp3\'))?.href'), 'compressed download link')
     const compressedBytes = await evaluate(`fetch(${JSON.stringify(compressedUrl)}).then(r => r.arrayBuffer()).then(b => [...new Uint8Array(b)])`)

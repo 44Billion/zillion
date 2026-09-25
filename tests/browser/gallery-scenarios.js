@@ -72,7 +72,7 @@ export async function checkGalleryRecovery ({ browser, evaluate, origin }) {
   await evaluate('document.querySelector(".gallery-retry").click()')
   await browser.until(() => evaluate('selfChatAccount.historyState$() === "unavailable" && !!document.querySelector(".gallery-retry")'), 'persistent failure stays retryable')
   await unlock()
-  await evaluate('document.querySelector(".gallery-retry").click()')
+  await evaluate('document.querySelector(".gallery-retry")?.click()')
   await browser.until(() => evaluate('selfChatAccount.historyState$() === "loaded" && document.querySelectorAll(".attachment-gallery button").length === 3'), 'Retry recovers catalog without app restart', 60000)
   await evaluate('galleryObserver.disconnect(); document.querySelector(".chat-composer .attach").click()')
   await browser.until(() => evaluate('!document.querySelector(".attachment-gallery")'), 'recovered gallery closes')

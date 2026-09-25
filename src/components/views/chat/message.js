@@ -20,6 +20,7 @@ import './attachment.js'
 import { useMessageGrowth } from './hooks/use-message-growth.js'
 import './quote.js'
 import './message-status.js'
+import { showDialog } from '#shared/dialog.js'
 
 f('z-chat-message', ({ h, props }) => {
   const location = useLocation()
@@ -181,7 +182,16 @@ f('z-chat-message', ({ h, props }) => {
           <button class=${`message-share ${view.copied$() ? 'copied' : ''}`} type="button" role="menuitem" aria-label=${t(view.copied$() ? 'Copied' : canShare ? 'Share' : 'Copy')} ?disabled=${view.busy$()} onclick=${view.share}>
             ${view.copied$() ? h`<icon-check props=${{ size: '22px', weight: 'regular' }} />` : canShare ? h`<icon-share-2 props=${{ size: '22px', weight: 'regular' }} />` : h`<icon-copy props=${{ size: '22px', weight: 'regular' }} />`}
           </button>
-          <button class="message-delete" type="button" role="menuitem" aria-label=${t('Delete message')} aria-disabled=${String(!message.real || message.status !== 'saved')} onclick=${() => { if (message.real && message.status === 'saved') props.onDelete?.(message.id) }}><icon-trash props=${{ size: '22px', weight: 'regular' }} /></button>
+          <button class="message-delete" type="button" role="menuitem" aria-label=${t('Delete message')} aria-disabled=${String(!message.real)} onclick=${() => {
+            if (!message.real) return
+            if (props.person$().self) return props.onDelete?.(message.id)
+            showDialog({
+ title: () => t('Delete message'), description: () => t('Deleting for everyone requests removal; copies may remain on other devices.'), actions: [
+              { label: () => t('Delete for me'), destructive: true, run: () => props.onDelete?.(message.id) },
+              ...(message.outgoing ? [{ label: () => t('Delete for everyone'), destructive: true, run: () => props.onDelete?.(message.id, { everyone: true }) }] : [])
+            ]
+})
+          }}><icon-trash props=${{ size: '22px', weight: 'regular' }} /></button>
         </div>
       `
 : null}

@@ -1,6 +1,7 @@
 import { f, useLocation } from '#f'
 import { t } from '#i18n/messages.js'
-import { info } from '#shared/toast.js'
+import { useAccount } from '#hooks/use-account.js'
+import { info, error } from '#shared/toast.js'
 import '#views/home/avatar.js'
 import '#shared/icons/icon-user-plus.js'
 
@@ -25,7 +26,9 @@ f('z-contact-profile', ({ h, props }) => {
 `
 })
 
-f('z-contact-invitation', ({ h, props }) => h`
+f('z-contact-invitation', ({ h, props }) => {
+  const account = useAccount()
+  return h`
   <div class="contact-invitation">
     <style>${`
       z-contact-invitation .contact-invitation {
@@ -39,8 +42,12 @@ f('z-contact-invitation', ({ h, props }) => h`
       }
     `}</style>
     <p>${t('Add {{name}} to your contacts to send messages.', { name: props.person$().shortName })}</p>
-    <button type="button" onclick=${() => info(() => t('Adding contacts is not available yet.'))}>
+    <button type="button" onclick=${async () => {
+      if (props.person$().demo) return info(() => t('Adding contacts is not available yet.'))
+      try { await account.setContact(props.person$().pubkey, true) } catch { error(() => t('Could not update contacts')) }
+    }}>
       <icon-user-plus props=${{ size: '24px', weight: 'regular' }} /><span>${t('Add contact')}</span>
     </button>
   </div>
-`)
+`
+})

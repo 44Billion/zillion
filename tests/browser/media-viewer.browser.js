@@ -20,7 +20,7 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
   let rejectNeighbor = true
   try {
     let files
-    const options = buildOptions({ onEnd: result => { files = result } })
+    const options = buildOptions({ demo: true, onEnd: result => { files = result } })
     options.sourcemap = false
     options.plugins.push({
       name: 'media-viewer-test', setup (build) {
@@ -308,7 +308,8 @@ test('media viewer routes, same-chat navigation, gestures, native controls and r
       if (probe.result.value) { appContext = context; break }
     }
     appSession = appContext.sessionId
-    const many = await evaluate('viewerTest.seedMany()')
+    await evaluate('void viewerTest.seedMany().then(ids => { window.viewerSeeded = ids }).catch(error => { window.viewerSeedError = error.message })')
+    const many = await browser.until(() => evaluate('if (window.viewerSeedError) throw new Error(window.viewerSeedError); window.viewerSeeded'), '60 real file copies seeded', 120000)
     await push('/chat/user/media#' + encodeURIComponent(many[0]), '.media-viewer')
     await loaded()
     await browser.send('HeapProfiler.collectGarbage', {}, appSession)

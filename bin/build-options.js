@@ -6,7 +6,7 @@ import { parse } from 'jsonc-parser'
 export const root = path.resolve(import.meta.dirname, '..')
 
 // Metadata participates in esbuild's dependency graph without entering app.js.
-export function buildOptions ({ development = false, sourceMaps = development, futureFeatures = process.env.ZILLION_FUTURE_FEATURES !== '0', projectRoot = root, onStart = () => {}, onEnd = () => {} } = {}) {
+export function buildOptions ({ development = false, sourceMaps = development, demo = process.env.ZILLION_DEMO === '1', futureFeatures = process.env.ZILLION_FUTURE_FEATURES !== '0', projectRoot = root, onStart = () => {}, onEnd = () => {} } = {}) {
   const outdir = path.join(projectRoot, 'dist/zillion')
   let metadata
   return {
@@ -49,6 +49,7 @@ export function buildOptions ({ development = false, sourceMaps = development, f
     inject: ['zillion:metadata'],
     loader: { '.html': 'copy', '.ico': 'copy', '.svg': 'text', '.webp': 'dataurl', '.jpg': 'dataurl', '.png': 'copy' },
     define: {
+      DEMO_ENABLED: JSON.stringify(demo),
       IS_DEVELOPMENT: JSON.stringify(development),
       IS_PRODUCTION: JSON.stringify(!development),
       FUTURE_FEATURES_ENABLED: JSON.stringify(development && futureFeatures)

@@ -1,14 +1,14 @@
 import { f, useLocation, useMemo, useStore, useTask } from '#f'
 import { t } from '#i18n/messages.js'
 import { i18n } from '#i18n/index.js'
-import { useAccount } from '#hooks/use-account.js'
+import { useAccount, useConversation } from '#hooks/use-account.js'
+import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
 import { useRoutePage } from '#shared/route-page.js'
 import { createStaticMediaReader } from '#services/conversation-media.js'
 import { chatTimeline } from '#helpers/chat-timeline.js'
 import { conversationMedia, isVideoControlPointer, mediaSwipe, selectedMediaId } from '#helpers/conversation-media.js'
 import { getSvgAvatar, isValidAvatarPicture } from '#helpers/avatar.js'
 import { profileDetails } from '#helpers/profile-presentation.js'
-import people from '#views/contacts/fixtures/people.json'
 import portraits from '#views/home/fixtures/portraits.js'
 import { getMessages } from '#views/chat/fixtures/index.js'
 import '#shared/icons/icon-x.js'
@@ -17,23 +17,24 @@ import './item.js'
 import { viewerStyles } from './styles.js'
 
 f('z-media-viewer-route', ({ h, props }) => {
-  const account = useAccount()
+  const identity = useAccount()
+  const account = useConversation(() => props.route$().params.contactId, { open: true })
   const page = useRoutePage()
   const location = useLocation()
-  const runtime = useMemo(() => ({ pointer: null, animation: null, direction: null, reader: null, request: 0, selected: null, pendingFile: null, sessionKey: null }))
+  const runtime = useMemo(() => ({ pointer: null, animation: null, direction: null, reader: null, request: 0, selected: null, pendingFile: null, sessionKey: null, error: null }))
   const photo = props.route$().url.pathname.endsWith('/photo')
   const view = useStore({
     stageRef$: null,
     person$ () {
       const id = props.route$().params.contactId
-      return id === 'user' ? account.person$() : people.find(person => person.id === id)
+      return identity.personFor(id)
     },
     slot0$: null, slot1$: null, slot2$: null,
     slots$ () { return [this.slot0$(), this.slot1$(), this.slot2$()] },
     result$: null,
     busy$: true,
     pendingFile$ () {
-      if (photo || props.route$().params.contactId !== 'user') return null
+      if (photo || this.person$()?.demo) return null
       const id = selectedMediaId(props.route$().url.hash)
       if (!id.startsWith('file:')) return null
       return account.messages$().some(message => message.status === 'pending' && message.tags?.some(tag => tag[0] === 'q' && tag[1] === id.slice(5))) ? id : null
@@ -43,7 +44,7 @@ f('z-media-viewer-route', ({ h, props }) => {
     photo$ () {
       const person = this.person$()
       if (!photo || !person) return null
-      const picture = person.self ? person.profile?.picture : portraits[person.avatar]
+      const picture = person.profile ? person.profile.picture : portraits[person.avatar]
       const url = isValidAvatarPicture(picture) ? picture : person.pubkey ? `data:image/svg+xml,${encodeURIComponent(getSvgAvatar(person.pubkey))}` : null
       return url ? { id: 'photo', type: 'image', url, alt: profileDetails(person).name || t('No name') } : null
     },
@@ -62,12 +63,12 @@ f('z-media-viewer-route', ({ h, props }) => {
     },
     async load (operation, replace = false) {
       const request = ++runtime.request
-      this.busy$(true); this.failed$(false)
+      this.busy$(true); this.failed$(false); runtime.error = null
       try {
         const result = await operation()
         if (request === runtime.request && page.isActive$()) this.apply(result, replace)
       } catch (error) {
-        if (request === runtime.request && error.name !== 'AbortError') this.failed$(true)
+        if (request === runtime.request && error.name !== 'AbortError') { runtime.error = error; this.failed$(true) }
       } finally { if (request === runtime.request) this.busy$(false) }
     },
     dispose () {
@@ -104,6 +105,7 @@ f('z-media-viewer-route', ({ h, props }) => {
       if (swipe) { event.preventDefault(); this.move(swipe.step, swipe.axis) }
     }
   }, { shouldCache: false })
+  useSignerRecovery(() => { if (view.failed$() && canRecoverSignerFailure(runtime.error)) view.retry() })
   // Capture only loaded URLs once per active session. Never resolve the whole
   // timeline, retain ciphertext, or subscribe this snapshot to message arrivals.
   useTask(({ cleanup }) => cleanup(view.dispose))
@@ -123,19 +125,19 @@ f('z-media-viewer-route', ({ h, props }) => {
     }
     if (contactId === 'user' && (!pubkey || !ready)) return
     const person = view.person$()
-    const messages = person?.self
+    const messages = person && !person.demo
       ? chatTimeline(account.messages$(), { locale: i18n.getLocale(), references: account.references$() })
       : person && person.saved !== false ? getMessages(person) : []
     let reader
     try {
-      reader = person?.self
+      reader = person && !person.demo
         ? account.createMediaReader({
           extras: conversationMedia(messages, account.references$(), { urlsOnly: true }),
           onInvalidate: () => { if (runtime.reader === reader) view.load(() => reader.refresh(), true) },
-          onError: () => { if (runtime.reader === reader) view.failed$(true) }
+          onError: error => { if (runtime.reader === reader) { runtime.error = error; view.failed$(true) } }
         })
         : createStaticMediaReader(conversationMedia(messages))
-    } catch { view.failed$(true); view.busy$(false); return }
+    } catch (error) { runtime.error = error; view.failed$(true); view.busy$(false); return }
     runtime.reader = reader
     runtime.selected = selectedMediaId(props.route$().url.hash)
     view.load(() => reader.open(runtime.selected))

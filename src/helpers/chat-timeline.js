@@ -92,7 +92,7 @@ export function chatQuoteModel (event, references = {}) {
   const attachmentRef = refs.map(ref => references[ref.id]).find(resolved => resolved?.kind === CHAT_FILE_KIND)
   const attachment = attachmentRef ? messageAttachment(attachmentRef) : null
   return {
-    id: event.id,
+    id: event.id, pubkey: event.pubkey, hearsay: !!event.hearsay,
     // Raw content is what reply thumbnails parse for their own candidates.
     content: event.content ?? '',
     text: displayText(items, references),
@@ -101,7 +101,7 @@ export function chatQuoteModel (event, references = {}) {
   }
 }
 
-export function chatTimeline (events, { locale, now = Date.now(), t = value => value, references = {} } = {}) {
+export function chatTimeline (events, { locale, now = Date.now(), t = value => value, references = {}, owner } = {}) {
   const today = new Date(now)
   const yesterday = new Date(now)
   yesterday.setDate(yesterday.getDate() - 1)
@@ -124,7 +124,7 @@ export function chatTimeline (events, { locale, now = Date.now(), t = value => v
       created_at: event.created_at,
       kind: event.kind ?? CHAT_TEXT_KIND,
       real: true,
-      outgoing: true,
+      outgoing: !owner || event.pubkey === owner,
       status: event.status ?? 'saved',
       localSource: event.localSource,
       attachment,

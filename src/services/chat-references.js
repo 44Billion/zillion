@@ -27,14 +27,14 @@ export function chatReferenceUri (event) {
 
 // Same admission rules the self-chat subscription applies to live wrappers:
 // owner, context, provenance and a matching inner payload.
-export async function decryptPersonalCopy (wrapper, { pubkey, signer, encodedContext }) {
+export async function decryptPersonalCopy (wrapper, { pubkey, signer, encodedContext, authors = [pubkey], hearsay = false }) {
   if (wrapper?.kind !== PERSONAL_COPY || wrapper.pubkey !== pubkey || !isValidEvent(wrapper)) return null
   const tags = name => wrapper.tags.filter(tag => tag[0] === name)
   const kindTags = tags('k')
   const contextTags = tags('c')
   const provenanceTags = tags('v')
   if (kindTags.length !== 1 || contextTags.length !== 1 || contextTags[0][1] !== encodedContext) return null
-  if (provenanceTags.length !== 1 || !['0', '1'].includes(provenanceTags[0][1])) return null
+  if (provenanceTags.length !== 1 || !(hearsay ? ['0', '1', '2'] : ['0', '1']).includes(provenanceTags[0][1])) return null
   const innerKind = Number(kindTags[0][1])
   if (!Number.isInteger(innerKind) || innerKind < 0) return null
   const plaintext = await signer.nip44v3.decrypt(pubkey, innerKind, '', wrapper.content)
@@ -44,10 +44,10 @@ export async function decryptPersonalCopy (wrapper, { pubkey, signer, encodedCon
   try { inner = JSON.parse(new TextDecoder().decode(plaintext)) } catch { return null }
   if (!inner || typeof inner !== 'object' || Array.isArray(inner)) return null
   const event = { ...inner, pubkey: inner.pubkey ?? pubkey }
-  if (event.pubkey !== pubkey || String(event.kind) !== kindTags[0][1]) return null
+  if ((authors && !authors.includes(event.pubkey)) || String(event.kind) !== kindTags[0][1]) return null
   if (event.created_at !== wrapper.created_at || !isSerializableEvent(event)) return null
-  if (provenanceTags[0][1] === '0' ? !isValidEvent(event) : ('id' in inner || 'sig' in inner || 'pubkey' in inner)) return null
-  return { ...event, id: getEventHash(event) }
+  if (provenanceTags[0][1] === '0' ? !isValidEvent(event) : ('id' in inner || 'sig' in inner || (provenanceTags[0][1] === '2' && !inner.pubkey))) return null
+  return { ...event, id: getEventHash(event), ...(provenanceTags[0][1] === '2' ? { hearsay: true } : {}) }
 }
 
 // Lazy reference lookups for one account/context. Personal copies are found
@@ -75,15 +75,15 @@ export function createChatReferences ({
   }))
 
   async function readWrapper (wrapper) {
-    return decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: await encodedContext() })
+    return decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: await encodedContext(), authors: null, hearsay: true })
   }
 
   async function load (id) {
     const mirror = await signer.obfuscate(id, String(PERSONAL_COPY), '.id')
     const { results: copies = [] } = await eventStore.query({
-      kinds: [PERSONAL_COPY], authors: [pubkey], '#o': [mirror], '#c': [await encodedContext()], '#v': ['0', '1'], limit: 1
+      kinds: [PERSONAL_COPY], authors: [pubkey], '#o': [mirror], '#c': [await encodedContext()], '#v': ['0', '1', '2'], limit: 3
     })
-    for (const wrapper of copies) {
+    for (const wrapper of copies.toSorted((a, b) => Number(a.tags.find(tag => tag[0] === 'v')?.[1]) - Number(b.tags.find(tag => tag[0] === 'v')?.[1]))) {
       const event = await readWrapper(wrapper)
       if (event?.id === id) return event
     }
@@ -94,6 +94,13 @@ export function createChatReferences ({
   return {
     // Pending outbox events by inner id; messages read them before the store.
     locals,
+    peek: id => locals.get(id) || cache.get(id),
+    refresh (event) {
+      if (event.hearsay || (!locals.has(event.id) && !cache.has(event.id))) return
+      if (locals.has(event.id)) locals.set(event.id, event)
+      cache.set(event.id, event)
+      onResolved(event.id, event)
+    },
     remove (ids) {
       for (const id of ids) {
         removed.add(id)
@@ -148,7 +155,10 @@ export function createChatReferences ({
             else misses.add(id)
             return event
           })
-          .catch(() => null)
+          .catch(error => {
+            if (!/DENIED|PERMISSION|REVOKED|INVALID|NOT_IN_PERSONA/i.test(`${error?.code || ''} ${error?.message || ''}`)) misses.add(id)
+            return null
+          })
           .finally(() => pending.delete(id)))
       }
       return null
@@ -171,12 +181,11 @@ export function createChatReferences ({
         ...(root ? { '#o': [await signer.obfuscate(root, String(PERSONAL_COPY), '#r')] } : {}), limit: readLimit
       })
       const events = []
-      for (const wrapper of copies) {
+      for (const wrapper of copies.toSorted((a, b) => Number(a.tags.find(tag => tag[0] === 'v')?.[1]) - Number(b.tags.find(tag => tag[0] === 'v')?.[1]))) {
         const event = await readWrapper(wrapper).catch(error => {
           // Root lookups decide whether to create a catalog copy. A failed
           // decryption must not be mistaken for an absent entry.
-          if (root) throw error
-          return null
+          throw error
         })
         if (event?.kind === CHAT_FILE_KIND && (!root || event.tags.some(tag => tag[0] === 'r' && tag[1] === root))) events.push(event)
       }

@@ -1,6 +1,7 @@
-import { useStore, useTask } from '#f'
+import { useStore, useTask, useClosestStore, useMemo } from '#f'
 import { isOnline, onOnline } from 'libp2r2p/network'
-import { useAccount } from '#hooks/use-account.js'
+import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
+import { useConversation } from '#hooks/use-account.js'
 import { useRoutePage } from '#shared/route-page.js'
 import { parseChatContent } from '#helpers/chat-content.js'
 import previews, { canPreviewNostrReference, safePreviewUrl } from '#services/link-preview.js'
@@ -8,9 +9,12 @@ import { acquireAttachmentPreview } from '#services/attachment-previews.js'
 import mediaCache from '#services/media-cache.js'
 
 export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
-  const account = useAccount()
   const page = useRoutePage()
+  const route = useClosestStore('<f-route>')
+  const account = useConversation(() => route?.route$?.()?.params?.contactId ?? 'user')
+  const runtime = useMemo(() => ({ error: null }))
   const view = useStore({
+    retry$: 0,
     media$: null,
     failed$: false,
     loadedFor: null,
@@ -25,7 +29,9 @@ export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
     },
     visible$ () { return this.media$() && !this.failed$() }
   })
+  useSignerRecovery(() => { if (runtime.error && !view.visible$() && canRecoverSignerFailure(runtime.error)) view.retry$(value => value + 1) }, { when })
   useTask(({ track, cleanup }) => {
+    track(() => view.retry$())
     const active = track(() => page.isActive$())
     const identity = track(() => view.identity$())
     if (identity !== view.loadedFor) {
@@ -35,6 +41,7 @@ export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
     }
     const [owner, candidates] = JSON.parse(identity)
     if (!active || !candidates.length) return
+    runtime.error = null
     const controller = new AbortController()
     const { signal } = controller
     let pending = false
@@ -77,7 +84,7 @@ export function useReplyThumbnail (text$, { when = 'init', attachment$ } = {}) {
               view.failed$(false)
               return
             }
-          } catch { /* Keep the text usable and try the next candidate. */ }
+          } catch (error) { runtime.error = error /* Keep the text usable and try the next candidate. */ }
         }
       } finally { pending = false }
     }

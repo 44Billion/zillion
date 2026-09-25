@@ -1,3 +1,4 @@
+import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
 import { mediaOpenHandlers } from '#helpers/media-open.js'
 import '#shared/icons/icon-arrows-diagonal.js'
 import { useMediaDownload } from './hooks/use-media-download.js'
@@ -18,7 +19,7 @@ import { attachmentSizeStyle, fileCategory, fileName, fileSize } from '#helpers/
 f('z-chat-attachment', ({ h, props }) => {
   const page = useRoutePage()
   const view = useStore({
-    loadedFor: null, imageRef$: null, videoRef$: null, captionRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false,
+    retry$: 0, retryable: true, loadedFor: null, imageRef$: null, videoRef$: null, captionRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false,
     // Caption starts clamped to two lines; each click reveals two more.
     captionLines$: 2,
     file$ () { return props.attachment$() || {} },
@@ -28,8 +29,10 @@ f('z-chat-attachment', ({ h, props }) => {
     identity$ () { return JSON.stringify([this.file$().url, props.source$?.()]) },
     size$ () { return this.dimensions$() || mediaDimensions(this.file$()) }
   })
+  useSignerRecovery(() => { if (view.failed$() && view.retryable) view.retry$(n => n + 1) })
   const download = useMediaDownload(() => view.file$().url, () => !props.preview, () => fileName(view.file$(), t('unnamed-file')).full, view.file$)
   useTask(({ track, cleanup }) => {
+    track(() => view.retry$())
     const identity = track(() => view.identity$())
     if (!track(() => page.isActive$())) return
     const [url, localSource] = JSON.parse(identity)
@@ -66,7 +69,7 @@ f('z-chat-attachment', ({ h, props }) => {
           const prepared = file.mime.startsWith('image/') ? await prepareImage(url, { signal }) : await prepareVideo(url, { signal })
           if (!controller.signal.aborted) { view.dimensions$({ width: prepared.width, height: prepared.height }); view.source$(url) }
         }
-      } catch { if (!controller.signal.aborted) view.failed$(true) } finally { if (!controller.signal.aborted) view.ready$(true) }
+      } catch (error) { if (!controller.signal.aborted) { view.retryable = canRecoverSignerFailure(error); view.failed$(true) } } finally { if (!controller.signal.aborted) view.ready$(true) }
     }
     resolve()
   }, { when: 'visible', rootMargin: '0px' })

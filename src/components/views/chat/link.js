@@ -1,6 +1,7 @@
-import { f, useStore, useTask } from '#f'
+import { f, useStore, useTask, useClosestStore, useMemo } from '#f'
 import { onOnline } from 'libp2r2p/network'
-import { useAccount } from '#hooks/use-account.js'
+import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
+import { useConversation } from '#hooks/use-account.js'
 import { useRoutePage } from '#shared/route-page.js'
 import previews, { canPreviewNostrReference } from '#services/link-preview.js'
 import mediaCache from '#services/media-cache.js'
@@ -8,9 +9,12 @@ import { abortable, preparationSignal, mediaSizeStyle } from '#helpers/media-dim
 import { shortNostrLabel, shortUrlLabel } from '#helpers/reference-label.js'
 
 f('z-chat-link', ({ h, props }) => {
-  const account = useAccount()
   const page = useRoutePage()
+  const route = useClosestStore('<f-route>')
+  const account = useConversation(() => route?.route$?.()?.params?.contactId ?? 'user')
+  const runtime = useMemo(() => ({ error: null }))
   const view = useStore({
+    retry$: 0,
     metadata$: null,
     prepared$: false,
     icon$: null,
@@ -30,7 +34,9 @@ f('z-chat-link', ({ h, props }) => {
   const reference = item.key === 'event' ? item.event : null
   const label = reference ? reference.original.replace(/^nostr:/i, '') : item.url.value
   const url = reference ? `https://njump.me/${label}` : item.url.value
+  useSignerRecovery(() => { if (runtime.error && canRecoverSignerFailure(runtime.error)) view.retry$(value => value + 1) })
   useTask(({ track, cleanup }) => {
+    track(() => view.retry$())
     const active = track(() => page.isActive$())
     const target = track(() => view.target$())
     const known = track(() => view.knownPrivate$())
@@ -45,6 +51,7 @@ f('z-chat-link', ({ h, props }) => {
     if (view.loadedFor !== identity || known) { view.clear(); view.prepared$(known) }
     view.loadedFor = identity
     if (!active || known) return
+    runtime.error = null
     const controller = new AbortController()
     let pending = false
     const resolve = async () => {
@@ -75,7 +82,7 @@ f('z-chat-link', ({ h, props }) => {
         ])
       } finally { pending = false; if (!controller.signal.aborted) view.prepared$(true) }
     }
-    const refresh = () => resolve().catch(() => {})
+    const refresh = () => resolve().catch(error => { runtime.error = error })
     const stop = onOnline(refresh)
     refresh()
     cleanup(() => { controller.abort(); stop() })

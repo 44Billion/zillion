@@ -14,7 +14,7 @@ test('contacts preview navigation, search, responsive strip and unsaved DM', { t
   let permissions
   try {
     let files
-    const options = buildOptions({ onEnd: result => { files = result } })
+    const options = buildOptions({ demo: true, onEnd: result => { files = result } })
     options.plugins.push({
       name: 'contacts-test', setup (build) {
         build.onLoad({ filter: /src\/components\/app\.js$/ }, async args => ({

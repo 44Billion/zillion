@@ -1,3 +1,4 @@
+import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
 import './media-thumbnail.js'
 import './file-reply.js'
 import { f, useStore, useTask, useMemo } from '#f'
@@ -20,8 +21,8 @@ f('z-chat-composer', ({ h, props }) => {
   const runtime = useMemo(() => ({ attachment: null, controller: null, catalog: 0, catalogReading: false, catalogReload: false, catalogLoaded: false }))
   const view = useStore({
     galleryId: `attachment-gallery-${crypto.randomUUID()}`,
-    attachment$: null, source$: null, preparing$: false, progress$: null, gallery$: false, galleryRef$: null, pickerRef$: null,
-    catalogFiles$: [], catalogBusy$: false, catalogError$: false,
+    attachment$: null, source$: null, preparing$: false, sending$: false, progress$: null, gallery$: false, galleryRef$: null, pickerRef$: null,
+    catalogRetryable: true, catalogFiles$: [], catalogBusy$: false, catalogError$: false,
     // Only independent personal copies in the empty context belong here.
     catalog$ () {
       if (props.historyLoaded$?.() === false) return []
@@ -50,8 +51,8 @@ f('z-chat-composer', ({ h, props }) => {
         timeout.promise.catch(() => {})
         const files = await Promise.race([props.readFiles(), timeout.promise]).finally(() => clearTimeout(timer))
         if (runtime.catalog === generation) { this.catalogFiles$(files); runtime.catalogLoaded = true }
-      } catch {
-        if (runtime.catalog === generation) this.catalogError$(true)
+      } catch (error) {
+        if (runtime.catalog === generation) { this.catalogRetryable = canRecoverSignerFailure(error); this.catalogError$(true) }
       } finally {
         if (runtime.catalog === generation) {
           runtime.catalogReading = false
@@ -67,7 +68,7 @@ f('z-chat-composer', ({ h, props }) => {
       props.recover?.()
     },
     replyAttachment$ () { return props.reply$?.()?.attachment },
-    canSend$ () { return props.canSend$?.() && !this.preparing$() && (!!this.attachment$() || !!this.text$().trim()) },
+    canSend$ () { return props.canSend$?.() && !this.preparing$() && !this.sending$() && (!!this.attachment$() || !!this.text$().trim()) },
     remove () {
       runtime.controller?.abort(); runtime.controller = null
       runtime.attachment?.close?.(); runtime.attachment = null
@@ -75,6 +76,7 @@ f('z-chat-composer', ({ h, props }) => {
     },
     picker () { this.gallery$(false); this.pickerRef$()?.click() },
     attach () {
+      if (this.sending$()) return
       if (this.gallery$()) { this.gallery$(false); return }
       if (this.catalog$().length) { this.gallery$(true); this.loadCatalog(true); return }
       if (this.catalogState$() === 'loaded') { this.picker(); return }
@@ -87,6 +89,7 @@ f('z-chat-composer', ({ h, props }) => {
       this.attachment$(metadata)
     },
     async select (event) {
+      if (this.sending$()) return
       const file = event.target.files?.[0]
       event.target.value = ''
       if (!file) return
@@ -118,19 +121,21 @@ f('z-chat-composer', ({ h, props }) => {
       return reply ? reply.real ? (reply.caption || reply.displayText || '') : t(reply.text) : ''
     },
     replyText$ () { return shortQuotedText(this.replySummary$()) },
-    send () {
+    async send () {
       if (!this.canSend$()) return
       const text = this.text$()
       const replyId = props.reply$?.()?.id
       try {
-        if (!props.send(text, runtime.attachment)) return
+        this.sending$(true)
+        if (!await props.send(text, runtime.attachment)) return
         runtime.attachment = null
         this.attachment$(null); this.source$(null)
         if (this.text$() === text) this.text$('')
         if (props.reply$?.()?.id === replyId) props.clearReply()
-      } catch (_) { error(() => t('Could not save message')) }
+      } catch (_) { error(() => t('Could not save message')) } finally { this.sending$(false) }
     }
   })
+  useSignerRecovery(() => { if (view.catalogError$() && view.catalogRetryable) view.loadCatalog() })
   // Refresh after confirmed messages without replacing mounted gallery tiles
   // with loading placeholders. A write during an existing read queues a refresh.
   useTask(({ track }) => {
@@ -244,14 +249,14 @@ f('z-chat-composer', ({ h, props }) => {
 : null}
       <input type="file" hidden ref=${view.pickerRef$} onchange=${view.select}>
       ${view.preparing$() ? h`<div class="preparing-file"><button class="preparing-cancel" type="button" aria-label=${t('Remove attachment')} onclick=${view.remove}><icon-x props=${{ size: '16px' }} /></button><span role="status">${view.progress$()?.phase === 'compress' ? t('Compressing file…') : t('Preparing file…')}${view.progress$()?.phase === 'compress' && Number.isFinite(view.progress$().progress) ? ` ${Math.floor(view.progress$().progress * 100)}%` : ''}</span></div>` : null}
-      ${view.attachment$() ? h`<div class="composer-attachment"><z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, preview: true, remove: view.remove }} /></div>` : null}
+      ${view.attachment$() ? h`<div class="composer-attachment"><z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, preview: true, remove: view.sending$() ? null : view.remove }} /></div>` : null}
       ${view.gallery$() ? h`<div class="attachment-gallery" ref=${view.galleryRef$} role="group" id=${view.galleryId} aria-label=${t('Attachments')} aria-busy=${String(view.catalogLoading$())}><button type="button" aria-label=${t('Attach file')} onclick=${view.picker}><icon-photo-plus props=${{ size: '36px', weight: 'duotone' }} /></button>${view.catalogLoading$() ? Array.from({ length: 3 }, () => h`<div class="gallery-placeholder" aria-hidden="true"></div>`) : []}${!view.catalogLoading$() && view.catalogState$() === 'unavailable' && !view.catalog$().length ? h`<button class="gallery-retry" type="button" onclick=${view.recover}><icon-refresh-alert props=${{ size: '28px', weight: 'regular' }} /><span>${t('Retry')}</span></button>` : null}${view.catalogLoading$() ? [] : view.catalog$().map(file => h({ key: file.root })`<div class="gallery-cell"><z-chat-attachment-tile props=${{ root: file.root, files$: view.catalogByRoot$, select: view.reuse }} /></div>`)}</div>` : null}
       <div class="composer-field" ref=${view.fieldRef$}>
         <textarea ref=${view.inputRef$} rows="1" placeholder=${t(view.attachment$() ? 'Caption' : 'Message')} aria-label=${t('Message')}
           enterkeyhint="enter" oninput=${event => view.text$(event.target.value)}></textarea>
         ${props.canAttach$?.() || showMediaControls ? h`<button class="attach" type="button" aria-expanded=${String(view.gallery$())} aria-controls=${view.gallery$() ? view.galleryId : null} aria-label=${t('Attach file')} aria-disabled=${String(!props.canAttach$?.())} onclick=${() => { if (props.canAttach$?.()) view.attach() }}><icon-paperclip props=${{ size: '24px', weight: 'light' }} /></button>` : null}
       </div>
-      <button class="compose-action" type="button" aria-label=${t(showMediaControls ? 'Camera' : 'Send message')} aria-disabled=${String(!view.canSend$())} ?disabled=${view.preparing$()} onclick=${view.send}>
+      <button class="compose-action" type="button" aria-label=${t(showMediaControls ? 'Camera' : 'Send message')} aria-disabled=${String(!view.canSend$())} ?disabled=${view.preparing$() || view.sending$()} onclick=${view.send}>
         ${showMediaControls ? h`<icon-camera props=${{ size: '24px', weight: 'regular' }} />` : h`<icon-send-2 props=${{ size: '24px', weight: 'regular' }} />`}
       </button>
     </footer>

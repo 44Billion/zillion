@@ -10,7 +10,7 @@ export function conversationMedia (messages, references = {}, { urlsOnly = false
     const seen = new Set()
     const add = (file, slot, eventId) => {
       if (!file || !isViewerMime(file.mime) || (!eventId && file.download === '1') || seen.has(file.url)) return
-      try { if (new URL(file.url).protocol !== 'https:') return } catch { return }
+      try { if (new URL(file.url).protocol !== 'https:' && !(message.demo && /^data:image\/(?:jpeg|png|webp);base64,/.test(file.url))) return } catch { return }
       seen.add(file.url)
       if (urlsOnly && eventId) return
       media.push({ ...file, id: eventId ? `file:${eventId}` : `${message.id}:${slot}`, messageId: message.id, type: file.mime.startsWith('video/') ? 'video' : 'image', time: message.time, created_at: message.created_at ?? 0, orderId: message.id, slot: typeof slot === 'number' ? slot : -1 })

@@ -4,6 +4,7 @@ import { i18n } from '#i18n/index.js'
 import { f, useStore } from '#f'
 import '#f/components/f-to-signals.js'
 import data from './fixtures/home.json'
+import { demoEnabled } from '#services/demo.js'
 import { useAccount } from '#hooks/use-account.js'
 import { useHeaderCollapse } from './hooks/use-header-collapse.js'
 import './header.js'
@@ -18,7 +19,7 @@ f('z-home', ({ h }) => {
     contactsRef$: null,
     user$: account.person$,
     contacts$ () {
-      return [...data.contacts, account.person$()].toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
+      return [...account.people$().filter(person => person.saved !== false), account.person$()].toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
         ...contact,
         unread: data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0
       }))
@@ -31,7 +32,8 @@ f('z-home', ({ h }) => {
       // references a file shows its caption/filename instead of the URI.
       const preview = latest ? chatTimeline([latest], { locale: i18n.getLocale(), references: account.references$(), t })[0] : null
       const previewText = preview ? (preview.attachment ? (preview.caption || preview.attachment.filename || '') : preview.displayText) : ''
-      return data.conversations.map(conversation => {
+      const rows = demoEnabled ? data.conversations : [{ id: 'user', contactId: 'user', unread: 0 }, ...account.people$().filter(person => person.saved).map(person => ({ id: person.id, contactId: person.id, unread: 0 }))]
+      return rows.map(conversation => {
         if (conversation.contactId === self.id) {
           return {
             ...conversation, contact: self, real: true, unread: 0,
@@ -39,7 +41,10 @@ f('z-home', ({ h }) => {
             timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
           }
         }
-        return { ...conversation, contact: data.contacts.find(contact => contact.id === conversation.contactId) }
+        if (demoEnabled) return { ...conversation, contact: account.personFor(conversation.contactId) }
+        const person = account.personFor(conversation.contactId)
+        const message = account.conversations$()[person.id]?.messages?.at(-1)
+        return { ...conversation, contact: person, real: true, message: message?.content || '', lastMessageAt: message ? new Date(message.created_at * 1000).toISOString() : '', timeLabel: '' }
       }).toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
     }
   }))

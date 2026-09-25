@@ -1,3 +1,4 @@
+import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
 import { f, useStore, useTask } from '#f'
 import { t } from '#i18n/messages.js'
 import { useRoutePage } from '#shared/route-page.js'
@@ -11,7 +12,7 @@ import { prepareImage, preparationSignal } from '#helpers/media-dimensions.js'
 f('z-viewer-item', ({ h, props }) => {
   const page = useRoutePage()
   const view = useStore({
-    source$: null, failed$: false, loaded$: false, retry$: 0, videoRef$: null, imageRef$: null,
+    retryable: true, source$: null, failed$: false, loaded$: false, retry$: 0, videoRef$: null, imageRef$: null,
     selected$ () { return Boolean(props.item$() && props.selected$()) },
     playing$ () { return props.item$()?.type === 'video' && this.selected$() },
     imageSource$ () { return this.playing$() ? null : this.source$() },
@@ -20,6 +21,7 @@ f('z-viewer-item', ({ h, props }) => {
       return JSON.stringify([item?.id, item?.url, item?.type, item?.unavailable, page.isActive$(), this.playing$(), this.retry$()])
     }
   }, { shouldCache: false })
+  useSignerRecovery(() => { if (view.selected$() && view.failed$() && view.retryable && !props.item$()?.unavailable) view.retry$(n => n + 1) })
   const download = useMediaDownload(() => props.item$()?.url, () => view.failed$() && props.selected$(), () => props.item$()?.filename ?? '', () => props.item$() ?? {})
   useTask(({ track, cleanup }) => {
     track(() => view.request$())
@@ -42,14 +44,14 @@ f('z-viewer-item', ({ h, props }) => {
       pending = true
       try {
         const signal = preparationSignal(controller.signal)
-        const local = new URL(url).origin === 'https://nostr.alt'
+        const local = new URL(url).origin === 'https://nostr.alt' || /^data:image\//.test(url)
         const source = type === 'video'
           ? (local || await isOnline({ signal }) ? { source: url } : null)
           : props.photo
             ? await avatarCache.resolveImage(url, { signal })
             : local ? await prepareImage(url, { signal }) : await mediaCache.resolveImage(url, { signal })
         if (!controller.signal.aborted) { view.source$(source?.source ?? null); view.failed$(!source) }
-      } catch { if (!controller.signal.aborted) view.failed$(true) } finally { pending = false }
+      } catch (error) { if (!controller.signal.aborted) { view.retryable = canRecoverSignerFailure(error); view.failed$(true) } } finally { pending = false }
     }
     const stop = onOnline(resolve)
     cleanup(stop)

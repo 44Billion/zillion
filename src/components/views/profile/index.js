@@ -1,9 +1,9 @@
-import { f, useLocation, useStore } from '#f'
+import { f, useLocation, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import { t } from '#i18n/messages.js'
 import { useAccount } from '#hooks/use-account.js'
 import { profileDetails } from '#helpers/profile-presentation.js'
-import people from '#views/contacts/fixtures/people.json'
+import { error } from '#shared/toast.js'
 import { fixtureCover } from './fixtures/index.js'
 import { profileStyles } from './styles.js'
 import './header.js'
@@ -17,9 +17,10 @@ import '#shared/icons/icon-pencil.js'
 
 f('z-profile-route', ({ h, props }) => {
   const account = useAccount()
+  useTask(({ track }) => { const id = track(() => props.route$().params?.contactId); if (id !== 'user') account.loadPerson?.(id) })
   const person = props.route$().params?.contactId === 'user'
     ? account.person$()
-    : people.find(person => person.id === props.route$().params?.contactId)
+    : account.personFor(props.route$().params?.contactId)
   if (!person) return h`<main class="profile-screen"><style>${profileStyles}</style><z-profile-header props=${{ route$: props.route$, title$: () => t('Profile') }} /><p class="profile-content">${t('Profile not found')}</p></main>`
   return h`${h({ key: `${person.id}:${person.pubkey ?? ''}` })`<f-to-signals props=${{
     from: { person }, render: ({ h, props: data }) => h`<z-profile props=${{ person$: data.person$, route$: props.route$ }} />`
@@ -28,22 +29,31 @@ f('z-profile-route', ({ h, props }) => {
 
 f('z-profile', ({ h, props }) => {
   const location = useLocation()
+  const account = useAccount()
   const view = useStore(() => ({
-    saved$: props.person$().saved !== false,
+    saved$ () { return props.person$().demo ? this.demoSaved$() : props.person$().saved !== false },
+    demoSaved$: props.person$().saved !== false, busy$: false,
     pinned$: !!props.person$().pinned && (props.person$().self || props.person$().saved !== false),
     details$ () { return profileDetails(props.person$()) },
     title$ () { return t(props.person$().self ? 'My profile' : 'Profile') },
     banner$ () { return props.person$().previewCover ? fixtureCover : this.details$().banner },
     about$ () {
       const about = this.details$().about
-      return about && !props.person$().self ? t(about) : about
+      return about && props.person$().demo ? t(about) : about
     },
-    toggleContact () {
-      this.saved$(saved => !saved)
-      if (!this.saved$()) this.pinned$(false)
+    async toggleContact () {
+      if (this.busy$()) return
+      const included = !this.saved$()
+      this.busy$(true)
+      try {
+        if (props.person$().demo) this.demoSaved$(included)
+        else await account.setContact(props.person$().pubkey, included)
+        if (!included) this.pinned$(false)
+      } catch { error(() => t('Could not update contacts')) } finally { this.busy$(false) }
     }
   }))
   const details = view.details$()
+  useTask(({ track }) => { if (!track(() => view.saved$()) && !props.person$().self) view.pinned$(false) })
   const self = props.person$().self
   return h`
     <main class="profile-screen" data-profile-id=${props.person$().id}>
@@ -65,7 +75,7 @@ f('z-profile', ({ h, props }) => {
         <div class="profile-actions">
           ${self
 ? h`<button class="profile-action edit-profile" type="button" onclick=${() => location.pushState({ fromProfile: true }, '', '/profile/user/edit')}><icon-pencil props=${{ size: '22px' }} /><span>${t('Edit profile')}</span></button>`
-: h`<button class=${`profile-action contact-toggle${view.saved$() ? '' : ' primary'}`} type="button" aria-pressed=${String(view.saved$())} onclick=${view.toggleContact}>
+: h`<button class=${`profile-action contact-toggle${view.saved$() ? '' : ' primary'}`} type="button" aria-pressed=${String(view.saved$())} onclick=${view.toggleContact} ?disabled=${view.busy$()}>
             ${view.saved$() ? h`<icon-user-minus props=${{ size: '22px' }} />` : h`<icon-user-plus props=${{ size: '22px' }} />`}<span>${t(view.saved$() ? 'Remove contact' : 'Add contact')}</span>
           </button>`}
           ${self || view.saved$() ? h`<button class="profile-action pin-toggle" type="button" aria-pressed=${String(view.pinned$())} onclick=${() => view.pinned$(pinned => !pinned)}><icon-pin props=${{ size: '22px', weight: view.pinned$() ? 'regular' : 'light' }} /><span>${t(view.pinned$() ? 'Unpin' : 'Pin')}</span></button>` : null}

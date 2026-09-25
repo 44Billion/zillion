@@ -13,7 +13,7 @@ test('route retention, eviction and mobile page transitions in the real launcher
   let browser
   try {
     let files
-    const options = buildOptions({ onEnd: result => { files = result } })
+    const options = buildOptions({ demo: true, onEnd: result => { files = result } })
     options.plugins.push({
       name: 'routing-test-driver',
       setup (build) {
@@ -132,6 +132,7 @@ test('route retention, eviction and mobile page transitions in the real launcher
     assert.equal(await evaluate('routeAnimations.length'), count)
     await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
     assert.equal(await evaluate('location.pathname + location.search'), '/chat/daniel?entry=1')
+    await browser.until(() => evaluate('document.querySelector(".route-page[data-active=true] .attachment-frame img")?.naturalWidth > 0'), 'promised demonstration photo')
     assert.deepEqual(browser.logs.filter(log => log.method === 'Runtime.exceptionThrown' && log.sessionId === appSession), [])
   } catch (error) {
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/routing'))

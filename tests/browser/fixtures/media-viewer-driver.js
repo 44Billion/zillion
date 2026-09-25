@@ -8,7 +8,7 @@ f('z-viewer-test-driver', ({ h }) => {
   window.viewerTest = {
     recover: account.recover,
     async seed () {
-      while (!account.ready$() || !account.pubkey$()) await new Promise(resolve => setTimeout(resolve, 20))
+      while (!account.ready$() || !account.pubkey$() || account.historyState$() !== 'loaded') await new Promise(resolve => setTimeout(resolve, 20))
       const owner = account.pubkey$()
       const template = { kind: 1063, created_at: 1700000001, tags: [['url', 'https://viewer.example.com/second.jpg'], ['m', 'image/jpeg'], ['dim', '640x480']], content: 'A photograph from this conversation' }
       const fileId = getEventHash({ ...template, pubkey: owner })

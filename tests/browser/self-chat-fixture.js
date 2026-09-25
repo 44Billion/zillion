@@ -1,3 +1,4 @@
+import { installPrivateChatFixture } from './private-chat-fixture.js'
 import '#components/app.js'
 import { nfileEncode } from 'libp2r2p/nip19'
 import { createFileMetadata } from 'libp2r2p/nip94'
@@ -13,6 +14,7 @@ import { decryptPersonalCopy } from '#services/chat-references.js'
 // Test-only access to app state; launcher identity, storage and permissions stay real.
 f('z-self-chat-fixture', ({ h }) => {
   window.selfChatAccount = useAccount()
+  window.installPrivateChatFixture = installPrivateChatFixture
   const view = useStore({ galleryFixture$: false })
   window.selfChatFixture = view
   return h`<z-app />${view.galleryFixture$() ? h`<z-gallery-ui-fixture />` : null}`
@@ -22,6 +24,7 @@ f('z-self-chat-fixture', ({ h }) => {
 // This does not replace any launcher provider or the running account service.
 f('z-gallery-ui-fixture', ({ h }) => {
   useClosestStore('z-route-page', () => ({ isActive$: true }), { shouldCache: false })
+  useClosestStore('<f-route>', () => ({ route$: { params: { contactId: 'user' } } }), { shouldCache: false })
   const runtime = useMemo(() => ({ work: null, files: [] }))
   const view = useStore({
     messages$: [], references$: {}, historyState$: 'unavailable', canAttach$: true, canSend$: false, calls$: 0,

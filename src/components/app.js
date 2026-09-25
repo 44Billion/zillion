@@ -6,6 +6,7 @@ import globalCss from '#assets/styles/global.css'
 import { useInitI18n } from '#i18n/index.js'
 import { t } from '#i18n/messages.js'
 import '#shared/toast.js'
+import '#shared/dialog.js'
 import './router.js'
 import { useInitAccount } from '#hooks/use-account.js'
 
@@ -21,5 +22,5 @@ f('z-app', ({ h }) => {
     const description = track(() => t('Zillion — private conversations'))
     document.querySelector('meta[name="description"]')?.setAttribute('content', description)
   })
-  return h`<z-router /><z-toast /><iframe name=${fileDownloadTarget} title=${t('Download file')} hidden></iframe>`
+  return h`<z-router /><z-toast /><z-dialog /><iframe name=${fileDownloadTarget} title=${t('Download file')} hidden></iframe>`
 })

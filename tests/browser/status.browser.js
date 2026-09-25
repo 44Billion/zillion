@@ -26,7 +26,7 @@ test('status icons use natural width and only expansion animates, including bubb
     const appUrl = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app iframe')
     const origin = new URL(appUrl).origin
     const evaluate = expression => browser.evaluate(expression, origin)
-    await browser.until(() => evaluate('!!document.querySelector(".status-indicator svg") && !__statusTest.layout.initial$()'), 'mounted status fixture')
+    await browser.until(() => evaluate('!!document.querySelector(".status-indicator svg") && !__statusTest.layout.initial$()'), 'mounted status fixture').catch(async error => { console.log('Status fixture diagnostic', await evaluate('({ errors: statusErrors, html: document.body.innerHTML.slice(0,1200), status: document.querySelector(".message-status")?.outerHTML, initial: window.__statusTest?.layout.initial$() })')); throw error })
     await evaluate(`(() => {
       const original = Element.prototype.animate;
       window.statusAnimations = [];

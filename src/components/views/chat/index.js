@@ -4,20 +4,19 @@ import { t } from '#i18n/messages.js'
 import { chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
 import { i18n } from '#i18n/index.js'
 import { useRoutePage } from '#shared/route-page.js'
-import people from '#views/contacts/fixtures/people.json'
 import './contact-invitation.js'
 import { getMessages } from './fixtures/index.js'
 import './header.js'
 import './day.js'
 import './composer.js'
 import { useInitChatLayout } from './hooks/use-chat-layout.js'
-import { useAccount } from '#hooks/use-account.js'
+import { useAccount, useConversation } from '#hooks/use-account.js'
 
 f('z-chat-route', ({ h, props }) => {
   const location = useLocation()
   const account = useAccount()
   const route = props.route$()
-  const person = [...people, account.person$()].find(person => person.id === route.params?.contactId)
+  const person = account.personFor(route.params?.contactId)
   const entry = route.url.searchParams.entry === '1'
   if (!person) {
     return h`
@@ -38,26 +37,27 @@ f('z-chat-route', ({ h, props }) => {
 
 f('z-chat', ({ h, props }) => {
   const page = useRoutePage()
-  const account = useAccount()
+  const identity = useAccount()
+  const account = useConversation(() => props.person$().id, { open: true })
   const view = useStore(() => ({
     timelineRef$: null,
     screenRef$: null,
     activeId$: null,
     replyTo$: null,
     now$: Date.now(),
-    real$ () { return props.person$().self === true },
+    real$ () { return !props.person$().demo },
     messages$ () {
-      if (props.person$().saved === false) return []
+      if (props.person$().demo && props.person$().saved === false) return []
       if (!this.real$()) return getMessages(props.person$())
-      return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$() })
+      return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$(), owner: account.pubkey$() })
     },
     days$ () { return groupChatDays(this.messages$()) },
     reply (id) { this.replyTo$(id); this.activeId$(null) },
     retry (id) { this.activeId$(null); return account.retryMessage(id) },
-    remove (id) { this.activeId$(null); return account.deleteMessage(id) },
+    remove (id, options) { this.activeId$(null); return account.deleteMessage(id, options) },
     reply$ () { return this.messages$().find(message => message.id === this.replyTo$()) },
     historyLoaded$ () { return !this.real$() || account.historyLoaded$() || !!account.error$() },
-    canSend$ () { return this.real$() && account.ready$() && !!account.pubkey$() },
+    canSend$ () { return this.real$() && props.person$().saved !== false && account.ready$() && !!account.pubkey$() && (props.person$().self || (identity.signerState$()?.connection === 'connected' && identity.signerState$()?.isLocked === false && identity.signerState$()?.isReadOnly === false)) },
     send (text, attachment) { return account.send(text, this.replyTo$(), attachment) }
   }))
   const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length)
@@ -137,8 +137,9 @@ f('z-chat', ({ h, props }) => {
       `}</style>
       <z-chat-header props=${{ person$: props.person$, entry$: props.entry$, route$: props.route$ }} />
       <div class="chat-timeline" ref=${view.timelineRef$} data-history-loaded=${String(!view.real$() || account.historyLoaded$())}><div class="timeline-content">
-        ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!account.error$() && account.ready$() && !!account.pubkey$() && view.messages$().length > 0}>${account.error$() ? t('Could not load conversation') : !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t('Notes to yourself') : ''}${account.error$() ? h` <button type="button" class="retry-btn" onclick=${() => account.retry$(value => value + 1)}>${t('Retry')}</button>` : null}</div>` : props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : h`<div class="chat-date">${t('Today')}</div>`}
+        ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!account.error$() && account.ready$() && !!account.pubkey$() && view.messages$().length > 0}>${account.error$() ? t('Could not load conversation') : !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t(props.person$().self ? 'Notes to yourself' : 'New message') : ''}${account.error$() ? h` <button type="button" class="retry-btn" onclick=${account.recover}>${t('Retry')}</button>` : null}</div>` : props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : h`<div class="chat-date">${t('Today')}</div>`}
         ${view.real$() && account.historyLoaded$() ? h`<div class="chat-date" role="status" ?hidden=${!account.older$().loading && !account.older$().error}>${account.older$().error ? t('Could not load earlier messages') : t('Loading earlier messages')}${account.older$().error ? h` <button type="button" class="retry-btn" onclick=${account.loadOlder}>${t('Retry')}</button>` : null}</div>` : null}
+        ${view.real$() && props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : null}
         <ol class="message-list" aria-label=${t('Messages')}>
           <span hidden></span>
           ${view.days$().map(day => h({ key: day.key })`

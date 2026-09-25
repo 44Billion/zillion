@@ -49,7 +49,7 @@ export function createConversationMediaReader ({ pubkey, signer, eventStore, con
     check()
     return value
   }
-  const decrypt = wrapper => decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext })
+  const decrypt = wrapper => decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext, authors: [pubkey, context.slice(3)] })
   async function init () {
     if (initialized) return initialized
     initialized = (async () => {

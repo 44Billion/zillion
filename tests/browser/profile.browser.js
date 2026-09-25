@@ -14,7 +14,7 @@ test('profile preview, local controls, editing, identity sharing and retained ch
   let permissions
   try {
     let files
-    const options = buildOptions({ onEnd: result => { files = result } })
+    const options = buildOptions({ demo: true, onEnd: result => { files = result } })
     options.plugins.push({
       name: 'profile-test', setup (build) {
         build.onLoad({ filter: /src\/components\/app\.js$/ }, async args => ({

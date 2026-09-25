@@ -1,16 +1,11 @@
 # Zillion
 
 A private chat inspired by WhatsApp and Signal, built as a Nostr client.
-Messaging will use [`libp2r2p/private-messenger`](../../libp2r2p/private-messenger/index.js),
-which combines private messages (`private-message`) with transport over private
-channels (`private-channel`). The entire front-end uses **thenameisf**.
-
-The project is just getting started: this repository contains documentation,
-tooling, localized home, contacts and conversation previews with fixed sample DMs, a reactive toast, and
-reusable avatar/cache foundations.
-Self chat uses the logged-in account and persists text (kind 9) and local file
-metadata (kind 1063) as personal copies in the launcher event store, with live
-updates, replies and NIP-27 media rendering. Third-party conversations remain sample data.
+Messaging uses `libp2r2p/private-messenger` 0.10.20, with shared self/peer chat
+presentation, personal copies and an encrypted durable outbox. Real contacts are
+derived from owner kind-3 lists and a private kind-30000 override. The front-end
+uses **thenameisf**. See [private chats](docs/private-chats.md) for contracts,
+routes, storage, recovery limits and validation.
 
 Self-chat text uses `libp2r2p/nip27.compactWhitespace` before sending and for
 displaying history, reply excerpts and conversation previews. Spaces and tabs
@@ -39,7 +34,7 @@ from their reserved budget. External videos render online and remain links offli
 including videos, use launcher storage instead of these HTTP caches.
 Animated local images play inside confirmed message bubbles as well as the
 media viewer. Compact previews remain still, and leaving the chat releases its
-image sources. Remote uploads and third-party messaging remain planned.
+image sources. Remote upload services remain outside this delivery; peer attachments use the private channel.
 
 ## Home preview
 
@@ -59,8 +54,7 @@ Light and dark themes follow the system; backgrounds are off-white and graphite.
 The same logo artwork serves both themes and the launcher icon; its sources and
 safety padding are documented in [design/branding](design/branding/README.md).
 Preview content uses fixed English source keys translated at render time, with
-local portraits. Contacts and conversation rows open a fixture DM, including a
-real conversation with yourself. Home Search and new-conversation remain inert previews. The home profile
+local portraits. Contacts and conversation rows open real DMs, including the self-chat. Sample data is opt-in via `ZILLION_DEMO=1`. Home Search and new-conversation remain inert previews. The home profile
 portrait opens the account profile. Real user messages never pass through the translation catalog.
 
 The shared [toast](src/components/shared/toast.md) supports success, error,
@@ -72,20 +66,16 @@ Typography follows 44billion: the root font is `0.0625em` and body text is
 `16rem`. Author font sizes in `rem` (`16rem` is normally 16px) and fixed layout
 dimensions in `px`, allowing the browser's preferred font size to scale text.
 
-## Contacts preview
+## Contacts
 
-`/contacts` lists fixture contacts alphabetically, with a separate self-chat
-shortcut and live search by name, npub, nprofile or NIP-05. More on the home
-strip opens this view whenever the other visible slots are full; otherwise
-Add Contact follows the last contact and opens `/contacts/add` with search
-focused. Both actions are available in production previews.
+`/contacts` lists saved contacts alphabetically, with self-chat separately and
+live search. More opens this directory; Add Contact opens `/contacts/add` with
+search focused. Complete identifiers can resolve an unsaved profile. Its chat
+keeps history visible but requires adding the person before sending.
 
-Try `luna@example.com` to see the unsaved-profile fixture and open `/chat/luna`.
-It shares the existing floating chat header and viewport layout, with an
-Add Contact invitation replacing the composer. The action only explains that
-adding is unavailable. There are no relay searches, saved-contact changes or
-third-party sends. Back/Forward retains directory queries and scroll position.
-
+Demonstration builds retain the fictional directory and `luna@example.com` flow.
+Back/Forward preserves search, scroll and chat drafts. Contact changes in normal
+builds persist only to the private override list; pin/edit controls remain previews.
 
 ## Profile preview
 
@@ -96,13 +86,13 @@ bio that reveals two more lines per click.
 The adjacent Share/Copy action sends the complete displayed identifier through
 the existing native-share/clipboard fallback. Canceling Share does not copy.
 
-Contact and pin toggles simulate state only within the retained profile page;
-removing a contact also clears its pin. They never update the home, chat or
-persistent data. Reload/eviction resets them. `/profile/user/edit` allows local
+Contact controls persist the private override list and update home/chat;
+pin state remains a local preview within the retained profile page. Removing
+a contact also clears its pin. `/profile/user/edit` allows local
 text drafts (including a Lightning address or LNURL) with Save and image controls
 disabled; it does not publish kind 0. Bitcoin and npub remain read-only.
-Self data follows the existing account profile. Third-party data stays bundled,
-without relay lookups or NIP-05 verification. Cover images use the existing
+Self data follows the existing account profile. Third-party profiles use the
+shared local cache and bounded point lookups; no verification badge is added. Cover images use the existing
 media cache; missing/failed images use the compact layout.
 
 Maya demonstrates a cover and long bio, Luna an unsaved profile, and Sam
@@ -164,12 +154,12 @@ separators retain their identity as earlier messages arrive. Bottom following
 also aligns fractional layout positions with scroll pixel rounding, keeping
 unchanged text bubbles from shifting by a pixel as history grows.
 
-The text area grows up to five lines, then scrolls internally. Sending immediately
+The text area grows up to five lines, then scrolls internally. Sending durably queues the message before it
 clears the accepted draft and returns the field to one line. Enter inserts a
 newline. Self chat always exposes Attach, including while typing a caption;
-Send accepts either text or a prepared file. Other chats retain the future-feature
-preview controls, where typing hides Attach and replaces Camera with Send.
-Sending, attachments and replying work in self chat;
+Send accepts either text or a prepared file in self and saved-contact chats.
+Demonstration chats retain the preview controls.
+Sending, attachments and replying share the same implementation;
 camera capture and paid attention remain unimplemented;
 drafts are temporary component state. The three-dot menu displays the future
 content-deletion action without performing it. Paid attention (the bolt button
@@ -354,8 +344,8 @@ choose the green Retry icon. Icons occupy only their own width. Confirmation smo
 that space to reveal the time, including any resulting bubble height change.
 Contraction is immediate; initial history and reduced motion skip the animation.
 Retries reuse the original event and never overwrite a newer draft.
-Pending and failed messages live in memory across retained routes; reloading
-the app or restarting the account service discards any that were not saved.
+Pending and failed accepted messages survive reload in the encrypted outbox.
+Only unsubmitted composer drafts remain local to retained routes.
 The app root owns history/profile subscriptions and cleans them up on unmount;
 home's self avatar and last-message preview share that state.
 
@@ -389,16 +379,15 @@ to remote bunker requests and the vault's encrypted activity-log fields. Update
 the launcher, vault and app together; existing encrypted messages do not need migration.
 
 Use the companion 44billion update supporting `subscribe(filter, { initial: true })`
-to close the history/live delivery race. This new option is not yet in the
-committed upstream API. Offline signing also requires the companion ez-vault
+to close the history/live delivery race; the committed APP_API.md documents it. Offline signing also requires the companion ez-vault
 update for local content keys. Remote bunker signers require connectivity.
 The existing identity, personal-copy write and signer
 APIs were verified against upstream. The launcher's vault handles eventual
 device synchronization; Zillion consumes the resulting local updates.
 The attachment catalog uses context `''`, alongside future generic private account lists.
 Third-party profile caches retain local-first reads and relay refreshes.
-Reactions, remote uploads, history pagination and third-party transport
-are not implemented. External video bytes are not cached for offline playback;
+Reactions and remote upload services remain outside this delivery; history
+pagination and private peer transport are implemented. External video bytes are not cached for offline playback;
 local video attachments are stored by the launcher.
 
 Real messages use the same bubble spacing as fixtures, with clock-only timestamps
@@ -480,7 +469,8 @@ and a fresh 16-character Base64URL `salt` tag (96 random bits), without duplicat
 bytes or catalog entries. Partial chunks remain under
 the launcher's normal cleanup. Empty files are rejected; files with
 failed/unsupported previews remain sendable/downloadable.
-Drafts and failed outbox entries remain memory-only and disappear on reload.
+Unsubmitted drafts disappear on reload. Accepted outbox entries are encrypted
+and durable; their attachment bytes have already been committed to launcher storage.
 Confirmed attachments survive according to launcher storage retention.
 
 Local attachments read original bytes from nostr.alt outside the HTTP image cache

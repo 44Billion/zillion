@@ -1775,5 +1775,83 @@
     "zh-TW": "無法載入較早的訊息",
     "ja": "以前のメッセージを読み込めませんでした",
     "ko": "이전 메시지를 불러오지 못했습니다"
+  },
+  "Could not update contacts": {
+    "en": "Could not update contacts",
+    "fr": "Impossible de mettre à jour les contacts",
+    "it": "Impossibile aggiornare i contatti",
+    "de": "Kontakte konnten nicht aktualisiert werden",
+    "es": "No se pudieron actualizar los contactos",
+    "pt-BR": "Não foi possível atualizar os contatos",
+    "ru": "Не удалось обновить контакты",
+    "zh-CN": "无法更新联系人",
+    "zh-TW": "無法更新聯絡人",
+    "ja": "連絡先を更新できませんでした",
+    "ko": "연락처를 업데이트할 수 없습니다"
+  },
+  "Unverified": {
+    "en": "Unverified",
+    "fr": "Non vérifié",
+    "it": "Non verificato",
+    "de": "Unbestätigt",
+    "es": "Sin verificar",
+    "pt-BR": "Não verificada",
+    "ru": "Не подтверждено",
+    "zh-CN": "未经验证",
+    "zh-TW": "未經驗證",
+    "ja": "未検証",
+    "ko": "미확인"
+  },
+  "This message was received secondhand, without cryptographic proof of its original author.": {
+    "en": "This message was received secondhand, without cryptographic proof of its original author.",
+    "fr": "Ce message a été reçu par un intermédiaire, sans preuve cryptographique de son auteur original.",
+    "it": "Questo messaggio è stato ricevuto tramite un intermediario, senza prova crittografica del suo autore originale.",
+    "de": "Diese Nachricht wurde über eine andere Person empfangen, ohne kryptografischen Nachweis des ursprünglichen Autors.",
+    "es": "Este mensaje se recibió a través de otra persona, sin prueba criptográfica de su autor original.",
+    "pt-BR": "Esta mensagem foi recebida por intermédio de outra pessoa, sem prova criptográfica da autoria original.",
+    "ru": "Это сообщение получено через другого человека, без криптографического подтверждения первоначального автора.",
+    "zh-CN": "此消息由他人转发，缺少原作者身份的加密证明。",
+    "zh-TW": "此訊息由他人轉傳，缺少原作者身分的密碼學證明。",
+    "ja": "このメッセージは第三者を通じて受信され、元の送信者を証明する暗号学的証拠がありません。",
+    "ko": "이 메시지는 다른 사람을 통해 전달되었으며 원 작성자를 확인할 암호학적 증거가 없습니다."
+  },
+  "Delete for me": {
+    "en": "Delete for me",
+    "fr": "Supprimer pour moi",
+    "it": "Elimina per me",
+    "de": "Für mich löschen",
+    "es": "Eliminar para mí",
+    "pt-BR": "Apagar para mim",
+    "ru": "Удалить у меня",
+    "zh-CN": "为我删除",
+    "zh-TW": "為我刪除",
+    "ja": "自分の側で削除",
+    "ko": "나에게서 삭제"
+  },
+  "Delete for everyone": {
+    "en": "Delete for everyone",
+    "fr": "Supprimer pour tous",
+    "it": "Elimina per tutti",
+    "de": "Für alle löschen",
+    "es": "Eliminar para todos",
+    "pt-BR": "Apagar para todos",
+    "ru": "Удалить у всех",
+    "zh-CN": "为所有人删除",
+    "zh-TW": "為所有人刪除",
+    "ja": "全員の側で削除",
+    "ko": "모두에게서 삭제"
+  },
+  "Deleting for everyone requests removal; copies may remain on other devices.": {
+    "en": "Deleting for everyone requests removal; copies may remain on other devices.",
+    "fr": "La suppression pour tous envoie une demande ; des copies peuvent rester sur d’autres appareils.",
+    "it": "L’eliminazione per tutti invia una richiesta; alcune copie possono restare su altri dispositivi.",
+    "de": "Beim Löschen für alle wird eine Anfrage gesendet; Kopien können auf anderen Geräten bleiben.",
+    "es": "Eliminar para todos envía una solicitud; pueden quedar copias en otros dispositivos.",
+    "pt-BR": "Apagar para todos envia uma solicitação; cópias podem permanecer em outros dispositivos.",
+    "ru": "Удаление у всех отправляет запрос; копии могут остаться на других устройствах.",
+    "zh-CN": "为所有人删除会发送删除请求；其他设备上可能仍有副本。",
+    "zh-TW": "為所有人刪除會傳送刪除請求；其他裝置上可能仍有副本。",
+    "ja": "全員への削除を要求しますが、他の端末にコピーが残る場合があります。",
+    "ko": "모두에게 삭제를 요청하지만 다른 기기에 사본이 남을 수 있습니다."
   }
 }

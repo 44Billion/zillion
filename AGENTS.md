@@ -1,7 +1,7 @@
 # Zillion
 
 A Nostr client for private chat inspired by WhatsApp and Signal. The project
-has real self chat alongside fixture-backed third-party DMs, avatar/cache
+has real self and peer chats with an opt-in demonstration directory, avatar/cache
 foundations, and build/publishing tooling. Do not describe planned features as already implemented.
 
 ## Living documentation
@@ -191,15 +191,10 @@ foundations, and build/publishing tooling. Do not describe planned features as a
 
 ## Home layout preview
 
-- Home uses real self-chat state alongside third-party JSON from `src/components/views/home/fixtures/`.
-  This visual preview deliberately ships sample data and local portraits. It is
-  separate from browser-test fixtures, which remain excluded from publication.
-- Third-party preview contacts do not fetch real contacts or messages; self identity
-  and history use the runtime. `a-avatar`
-  receives provided data-URL profiles without public keys, so no Nostr lookup is
-  triggered. Contact and conversation controls navigate to fixture DMs or real self chat.
-  Home Search and compose remain inert; the profile portrait opens the account
-  profile and More opens the contacts view.
+- Home uses the real primary account, effective contacts and loaded conversation previews.
+  Fictional contacts/messages require `ZILLION_DEMO=1`; demo builds do not start
+  private channels or persist contact actions. Browser fixtures remain separate.
+  Contact/conversation controls navigate to real peer DMs or self chat.
 - Keep the main column at a maximum of 718px, centered with vertical borders on
   wider screens. Use the same mobile composition at every width. The contact
   strip fits whole items while keeping 44px portraits. More occupies the final cell when all other visible cells are filled. Otherwise
@@ -254,13 +249,12 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Self chat always omits both paid-attention controls, even with the flag enabled.
   Conditionally omit disabled controls from the DOM. The chat three-dot button
   occupies a single 44px circle without paid attention. Without the previews,
-  the composer always displays Send, even when empty. Keep the profile button visible. Sending is implemented only in self chat.
+  the composer always displays Send, even when empty. Keep the profile button visible. Sending is implemented for self and saved peer contacts.
 
 - `src/components/router.js` owns `url-router`, `useLocation`, and `f-route`.
   `/` is home, `/contacts` is the alphabetical directory, `/contacts/add` opens
-  identifier search with focus, `/chat/user` is real self chat, other
-  `/chat/:contactId` routes are fixture DMs, and unknown routes/contacts
-  render a localized unavailable state. No real contact lookup occurs.
+  identifier search with focus, `/chat/user` is real self chat, other `/chat/:contactId` routes use hex peer identities (or opt-in fixtures).
+  Unknown routes render a localized unavailable state. Complete identifiers use point profile lookups.
 - `z-route-page` scopes one `f-route` to its history entry using reactive
   `paths$`, so different contacts do not share a mounted chat instance. Keep
   `maxVisibleDistance` and the wrapper retention window at `MAX_ROUTE_DISTANCE`
@@ -318,13 +312,13 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   failures fall back to `copy-text.js`, which tries Clipboard then legacy copy
   and restores focus/selection. Show an icon-only green check for 1600ms after
   successful copy; failures use the reactive toast. Clean up pending UI work.
-- The header menu, Delete actions, attention and camera are presentation only.
-  Reply, Send and Attach work in self chat; its paperclip stays available while
+- Attention and camera remain previews; Delete actions persist private kind 5.
+  Reply, Send and Attach work in real chats; its paperclip stays available while
   typing, independently of future-feature previews. Other chats retain the
   fixture controls: typing hides Attach and swaps Camera for Send. Preserve
   Enter/newlines, grow to five text lines, then scroll inside the textarea; align
-  icons to the bottom line. Drafts are local component state. Send synchronously
-  accepts a self-chat message into the service outbox, clears the draft/reply,
+  icons to the bottom line. Drafts are local component state. Send asynchronously
+  persists prepared attachments and the encrypted outbox entry, clears the draft/reply,
   and leaves the composer ready for another message. Rejection before acceptance
   keeps the draft and shows a toast; asynchronous write failures belong to the
   accepted bubble. Keep all added labels and fixture texts translated in 11 locales.
@@ -564,14 +558,12 @@ needed; empty folders mark the initial structure.
   survive, so an authored `\n\n` still keeps one visible blank line. Unresolved
   references stay inline and keep their separator; never rewrite the stored
   event content.
-- The self-chat service owns an in-memory outbox and message `status` values
-  `pending`, `error`, and `saved`; never serialize UI state into a Nostr event.
-  Concurrent sends have independent entries. Explicit retries reuse the same
-  unsigned template, ID, timestamp and reply, and coalesce in-flight attempts.
-  Either an acknowledged successful write or a verified live copy confirms the
-  message; a late failure cannot regress that confirmation or duplicate a bubble.
-  Retained routes and same-account history recovery share the outbox, but reload/root teardown/account change
-  discards unpersisted entries. This is not a durable offline send queue.
+- Root-managed real chats share the encrypted durable outbox in `chat-outbox.js`
+  and coordinator in `private-chats.js`. Status is UI state, never Nostr metadata.
+  Accept only after durable preparation; preserve composer state on rejection.
+  Retried stages reuse identity and track local and remote commits separately.
+  Direct standalone `createSelfChat` without a coordinator remains a local service
+  API used by focused tests; the app supplies the durable coordinator.
 - Real bubbles use `z-chat-message-status`: use 14px-wide icons at the
   current metadata height for the static Tabler clock and red alert-circle.
   Saved messages show only the time at its natural width. Visible expansion
@@ -654,10 +646,10 @@ needed; empty folders mark the initial structure.
   checks also retain the plain Nostr link. Explicit njump URLs pass through the
   same provenance check. Address pointers conservatively stay local if copies
   of the same author/kind exist, since there is no personal-copy address index. Missing/unreadable njump pages keep the
-  original pointer label and nostr: destination. No new persistent app store exists.
+  original pointer label and nostr: destination. The encrypted outbox is a separate
+  persistent app store documented in docs/private-chats.md.
 - The attachment catalog uses context `''`, alongside future private contact/follow events.
-  Reactions and third-party messaging remain
-  unimplemented. All user-facing status/error/reply labels cover 11 locales.
+  Reactions remain unimplemented; third-party messages use the shared chat service. All user-facing status/error/reply labels cover 11 locales.
 
 
 ## Chat layout stability
@@ -732,7 +724,7 @@ needed; empty folders mark the initial structure.
   Local video players use preload=none and a reduced poster. After-render tasks
   own video src setup/cleanup so retained elements restore it after confirmation.
 - The composer owns one raw preparation outside useStore until Send transfers it
-  to the memory-only outbox. Selection/removal never writes events. Close the
+  to the encrypted durable outbox after persistent preparation. Selection/removal never writes events. Close the
   preparation and revoke temporary visual URLs on replacement/removal/unmount or
   confirmation. Cancel superseded work so old selections cannot update the draft.
 - Query/decrypt personal copies for inner kinds 9 and 1063 with their respective
@@ -911,7 +903,7 @@ needed; empty folders mark the initial structure.
   Sweep abandoned files and Chrome swap siblings only when the owner's lock can
   be acquired. Never delete another tab's live artifact. Explicit close waits
   for pending writes/finalization and removes the file. Reload does not persist
-  drafts/outbox. `maintenance.js` is initialized once by the root `useTask`:
+  unsubmitted drafts; accepted outbox entries already reference durable launcher bytes. `maintenance.js` is initialized once by the root `useTask`:
   first scan two elapsed minutes after mount, deferred while hidden; later scans
   on visible return and every 30 minutes while visible. Route/account changes do
   not restart this lifetime. Never sweep from `createTemporaryOutput`.
@@ -936,31 +928,20 @@ needed; empty folders mark the initial structure.
   `sourceMaps: false` for its disposable installation. Installing unused multi-MiB maps via
   a CDP expression exceeded the 3 GiB test budget. Normal development keeps maps.
 
-## Contacts visual preview
+## Real contacts and private chats
 
-- `/contacts` shows the real self identity separately, then saved fixtures in
-  locale-aware alphabetical order. Search matches names without accents and
-  partial npub/nprofile/NIP-05 identifiers. Letter headings disappear in search.
-- `/contacts/add` shares the directory search, with a focused input and empty
-  guidance. `data-route-autofocus` lets page transitions focus its input instead
-  of replacing that focus with the route scroll container. Exact identifiers match an unsaved fixture locally; public nip19
-  decoders also match equivalent nprofile pointers with different relay hints.
-  No contact persistence, relay lookup or NIP-05 verification occurs. Fixture
-  identities and portraits live in `views/contacts/fixtures/people.json` and
-  the existing home portrait bundle. `luna@example.com` opens the unsaved preview.
-- Unsaved fixture DMs reuse `z-chat`, its floating header/menu, viewport handling
-  and route retention. They show a profile and Add Contact invitation instead
-  of messages/composer. The button explains that adding is unavailable; it does
-  not mutate contact data. Saved fixture DMs keep their existing sample messages.
-- Do not add bottom navigation. New labels cover all 11 supported locales, and
-  the existing light/dark theme variables provide all authored colors.
+See [private chats](docs/private-chats.md) for delivery, storage and lifecycle
+contracts. The root inbox is restricted to the instance owner and their effective
+contacts. Never open additional persona inboxes implicitly. Use scoped signer
+state APIs with explicit pubkey for future multi-identity work. Hearsay is quote
+context, not a main bubble or authority for control commands.
 
 ## Profile preview and editor
 
 - `/profile/:contactId` reads the existing account person or bundled contacts.
   `/profile/user/edit` is a separate local-draft form with Save and image controls
-  disabled. Never publish kind 0, resolve third-party metadata or verify NIP-05
-  as a side effect of these views. Native Share/Copy is functional.
+  disabled. Never publish kind 0 or add verification badges as a side effect of these views.
+  Read third-party metadata through the shared cached point-lookup service. Native Share/Copy is functional.
 - `profileDetails` normalizes presentation strings: trimmed `name`, then `display_name`,
   with an italic translated absent-name label in the view. Share the complete
   NIP-05 if present, otherwise npub; shortening is display-only. Missing owner
@@ -970,8 +951,8 @@ needed; empty folders mark the initial structure.
   task. Missing, invalid or failed covers keep the compact layout; loaded covers
   are 160px with a 96px avatar overlapping by 32px. Do not reserve missing covers.
   Fixture cover bytes are bundled, with no external dependencies.
-- Contact/pin simulation belongs to each retained profile component, never the
-  account/global store: removing clears pin, noncontacts cannot pin, and self
+- Contact controls persist the owner override list; pin simulation stays local
+  to each retained profile component: removing clears pin, noncontacts cannot pin, and self
   cannot add/remove itself. Retained Back/Forward preserves simulation and edit
   drafts; eviction/reload discards them. Key self views by owner to prevent drafts
   or simulation leaking between accounts. Untouched edit fields follow incoming

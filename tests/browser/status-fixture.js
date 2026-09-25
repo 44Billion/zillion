@@ -1,5 +1,6 @@
 import '#components/app.js'
-import { f, useClosestStore, useStore } from '#f'
+import Router from 'url-router'
+import { f, useClosestStore, useLocation, useStore } from '#f'
 import { useInitChatLayout } from '#views/chat/hooks/use-chat-layout.js'
 import { useInitI18n } from '#i18n/index.js'
 import '#views/chat/message.js'
@@ -11,6 +12,7 @@ window.addEventListener('unhandledrejection', event => window.statusErrors.push(
 // Presentation controls only; the fixture does not replace injected APIs.
 f('z-status-fixture', ({ h }) => {
   useInitI18n()
+  useLocation(new Router({ '/(.*)': {} }))
   useClosestStore('z-route-page', () => ({ isActive$: true }), { shouldCache: false })
   return h`<z-status-conversation />`
 })
