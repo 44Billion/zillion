@@ -116,6 +116,7 @@ f('a-avatar', ({ h, props }) => {
     svgStyle$: () => {
       return [
         `svg {
+          display: block;
           width: 100%;
           height: 100%;
         }`,
@@ -272,7 +273,7 @@ f('a-avatar', ({ h, props }) => {
   }
 
   if (!store.pk$() || !store.svg$()) {
-    return h`<icon-user-circle props=${props} />`
+    return h`<icon-user-circle props=${{ weight: 'regular', ...props, style$: store.svgStyle$ }} />`
   }
 
   return h`<f-svg props=${{ ...props, style$: store.svgStyle$, svg: store.svg$() }} />`
