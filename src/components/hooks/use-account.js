@@ -205,25 +205,27 @@ function useInitPrivateChats (account) {
       },
       onError: error => { if (!closed) console.warn('Could not load contacts', error) }
     })
-    let previousAvailable = false
+    let availableApplied = false
     let stateVersion = 0
     const stateChanged = async state => {
       if (closed) return
       const version = ++stateVersion
       account.signerState$(state)
       const available = state.connection === 'connected' && state.access === 'allowed' && !state.isLocked && state.isReadOnly === false
-      const wasAvailable = previousAvailable
-      previousAvailable = available
       await runtime.transport.setState(state).catch(error => { if (!closed) console.warn('Could not resume message delivery', error) })
       if (closed || version !== stateVersion) return
-      if (available && !wasAvailable) {
-        contactsStarted = true
-        await runtime.contacts.start().catch(error => { if (!closed) console.warn('Could not resume contacts', error) })
-        if (closed || version !== stateVersion) return
-        account.recovery$(value => value + 1)
-        await account.recover?.()
-        for (const chat of runtime.chats.values()) { if (closed || version !== stateVersion) break; await chat.start() }
+      if (!available) {
+        availableApplied = false
+        return
       }
+      if (availableApplied) return
+      availableApplied = true
+      contactsStarted = true
+      await runtime.contacts.start().catch(error => { if (!closed) console.warn('Could not resume contacts', error) })
+      if (closed || version !== stateVersion) return
+      account.recovery$(value => value + 1)
+      await account.recover?.()
+      for (const chat of runtime.chats.values()) { if (closed || version !== stateVersion) break; await chat.start() }
     }
     const stopState = window.napp.onSignerStateChanged(stateChanged)
     stopState.ready?.catch(error => { if (!closed) console.warn('Signer state unavailable', error) })

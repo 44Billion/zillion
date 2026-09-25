@@ -1,10 +1,12 @@
-import { isOnline } from 'libp2r2p/network'
 import { getLatestEventsByPubkey, relayPool } from 'libp2r2p/relay'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { isValidEvent } from 'libp2r2p/event'
 import { decryptPersonalCopy } from './chat-references.js'
 
 export const CONTACTS_DTAG = '+zillion:contacts'
+const CONTACTS_REFRESH_TIMEOUT_MS = 15000
+// Exponential backoff capped at 5 minutes.
+const CONTACTS_REFRESH_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 5 * 60 * 1000]
 const hex = value => /^[0-9a-f]{64}$/.test(value || '')
 const preferred = (a, b) => !a || b.created_at > a.created_at || (b.created_at === a.created_at && b.id < a.id) ? b : a
 export function contactMembership (lists, owner) {
@@ -24,7 +26,7 @@ export function contactMembership (lists, owner) {
   return [...contacts.values()]
 }
 
-export function createContacts ({ owner, signer, eventStore, onChange, onError = () => {} }) {
+export function createContacts ({ owner, signer, eventStore, onChange, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS }) {
   const lists = [null, null, null]
   let streams = []
   let generation = 0
@@ -33,7 +35,44 @@ export function createContacts ({ owner, signer, eventStore, onChange, onError =
   let coordinates
   let starting
   let remote
+  const requestEvents = _getEvents ?? ((filter, relays, options) => relayPool.getEvents(filter, relays, options))
   const notify = () => onChange(contactMembership(lists, owner))
+  function pause (ms, signal) {
+    if (signal.aborted) return Promise.resolve()
+    return new Promise(resolve => {
+      const finish = () => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, ms)
+      signal.addEventListener('abort', finish, { once: true })
+      if (signal.aborted) finish()
+    })
+  }
+  async function refreshPublicList (version, signal) {
+    let attempt = 0
+    while (!signal.aborted && !lists[0]) {
+      if (version !== generation) return
+      try {
+        const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(CONTACTS_REFRESH_TIMEOUT_MS)])
+        const getEvents = (filter, relays, options = {}) => requestEvents(filter, relays, { ...options, signal: attemptSignal })
+        const { byPubkey } = await getLatestEventsByPubkey([owner], { kinds: [3], _getEvents: getEvents, relayListOptions: { _getEvents: getEvents } })
+        const event = byPubkey[owner]
+        if (version !== generation || signal.aborted) return
+        if (event?.kind === 3 && event.pubkey === owner && isValidEvent(event)) {
+          await eventStore.add(event)
+          return
+        }
+      } catch (error) {
+        if (version !== generation || signal.aborted) return
+        onError(error)
+      }
+      if (version !== generation || signal.aborted || lists[0]) return
+      const delay = _retryDelays.length ? _retryDelays[Math.min(attempt++, _retryDelays.length - 1)] : 0
+      await pause(delay, signal)
+    }
+  }
   function start () {
     if (starting) return starting
     starting = open().finally(() => { starting = null })
@@ -43,16 +82,15 @@ export function createContacts ({ owner, signer, eventStore, onChange, onError =
     const version = ++generation
     remote?.abort()
     remote = new AbortController()
-    const signal = AbortSignal.any([remote.signal, AbortSignal.timeout(15000)])
+    const signal = remote.signal
+    // Rebuild each current list from its snapshot, including empty snapshots
+    // after a deletion. Keep the displayed directory until all three complete.
+    lists.fill(null)
     // Local snapshots render first. A bounded public-list refresh feeds the
     // same local subscription instead of introducing a second list authority.
-    ;(async () => {
-      if (!await isOnline({ signal })) return
-      const getEvents = (filter, relays, options = {}) => relayPool.getEvents(filter, relays, { ...options, signal })
-      const { byPubkey } = await getLatestEventsByPubkey([owner], { kinds: [3], _getEvents: getEvents, relayListOptions: { _getEvents: getEvents } })
-      const event = byPubkey[owner]
-      if (version === generation && !signal.aborted && event?.kind === 3 && event.pubkey === owner && isValidEvent(event)) await eventStore.add(event)
-    })().catch(error => { if (version === generation && !signal.aborted) onError(error) })
+    // Generic connectivity probes must not gate relays, and the refresh keeps
+    // retrying with backoff while no local public list is known.
+    refreshPublicList(version, signal).catch(error => { if (version === generation && !signal.aborted) onError(error) })
     for (const stream of streams) stream.return().catch(() => {})
     streams = []
     context = await signer.obfuscate('', String(PERSONAL_COPY), '')
@@ -64,9 +102,6 @@ export function createContacts ({ owner, signer, eventStore, onChange, onError =
       { kinds: [PERSONAL_COPY], authors: [owner], '#c': [context], '#k': ['30000'], '#v': ['0', '1'], '#d': [coordinates[1]], limit: 1 }
     ]
     if (version !== generation) return
-    // Rebuild each current list from its snapshot, including empty snapshots
-    // after a deletion. Keep the displayed directory until all three complete.
-    lists.fill(null)
     const snapshots = new Set()
     await Promise.all(filters.map(async (filter, index) => {
       const stream = eventStore.subscribe(filter, { initial: true })
