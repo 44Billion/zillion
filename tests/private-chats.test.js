@@ -13,11 +13,11 @@ const active = { access: 'allowed', connection: 'connected', isLocked: false, is
 const event = { kind: 9, created_at: 100, tags: [['salt', 'stable']], content: 'hello', pubkey: owner }
 const until = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)) }; assert.fail('condition not reached') }
 
-function fixture ({ records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
-  const states = []; const sends = []; const writes = []; const queue = []; const pauses = new Set()
-  const signer = { getPublicKey: async () => owner, withSharedKey: (pubkey, info) => { assert.equal(info, 'dm'); return { getPublicKey: async () => `channel:${pubkey}` } } }
+function fixture ({ primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
+  const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
+  const signer = { getPublicKey: async () => primary, withSharedKey: (pubkey, info) => { assert.equal(info, 'dm'); return { getPublicKey: async () => `channel:${pubkey}` } } }
   const messenger = {
-    update: async () => {}, pause: async reason => pauses.add(reason), resume: async reason => pauses.delete(reason), close: async () => {},
+    update: async options => updates.push(options), pause: async reason => pauses.add(reason), resume: async reason => pauses.delete(reason), close: async () => {},
     async nextMessage () {
       const next = queue.find(value => !value.reserved)
       if (!next) return null
@@ -28,13 +28,32 @@ function fixture ({ records = new Map(), save = async () => ({ result: { ok: tru
   }
   let callbacks
   const transport = createPrivateChats({
-    owner, signer, eventStore: { query, addPersonalCopy: async (...args) => { writes.push(args); return save(...args) } },
+    owner: primary, signer, eventStore: { query, addPersonalCopy: async (...args) => { writes.push(args); return save(...args) } },
     Messenger: async options => { callbacks = options; return messenger },
     openOutbox: async () => ({ list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} }),
     onOutbox: list => states.push(structuredClone(list)), onError () {}
   })
-  return { transport, states, sends, writes, queue, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
+  return { transport, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
 }
+
+test('both peer-chat participants seed recovery, retain NIP-65 routing and exclude self channels', async t => {
+  for (const [primary, contact] of [[owner, peer], [peer, owner]]) {
+    const f = fixture({ primary })
+    t.after(() => f.transport.close())
+    await f.transport.setPeers([primary, contact])
+    await f.transport.setState(active)
+    const settings = () => f.updates.at(-1).channels.map(({ signer: _signer, ...settings }) => settings)
+    const expected = [{ pubkey: `channel:${contact}`, mode: 'seeder', seeders: [contact] }]
+    assert.deepEqual(settings(), expected, 'only the contact is a remote seeder and relay routing is inherited')
+    await f.transport.setState({ ...active, isLocked: true })
+    await f.transport.setState(active)
+    assert.deepEqual(settings(), expected)
+    await f.transport.setPeers([primary])
+    assert.deepEqual(settings(), [], 'removing the contact also stops its seeder channel')
+    await f.transport.setPeers([contact])
+    assert.deepEqual(settings(), expected, 'readding a retained channel preserves its seeder role')
+  }
+})
 
 test('contacts merge owner lists and explicit overrides without confusing CRDT metadata', () => {
   const list = tags => ({ pubkey: owner, tags })

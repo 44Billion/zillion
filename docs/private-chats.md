@@ -31,6 +31,15 @@ then acknowledges the persistent reservation. Interrupted saves are redelivered.
 Hearsay supplies reference context only, never a new main timeline message or an
 authoritative deletion. Matching direct/signed copies take precedence.
 
+Each contact channel uses `mode: 'seeder'` with `seeders: [peer]`. Both Zillion
+participants announce seeder presence and retain encrypted router seeds; each
+knows the other as its remote recovery seeder from the start. PrivateMessenger
+owns immediate/periodic presence, seed storage and automatic recovery replies,
+and suspends that work when the channel is removed or the signer is unavailable.
+Relay selection still follows the participants' NIP-65 read lists and the
+library's existing fallback. Self-chat has no channel. This is a one-to-one
+contact policy, not a policy for future group chats.
+
 The outbox uses `libp2r2p/idb-queue`, database
 `zillion:outbox:<owner>:idb-queue`, with library-owned `items` and `state` stores
 and a unique `byId` index. Item payloads contain only an opaque event ID and
@@ -81,7 +90,10 @@ dialog, bottom-aligned on mobile and centered on desktop, with Escape and focus
 restoration. All new labels have eleven translations.
 
 Messenger recovery defaults to seven days and depends on retained relay/seeder
-data. Visited chat pages remain in memory for this session; history is paginated,
+data. The library's recovery-seed cache has a shared 64 MiB FIFO budget, so the
+seven-day window does not guarantee that every seed remains available. Recovery
+seeds are separate from event-store history and the non-evicting app outbox.
+Visited chat pages remain in memory for this session; history is paginated,
 not virtualized. Local outbox records survive app closure under the same app/user
 origin. Clearing site storage removes that outbox; it is not cross-device sync.
 
@@ -93,7 +105,9 @@ photo promised by the sample conversation is included. Browser fixtures are
 separate entry points and never included in published builds.
 
 Node tests cover membership/CRDT selection, ack-after-save, removed-contact
-queues, durable retries and encrypted records. Chrome integration uses the real
+queues, durable retries, encrypted records and symmetric seeder configuration.
+Chrome checks seeder presence and retained recovery data in addition to message
+delivery. Integration uses the real
 launcher/vault and two accounts with only the relay boundary controlled:
 `node ../../44billion/bin/run-browser-tests.js -- env ZILLION_PRIVATE_ONLY=1 node --test tests/browser/self-chat.browser.js`.
 Run browser units sequentially within the guarded 3 GiB budget, alongside the

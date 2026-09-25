@@ -943,6 +943,13 @@ contacts. Never open additional persona inboxes implicitly. Use scoped signer
 state APIs with explicit pubkey for future multi-identity work. Hearsay is quote
 context, not a main bubble or authority for control commands.
 
+Contact channels use `mode: 'seeder'` and `seeders: [peer]`: each participant
+stores encrypted recovery seeds, publishes presence and knows the other seeder
+without discovery. Delegate presence, storage, recovery replies and lifecycle
+to PrivateMessenger. Keep NIP-65 relay selection and default recovery retention.
+Self-chat has no channel; this role policy is specific to one-to-one contacts
+and does not define future group-chat behavior.
+
 ## Profile preview and editor
 
 - `/profile/:contactId` reads the existing account person or bundled contacts.

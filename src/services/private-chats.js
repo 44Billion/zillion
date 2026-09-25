@@ -48,7 +48,7 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
       if (!channel) {
         try {
           const scoped = messengerSigner(signer.withSharedKey(peer, 'dm'))
-          channel = { signer: scoped, pubkey: await scoped.getPublicKey() }
+          channel = { signer: scoped, pubkey: await scoped.getPublicKey(), mode: 'seeder', seeders: [peer] }
           channels.set(peer, channel)
         } catch (error) { if (!retryable(error)) deniedPeers.add(peer); onError(error); continue }
       }

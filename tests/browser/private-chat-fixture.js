@@ -2,6 +2,7 @@ import { prepareAttachment } from '#services/chat-attachments.js'
 import { chatReferenceUri } from '#services/chat-references.js'
 import { getEventHash } from 'libp2r2p/event'
 import { relayPool } from 'libp2r2p/relay'
+import { createPrivateMessenger } from 'libp2r2p/private-messenger'
 import { createPrivateChats } from '#services/private-chats.js'
 import { createChat } from '#services/self-chat.js'
 const matchFilter = (filter, event) => (!filter.kinds || filter.kinds.includes(event.kind)) && (!filter.authors || filter.authors.includes(event.pubkey)) && (!filter.ids || filter.ids.includes(event.id)) && (filter.since == null || event.created_at >= filter.since) && (filter.until == null || event.created_at <= filter.until) && Object.entries(filter).filter(([key]) => key.startsWith('#')).every(([key, values]) => event.tags.some(tag => tag[0] === key.slice(1) && values.includes(tag[1])))
@@ -44,7 +45,11 @@ export function installPrivateChatFixture () {
     const signer = window.napp.getWindowNostrFor(peer)
     const eventStore = window.napp.getWindowNappEventStoreFor(peer)
     const onError = error => fixture.errors.push(error.message)
-    fixture.transport = createPrivateChats({ owner: peer, signer, eventStore, onError, onOutbox: entries => { fixture.outbox = entries; fixture.chat?.applyOutbox(entries) } })
+    fixture.transport = createPrivateChats({
+      owner: peer, signer, eventStore, onError,
+      Messenger: async options => { fixture.messenger = await createPrivateMessenger(options); return fixture.messenger },
+      onOutbox: entries => { fixture.outbox = entries; fixture.chat?.applyOutbox(entries) }
+    })
     await fixture.transport.setPeers([owner])
     fixture.stopState = window.napp.onSignerStateChanged(state => fixture.transport.setState(state), { pubkey: peer })
     await fixture.stopState.ready

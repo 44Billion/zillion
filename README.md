@@ -1,11 +1,16 @@
 # Zillion
 
 A private chat inspired by WhatsApp and Signal, built as a Nostr client.
-Messaging uses `libp2r2p/private-messenger` 0.10.20, with shared self/peer chat
+Messaging uses `libp2r2p/private-messenger`, with shared self/peer chat
 presentation, personal copies and an encrypted durable outbox. Real contacts are
 derived from owner kind-3 lists and a private kind-30000 override. The front-end
 uses **thenameisf**. See [private chats](docs/private-chats.md) for contracts,
 routes, storage, recovery limits and validation.
+
+Both participants in a contact chat act as seeders for their shared channel,
+announcing presence and retaining encrypted recovery data through the messenger.
+Each explicitly knows the other as its remote seeder. Relay selection continues
+to follow NIP-65; self-chat remains local.
 
 Self-chat text uses `libp2r2p/nip27.compactWhitespace` before sending and for
 displaying history, reply excerpts and conversation previews. Spaces and tabs
