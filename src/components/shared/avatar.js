@@ -111,7 +111,12 @@ f('a-avatar', ({ h, props }) => {
     svg$ () {
       const seed = pk$()
       if (!seed) return
-      return getSvgAvatar(seed)
+      try {
+        return getSvgAvatar(seed)
+      } catch (error) {
+        console.error(`[avatar ${seed}] Failed to generate avatar:`, error)
+        return null
+      }
     },
     svgStyle$: () => {
       return [
