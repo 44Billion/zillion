@@ -1,10 +1,12 @@
 import { getLatestEventsByPubkey, relayPool } from 'libp2r2p/relay'
+import { isOnline, onOnline } from 'libp2r2p/network'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { isValidEvent } from 'libp2r2p/event'
 import { decryptPersonalCopy } from './chat-references.js'
 
 export const CONTACTS_DTAG = '+zillion:contacts'
 const CONTACTS_REFRESH_TIMEOUT_MS = 15000
+const CONTACTS_ONLINE_TIMEOUT_MS = 6000
 // Exponential backoff capped at 5 minutes.
 const CONTACTS_REFRESH_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 5 * 60 * 1000]
 const hex = value => /^[0-9a-f]{64}$/.test(value || '')
@@ -26,7 +28,7 @@ export function contactMembership (lists, owner) {
   return [...contacts.values()]
 }
 
-export function createContacts ({ owner, signer, eventStore, onChange, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS }) {
+export function createContacts ({ owner, signer, eventStore, onChange, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS, _isOnline = isOnline, _onOnline = onOnline }) {
   const lists = [null, null, null]
   let streams = []
   let generation = 0
@@ -50,6 +52,35 @@ export function createContacts ({ owner, signer, eventStore, onChange, onError =
       if (signal.aborted) finish()
     })
   }
+  function waitForOnline (signal) {
+    if (signal.aborted) return Promise.resolve(false)
+    return new Promise(resolve => {
+      let finished = false
+      let stop = () => {}
+      const finish = value => {
+        if (finished) return
+        finished = true
+        stop()
+        signal.removeEventListener('abort', onAbort)
+        resolve(value)
+      }
+      const onAbort = () => finish(false)
+      stop = _onOnline(() => finish(true))
+      if (finished) stop()
+      signal.addEventListener('abort', onAbort, { once: true })
+      if (signal.aborted) onAbort()
+    })
+  }
+
+  async function deviceOffline (signal) {
+    try {
+      const probeSignal = AbortSignal.any([signal, AbortSignal.timeout(CONTACTS_ONLINE_TIMEOUT_MS)])
+      return await _isOnline({ signal: probeSignal }) === false
+    } catch {
+      return false
+    }
+  }
+
   async function refreshPublicList (version, signal) {
     let attempt = 0
     while (!signal.aborted && !lists[0]) {
@@ -69,8 +100,13 @@ export function createContacts ({ owner, signer, eventStore, onChange, onError =
         onError(error)
       }
       if (version !== generation || signal.aborted || lists[0]) return
-      const delay = _retryDelays.length ? _retryDelays[Math.min(attempt++, _retryDelays.length - 1)] : 0
-      await pause(delay, signal)
+      const delay = _retryDelays.length ? _retryDelays[Math.min(attempt, _retryDelays.length - 1)] : 0
+      attempt++
+      const offline = await deviceOffline(signal)
+      if (version !== generation || signal.aborted || lists[0]) return
+      const backoff = pause(delay, signal).then(() => false)
+      if (!offline) await backoff
+      else if (await Promise.race([backoff, waitForOnline(signal)])) attempt = 0
     }
   }
   function start () {

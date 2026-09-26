@@ -14,7 +14,7 @@ const until = async predicate => {
 
 const pubkeyOf = secret => finalizeEvent({ kind: 0, created_at: 1, tags: [], content: '' }, secret).pubkey
 
-function fixture ({ owner, event, eventAfter = Infinity }) {
+function fixture ({ owner, event, eventAfter = Infinity, isOnline = async () => true, onOnline = () => () => {}, retryDelays = [1] }) {
   let queries = 0
   const stored = []
   const stream = async function * () { yield { type: 'eose' } }
@@ -32,7 +32,9 @@ function fixture ({ owner, event, eventAfter = Infinity }) {
       queries++
       return { result: queries >= eventAfter && event ? [{ event }] : [] }
     },
-    _retryDelays: [1]
+    _retryDelays: retryDelays,
+    _isOnline: isOnline,
+    _onOnline: onOnline
   })
   return { contacts, stored, queries: () => queries }
 }
@@ -57,5 +59,25 @@ test('public list refresh stores a list found by a later attempt', async () => {
   await f.contacts.start()
   await until(() => f.stored.length === 1)
   assert.equal(f.stored[0].id, event.id)
+  f.contacts.close()
+})
+
+test('public list refresh retries as soon as connectivity returns', async () => {
+  const owner = pubkeyOf(generateSecretKey())
+  let wake
+  const f = fixture({
+    owner,
+    isOnline: async () => false,
+    onOnline: handler => {
+      wake = handler
+      return () => { if (wake === handler) wake = null }
+    },
+    retryDelays: [60000]
+  })
+  await f.contacts.start()
+  await until(() => f.queries() >= 3 && Boolean(wake))
+  const before = f.queries()
+  wake()
+  await until(() => f.queries() > before)
   f.contacts.close()
 })

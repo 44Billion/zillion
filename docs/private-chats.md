@@ -12,11 +12,13 @@ The directory combines owner kind 3 public and personal lists with the owner's
 personal kind 30000 (`d=+zillion:contacts`), in context `''`. Only the override
 list is written. The public list refresh uses a 15-second relay budget per
 attempt and retries with exponential backoff from 1s up to 5 minutes while no
-local public list is known; generic connectivity probes never gate it. `p`
-fields are pubkey, relay hint, petname, membership: `0` excludes, `1`/absent
-includes; CRDT suffixes are not membership values. Other entries and their
-metadata survive edits. Removing a contact keeps history and suspends
-sending/listening; re-adding resumes the available recovery interval.
+local public list is known; generic connectivity probes never gate attempts.
+When a probe confirms the device is offline, the wait also ends on the next
+`onOnline` notification instead of only on the timer. `p` fields are pubkey,
+relay hint, petname, membership: `0` excludes, `1`/absent includes; CRDT suffixes
+are not membership values. Other entries and their metadata survive edits.
+Removing a contact keeps history and suspends sending/listening; re-adding
+resumes the available recovery interval.
 
 `/chat/user` is self-chat; `/chat/<64-character peer key>` uses the real shared
 chat service. `/contacts/add` searches current contacts and resolves complete
