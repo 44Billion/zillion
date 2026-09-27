@@ -6,6 +6,7 @@ on:
     paths:
       - 'landing/**'
       - 'bin/landing/**'
+      - 'src/assets/media/branding/zillion.icon.svg'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/pages.yml'

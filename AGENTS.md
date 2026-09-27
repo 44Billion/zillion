@@ -353,10 +353,26 @@ needed; empty folders mark the initial structure.
 
 ## Standalone landing
 
-- `landing/src/` mirrors the app's components and assets layout. The initial
-  page is a thenameisf hello world, independent of the launcher, injected APIs,
-  Nostr, routing, and app initialization. Use `#f` for the library and relative
-  imports within the landing; root application aliases still target `src/`.
+- `landing/src/` mirrors the app's components and assets layout. The English
+  “Privacy runs deeper” page is independent of launcher APIs and app startup.
+  Use `#f` for the library and relative imports within the landing; root app
+  aliases still target `src/`. Keep the root component lean, sections in
+  `components/views/`, and reusable illustrations/controls in `components/shared/`.
+- Keep the two-key illustration central, with three smaller benefits and a
+  compact future-feature strip. Identity misuse alerts lead “On the horizon”;
+  all four roadmap items remain explicitly unavailable. Describe detection of
+  suspicious key use, never guaranteed detection of every key leak. Put nuanced
+  security comparisons and limits in the native “Explore the design” disclosure.
+- Landing light/dark colors live in `landing/src/assets/styles/theme.js`. Default
+  to the system theme; cycle Auto/Light/Dark with a native accessible button and
+  persist `zillion:landing:theme` when storage is available. Initialize the saved
+  preference before first render; honor reduced motion and browser text scaling.
+- Use the approved app logo unchanged, copied as a build entry. WebP conversation
+  assets are real fictional-demo captures in both themes; their provenance is
+  recorded beside them. Never capture real contacts or messages for the landing.
+- The CTA targets `https://44billion.net/+zillion`. Its launcher alias is a
+  separate prerequisite, not implemented by the landing. Keep links relative
+  for local assets and use no third-party fonts, analytics, or runtime requests.
 - `bin/landing/` owns shared esbuild options and separate build/dev entrypoints.
   Preserve the app's browser targets, ESM format, CSS-as-text convention and
   typography. Keep dependencies in the root package; no separate installation.

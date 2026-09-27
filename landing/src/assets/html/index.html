@@ -3,12 +3,36 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Zillion — private conversations">
-    <title>Zillion</title>
-    <link rel="icon" href="data:,">
+    <meta name="description" content="Privacy runs deeper. Open-source private messaging on Nostr, protected by two keys working together. Open Zillion on 44billion — no download required.">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Zillion — Privacy runs deeper.">
+    <meta property="og:description" content="Private messaging on Nostr, protected by two keys working together. No download required.">
+    <meta property="og:url" content="https://44billion.github.io/zillion/">
+    <title>Zillion — Privacy runs deeper.</title>
+    <link rel="icon" type="image/svg+xml" href="./zillion.icon.svg">
+    <style>
+      html { color-scheme: light dark; background: Canvas; color: CanvasText; }
+    </style>
+    <script>
+      (() => {
+        let theme = 'system'
+        try {
+          const saved = localStorage.getItem('zillion:landing:theme')
+          if (saved === 'light' || saved === 'dark') theme = saved
+        } catch { /* Storage is optional. */ }
+        document.documentElement.dataset.theme = theme
+        if (theme !== 'system') document.documentElement.style.colorScheme = theme
+      })()
+    </script>
     <script type="module" src="./app.js"></script>
   </head>
   <body>
     <z-landing-app></z-landing-app>
+    <noscript>
+      <h1>Zillion — Privacy runs deeper.</h1>
+      <p>Private messaging on Nostr, protected by two keys working together.</p>
+      <p><a href="https://44billion.net/+zillion">Open Zillion on 44billion</a> · No download required.</p>
+      <p><a href="https://github.com/44Billion/zillion">Source code</a></p>
+    </noscript>
   </body>
 </html>

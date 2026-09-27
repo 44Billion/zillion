@@ -202,9 +202,15 @@ Route retention requires **thenameisf 1.2.10** or newer.
 
 ## Landing page
 
-The standalone landing currently renders a thenameisf hello world. It needs
-only Node.js 24+ and the root npm dependencies, without the launcher, sibling
-repositories, publisher credentials, or injected APIs.
+The English landing introduces Zillion through its two-key design, deniability,
+private channels, and encrypted history. It uses thenameisf with original SVG
+illustrations and real fictional-demo captures, follows the system color scheme,
+and offers a remembered Auto/Light/Dark preference. Technical details are
+collapsed under “Explore the design”; “On the horizon” explicitly lists future
+features, starting with identity misuse alerts.
+
+Development needs only Node.js 24+ and the root npm dependencies, without the
+launcher, sibling repositories, publisher credentials, or injected APIs.
 
 ```sh
 npm ci
@@ -218,6 +224,10 @@ into components and assets; tools live in `bin/landing/`. The production build
 is minified without sourcemaps, while development includes sourcemaps. Relative
 asset URLs support both a site root and the GitHub Pages `/zillion/` prefix.
 Generated files are ignored by Git and ESLint. Existing app commands are separate.
+The build reuses the app's approved logo and copies hashed landing images into
+its own assets directory. No external fonts, analytics, or runtime APIs are used.
+The “Open Zillion” link targets `https://44billion.net/+zillion`; registering that
+alias in the launcher is a separate prerequisite for this link to resolve.
 
 For GitHub Pages, select **Settings → Pages → Build and deployment → Source →
 GitHub Actions**. The `Deploy landing to GitHub Pages` workflow builds on relevant

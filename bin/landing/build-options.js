@@ -6,10 +6,11 @@ export const outdir = path.join(root, 'landing/dist')
 export function buildOptions ({ development = false } = {}) {
   return {
     absWorkingDir: root,
-    entryPoints: ['landing/src/components/app.js', 'landing/src/assets/html/index.html'],
+    entryPoints: ['landing/src/components/app.js', 'landing/src/assets/html/index.html', 'src/assets/media/branding/zillion.icon.svg'],
     outdir,
     entryNames: '[name]',
-    loader: { '.html': 'copy', '.css': 'text' },
+    assetNames: 'assets/[name]-[hash]',
+    loader: { '.html': 'copy', '.css': 'text', '.webp': 'file', '.svg': 'copy' },
     bundle: true,
     platform: 'browser',
     format: 'esm',
