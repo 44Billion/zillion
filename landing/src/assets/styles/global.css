@@ -58,8 +58,8 @@ h1 em { color: var(--l-green); font-family: Georgia, "Times New Roman", serif; f
   border-radius: 12px; background: var(--l-button); color: var(--l-onButton);
   box-shadow: 0 5px 15px var(--l-shadow); min-height: 72px;
 }
-.launch-symbol { font-size: 30rem; line-height: 1; font-weight: 750; letter-spacing: -3px; padding-right: 16px; border-right: 1px solid var(--l-onButtonMuted); }
-.launch-symbol > span { font-size: 22rem; letter-spacing: -1px; }
+.launch-symbol { flex-shrink: 0; padding-right: 16px; border-right: 1px solid var(--l-onButtonMuted); }
+.launch-symbol img { width: 48px; height: 48px; object-fit: contain; }
 .launch-label { display: flex; flex-direction: column; gap: 1px; }
 .launch-label strong { font-size: 17rem; line-height: 1.4; font-weight: 600; letter-spacing: -.3px; }
 .launch-label > span { font-size: 11rem; color: var(--l-onButtonMuted); }

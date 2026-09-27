@@ -10,7 +10,7 @@ export function buildOptions ({ development = false } = {}) {
     outdir,
     entryNames: '[name]',
     assetNames: 'assets/[name]-[hash]',
-    loader: { '.html': 'copy', '.css': 'text', '.webp': 'file', '.svg': 'copy' },
+    loader: { '.html': 'copy', '.css': 'text', '.webp': 'file', '.png': 'file', '.svg': 'copy' },
     bundle: true,
     platform: 'browser',
     format: 'esm',

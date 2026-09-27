@@ -370,6 +370,9 @@ needed; empty folders mark the initial structure.
 - Use the approved app logo unchanged, copied as a build entry. WebP conversation
   assets are real fictional-demo captures in both themes; their provenance is
   recorded beside them. Never capture real contacts or messages for the landing.
+  The launch badge uses the unchanged 44billion cap from the local landing media
+  copy, with purple light/dark button tokens. Keep original artwork colors and
+  proportions, and do not import sibling repository assets during the build.
 - The CTA targets `https://44billion.net/+zillion`. Its launcher alias is a
   separate prerequisite, not implemented by the landing. Keep links relative
   for local assets and use no third-party fonts, analytics, or runtime requests.

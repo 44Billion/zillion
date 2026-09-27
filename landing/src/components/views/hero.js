@@ -1,4 +1,5 @@
 import { f } from '#f'
+import platformIcon from '../../assets/media/44b.png'
 import lightConversation from '../../assets/media/conversation-light.webp'
 import darkConversation from '../../assets/media/conversation-dark.webp'
 
@@ -11,7 +12,7 @@ f('z-landing-hero', ({ h, s }) => h`
       <div class="availability">
         <p class="micro-label">AVAILABLE ON 44BILLION.NET</p>
         <a class="launch-button" href="https://44billion.net/+zillion">
-          <span class="launch-symbol" aria-hidden="true">44<span>b</span></span>
+          <span class="launch-symbol" aria-hidden="true"><img src=${platformIcon} width="48" height="48" alt=""></span>
           <span class="launch-label"><strong>Open Zillion</strong><span>No download required</span></span>
           <z-landing-icon props=${{ name: 'northeast' }} />
         </a>

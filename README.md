@@ -225,7 +225,9 @@ is minified without sourcemaps, while development includes sourcemaps. Relative
 asset URLs support both a site root and the GitHub Pages `/zillion/` prefix.
 Generated files are ignored by Git and ESLint. Existing app commands are separate.
 The build reuses the app's approved logo and copies hashed landing images into
-its own assets directory. No external fonts, analytics, or runtime APIs are used.
+its own assets directory. The launch badge uses the original 44billion cap icon
+on a theme-aware purple background; a local asset copy keeps CI independent
+of the sibling checkout. No external fonts, analytics, or runtime APIs are used.
 The “Open Zillion” link targets `https://44billion.net/+zillion`; registering that
 alias in the launcher is a separate prerequisite for this link to resolve.
 
