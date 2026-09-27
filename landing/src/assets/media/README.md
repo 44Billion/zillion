@@ -22,6 +22,6 @@ by the landing build rather than duplicated here.
 `44b.png` is an unchanged copy of the approved 360 × 360 transparent cap icon
 from `44billion/src/assets/media/44b.png`, copied on 2026-09-27. Keep the original
 colors and proportions. It appears in the launch badge on a muted purple
-background (dark plum in the light theme, pale lavender in the dark theme).
+background (pale lavender in the light theme, dark plum in the dark theme).
 The local copy keeps GitHub Pages builds independent of the sibling checkout;
 esbuild publishes it as a hashed PNG asset.
