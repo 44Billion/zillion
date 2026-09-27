@@ -200,6 +200,32 @@ Inactive views remain mounted but cannot receive focus or pointer interaction.
 
 Route retention requires **thenameisf 1.2.10** or newer.
 
+## Landing page
+
+The standalone landing currently renders a thenameisf hello world. It needs
+only Node.js 24+ and the root npm dependencies, without the launcher, sibling
+repositories, publisher credentials, or injected APIs.
+
+```sh
+npm ci
+npm run start:landing     # http://127.0.0.1:4173; rebuilds HTML, CSS and JavaScript
+npm run build:landing     # production files in landing/dist/
+```
+
+Reload the browser manually after edits. Ctrl+C stops the watcher and server;
+an occupied port fails explicitly. Sources live in `landing/src/`, organized
+into components and assets; tools live in `bin/landing/`. The production build
+is minified without sourcemaps, while development includes sourcemaps. Relative
+asset URLs support both a site root and the GitHub Pages `/zillion/` prefix.
+Generated files are ignored by Git and ESLint. Existing app commands are separate.
+
+For GitHub Pages, select **Settings → Pages → Build and deployment → Source →
+GitHub Actions**. The `Deploy landing to GitHub Pages` workflow builds on relevant
+pushes to `main` or manual dispatch, and deploys only from `main`. It uploads only
+`landing/dist/`; `docs/` remains project documentation. The environment
+`github-pages` exposes the deployed URL. Remote deployment requires this Pages
+setting and a successful workflow run; no custom domain is configured here.
+
 ## Development
 
 Future-feature previews are enabled by default in development (`npm start`).

@@ -351,6 +351,31 @@ only by that consumer. Promote code to shared folders when there are actual
 consumers; the rule to evaluate libp2r2p first still applies. Create modules as
 needed; empty folders mark the initial structure.
 
+## Standalone landing
+
+- `landing/src/` mirrors the app's components and assets layout. The initial
+  page is a thenameisf hello world, independent of the launcher, injected APIs,
+  Nostr, routing, and app initialization. Use `#f` for the library and relative
+  imports within the landing; root application aliases still target `src/`.
+- `bin/landing/` owns shared esbuild options and separate build/dev entrypoints.
+  Preserve the app's browser targets, ESM format, CSS-as-text convention and
+  typography. Keep dependencies in the root package; no separate installation.
+- `npm run build:landing` cleans only `landing/dist/` and builds minified files
+  without sourcemaps. `npm run start:landing` watches HTML/CSS/JS with sourcemaps
+  and serves `http://127.0.0.1:4173`; browser reload is manual. Port conflicts
+  fail explicitly; SIGINT/SIGTERM dispose the watcher and server.
+- Use relative asset URLs for both `/` and `/zillion/`. Generated landing files
+  remain ignored by Git and ESLint. Do not mix app metadata or publisher tooling
+  into this build. Existing app commands and `docs/` retain their purposes.
+- `.github/workflows/pages.yml` builds on relevant main pushes or manual
+  dispatch, uploads only `landing/dist/`, and deploys only from main using the
+  `github-pages` environment. Enable GitHub Actions as the Pages source in
+  repository settings. No custom domain is configured by this workflow.
+- Validate landing changes with lint, both production builds, and a standalone
+  browser check at the site root and under `/zillion/`; verify watch behavior
+  and shutdown when changing dev tooling. Landing browser checks need no
+  launcher or vault but still use the guarded browser runner's memory limits.
+
 ## Nsite and publishing
 
 - Deliver static files for browser execution. Do not depend on a Node.js

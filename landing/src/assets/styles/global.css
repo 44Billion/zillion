@@ -1,0 +1,27 @@
+html {
+  font-size: 0.0625em;
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, sans-serif;
+  font-size: 16rem;
+  line-height: 1.5;
+}
+
+.landing {
+  box-sizing: border-box;
+  max-width: 718px;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.landing h1 {
+  margin: 0 0 16px;
+  font-size: 32rem;
+}
+
+.landing p {
+  margin: 0;
+}

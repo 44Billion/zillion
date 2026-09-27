@@ -3,7 +3,7 @@ import globals from 'globals'
 import html from 'eslint-plugin-html'
 
 export default [
-  { ignores: ['.history/**', 'dist/**', 'tmp/**', 'node_modules/**'] },
+  { ignores: ['.history/**', 'dist/**', 'landing/dist/**', 'tmp/**', 'node_modules/**'] },
   ...neostandard({
     // options
   }), {
