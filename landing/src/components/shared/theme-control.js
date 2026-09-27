@@ -1,4 +1,5 @@
 import { f, useStore, useTask } from '#f'
+import { t } from '../../i18n/index.js'
 
 const storageKey = 'zillion:landing:theme'
 const modes = ['system', 'light', 'dark']
@@ -25,13 +26,15 @@ f('z-theme-control', ({ h }) => {
     cleanup(() => window.removeEventListener('storage', onStorage))
   })
   const next = modes[(modes.indexOf(state.mode$()) + 1) % modes.length]
+  const names = { system: t('Auto'), light: t('Light'), dark: t('Dark') }
+  const label = t('Theme: {{current}}. Switch to {{next}}.', { current: names[state.mode$()], next: names[next] })
   return h`
     <button class="theme-control" type="button" onclick=${changeTheme}
-      aria-label=${`Theme: ${state.mode$()}. Switch to ${next} theme`} title=${`Theme: ${state.mode$()}. Switch to ${next}.`}>
+      aria-label=${label} title=${label}>
       <span class="theme-icon theme-icon-system" hidden=${state.mode$() !== 'system'}><z-landing-icon props=${{ name: 'system' }} /></span>
       <span class="theme-icon theme-icon-light" hidden=${state.mode$() !== 'light'}><z-landing-icon props=${{ name: 'sun' }} /></span>
       <span class="theme-icon theme-icon-dark" hidden=${state.mode$() !== 'dark'}><z-landing-icon props=${{ name: 'moon' }} /></span>
-      <span class="theme-label">${state.mode$() === 'system' ? 'Auto' : state.mode$() === 'light' ? 'Light' : 'Dark'}</span>
+      <span class="theme-label">${names[state.mode$()]}</span>
     </button>
   `
 })

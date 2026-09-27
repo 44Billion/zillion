@@ -1,4 +1,5 @@
 import { f } from '#f'
+import { t } from '../../i18n/index.js'
 import platformIcon from '../../assets/media/44b.png'
 import lightConversation from '../../assets/media/conversation-light.webp'
 import darkConversation from '../../assets/media/conversation-dark.webp'
@@ -6,18 +7,18 @@ import darkConversation from '../../assets/media/conversation-dark.webp'
 f('z-landing-hero', ({ h, s }) => h`
   <section class="hero shell" aria-labelledby="hero-title">
     <div class="hero-copy">
-      <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> OPEN-SOURCE NOSTR MESSENGER</p>
-      <h1 id="hero-title">Privacy runs<br><em>deeper.</em></h1>
-      <p class="hero-description">Private messaging on Nostr, protected by<br class="desktop-break"> two keys working together.</p>
+      <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span>${t('OPEN-SOURCE NOSTR MESSENGER')}</p>
+      <h1 id="hero-title">${t('Privacy runs\ndeeper.').split('\n')[0]}<br><em>${t('Privacy runs\ndeeper.').split('\n')[1]}</em></h1>
+      <p class="hero-description">${t('Private messaging on Nostr, protected by two keys working together.')}</p>
       <div class="availability">
-        <p class="micro-label">AVAILABLE ON 44BILLION.NET</p>
+        <p class="micro-label">${t('AVAILABLE ON 44BILLION.NET')}</p>
         <a class="launch-button" href="https://44billion.net/+zillion">
           <span class="launch-symbol" aria-hidden="true"><img src=${platformIcon} width="48" height="48" alt=""></span>
-          <span class="launch-label"><strong>Open Zillion</strong><span>No download required</span></span>
+          <span class="launch-label"><strong>${t('Open Zillion')}</strong><span>${t('No download required')}</span></span>
           <z-landing-icon props=${{ name: 'northeast' }} />
         </a>
       </div>
-      <a class="beneath-link" href="#privacy">A little of what’s underneath <z-landing-icon props=${{ name: 'arrow' }} /></a>
+      <a class="beneath-link" href="#privacy">${t('A little of what’s underneath')}<z-landing-icon props=${{ name: 'arrow' }} /></a>
     </div>
     <figure class="hero-visual">
       <div class="orbit-art" aria-hidden="true">
@@ -31,13 +32,13 @@ f('z-landing-hero', ({ h, s }) => h`
       <div class="conversation-frame">
         <div class="preview-bar" aria-hidden="true"><span class="preview-dots"><i></i><i></i><i></i></span><span>Zillion</span><span class="preview-lock">◈</span></div>
         <img class="conversation-image image-light" src=${lightConversation} width="780" height="1260"
-          alt="Zillion demo: a private conversation with Maya about weekend plans." fetchpriority="high">
+          alt=${t('Zillion demo: a private conversation with Maya about weekend plans.')} fetchpriority="high">
         <img class="conversation-image image-dark" src=${darkConversation} width="780" height="1260"
-          alt="Zillion demo: a private conversation with Maya about weekend plans." fetchpriority="high">
+          alt=${t('Zillion demo: a private conversation with Maya about weekend plans.')} fetchpriority="high">
       </div>
-      <span class="floating-key identity-key"><z-landing-icon props=${{ name: 'key' }} /><span>Identity key<small>YOUR NOSTR IDENTITY</small></span></span>
-      <span class="floating-key content-key"><z-landing-icon props=${{ name: 'key' }} /><span>Content key<small>YOUR PRIVATE WORLD</small></span></span>
-      <figcaption>Familiar on the surface. Thoughtful underneath.</figcaption>
+      <span class="floating-key identity-key"><z-landing-icon props=${{ name: 'key' }} /><span>${t('Identity key')}<small>${t('YOUR NOSTR IDENTITY')}</small></span></span>
+      <span class="floating-key content-key"><z-landing-icon props=${{ name: 'key' }} /><span>${t('Content key')}<small>${t('YOUR PRIVATE WORLD')}</small></span></span>
+      <figcaption>${t('Familiar on the surface. Thoughtful underneath.')}</figcaption>
     </figure>
   </section>
 `)

@@ -202,12 +202,21 @@ Route retention requires **thenameisf 1.2.10** or newer.
 
 ## Landing page
 
-The English landing introduces Zillion through its two-key design, deniability,
+The multilingual landing introduces Zillion through its two-key design, deniability,
 private channels, and encrypted history. It uses thenameisf with original SVG
 illustrations and real fictional-demo captures, follows the system color scheme,
 and offers a remembered Auto/Light/Dark preference. Technical details are
 collapsed under “Explore the design”; “On the horizon” explicitly lists future
 features, starting with identity misuse alerts.
+
+The landing supports the same eleven languages as the app: English, French,
+Italian, German, Spanish, Brazilian Portuguese, Russian, Simplified Chinese,
+Traditional Chinese, Japanese, and Korean. It follows the browser’s language
+preferences, falling back to English. The compact header language menu offers
+an automatic mode and a remembered manual choice, independent of the launcher.
+Text, accessibility labels and page metadata update without a reload. The demo
+screenshots, static no-JavaScript fallback and initial social metadata remain
+in English; linked technical documentation keeps its original language.
 
 Development needs only Node.js 24+ and the root npm dependencies, without the
 launcher, sibling repositories, publisher credentials, or injected APIs.

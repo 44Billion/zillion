@@ -15,8 +15,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 a { color: inherit; text-decoration: none; }
-button { font: inherit; color: inherit; cursor: pointer; }
-a, button, summary { -webkit-tap-highlight-color: transparent; }
+button, select { font: inherit; color: inherit; cursor: pointer; }
+a, button, select, summary { -webkit-tap-highlight-color: transparent; }
 a:focus-visible, button:focus-visible, summary:focus-visible {
   outline: 2px solid var(--l-green);
   outline-offset: 6px;
@@ -36,21 +36,21 @@ img, svg { display: block; max-width: 100%; }
 .site-header { display: flex; align-items: center; justify-content: space-between; min-height: 104px; }
 .wordmark { display: inline-flex; align-items: center; gap: 8px; font-size: 24rem; font-weight: 680; letter-spacing: -.8px; }
 .wordmark img { width: 40px; height: 40px; }
-.header-actions { display: flex; align-items: center; gap: 22px; }
+.header-actions { display: flex; flex-shrink: 0; align-items: center; gap: 22px; }
 .source-link { display: inline-flex; align-items: center; gap: 8px; font-size: 13rem; font-weight: 550; }
 .source-link .icon { width: 17px; height: 17px; }
 .header-divider { width: 1px; height: 20px; background: var(--l-border); }
 .theme-control { display: inline-flex; align-items: center; gap: 7px; padding: 10px 0; min-height: 44px; min-width: 64px; border: 0; background: none; }
 .theme-control .icon { width: 19px; height: 19px; }
 .theme-label { font-size: 12rem; color: var(--l-muted); }
-.hero { display: grid; grid-template-columns: 1.06fr 1fr; gap: 20px; align-items: center; padding-block: 34px 74px; }
+.hero { display: grid; grid-template-columns: minmax(0, 1.06fr) minmax(0, 1fr); gap: 20px; align-items: center; padding-block: 34px 74px; }
 .hero-copy { padding-bottom: 10px; position: relative; z-index: 2; }
 .eyebrow, .micro-label, .feature-label { font-size: 10rem; font-weight: 650; letter-spacing: 1.8px; line-height: 1.6; }
 .eyebrow { display: flex; align-items: center; gap: 9px; color: var(--l-muted); }
 .status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--l-green); }
 h1 { margin-top: 24px; font-size: clamp(60rem, 6.8vw, 88rem); line-height: 1.04; letter-spacing: -4px; font-weight: 550; }
 h1 em { color: var(--l-green); font-family: Georgia, "Times New Roman", serif; font-weight: 400; letter-spacing: -4px; }
-.hero-description { color: var(--l-muted); font-size: 17rem; line-height: 1.75; margin-top: 25px; }
+.hero-description { max-width: 440px; color: var(--l-muted); font-size: 17rem; line-height: 1.75; margin-top: 25px; }
 .availability { margin-top: 36px; }
 .micro-label { color: var(--l-muted); font-size: 9rem; letter-spacing: 1.65px; margin-bottom: 11px; }
 .launch-button {
@@ -181,9 +181,8 @@ h3 { font-size: 22rem; line-height: 1.35; letter-spacing: -.6px; font-weight: 56
 @media (max-width: 1000px) {
   .shell { width: calc(100% - 64px); }
   h1 { font-size: 66rem; letter-spacing: -3px; }
-  .hero { grid-template-columns: 1fr 1fr; gap: 0; padding-bottom: 52px; }
+  .hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0; padding-bottom: 52px; }
   .hero-description { font-size: 15rem; }
-  .desktop-break { display: none; }
   .hero-visual { min-height: 525px; }
   .conversation-frame { width: 250px; }
   .floating-key { padding: 11px 13px; font-size: 11rem; gap: 8px; }
@@ -201,9 +200,11 @@ h3 { font-size: 22rem; line-height: 1.35; letter-spacing: -.6px; font-weight: 56
   .site-header { min-height: 82px; }
   .wordmark { font-size: 22rem; }
   .wordmark img { width: 35px; height: 35px; }
-  .header-actions { gap: 15px; }
+  .header-actions { gap: 8px; }
   .source-link { font-size: 12rem; }
-  .source-link .icon, .theme-label { display: none; }
+  .source-link span, .theme-label { display: none; }
+  .source-link { min-width: 28px; min-height: 44px; justify-content: center; }
+  .header-divider { display: none; }
   .theme-control { min-width: 28px; padding: 10px 3px; }
   .hero { grid-template-columns: 1fr; padding-block: 24px 48px; gap: 10px; }
   .hero-copy { text-align: center; padding-bottom: 0; }
@@ -258,4 +259,33 @@ h3 { font-size: 22rem; line-height: 1.35; letter-spacing: -.6px; font-weight: 56
   .floating-key { font-size: 10rem; padding: 10px; }
   .floating-key .icon { width: 19px; height: 19px; }
   .benefit-art { width: 97px; margin-right: 0; }
+}
+
+/* A native menu keeps eleven languages accessible without filling the header. */
+.language-control { position: relative; display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; }
+.language-code { display: inline-flex; align-items: center; min-height: 44px; min-width: 44px; font-size: 12rem; color: var(--l-muted); white-space: nowrap; }
+.language-chevron { margin-left: 2px; }
+.language-control select { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.language-control select:not(.pointer-focus):focus-visible + .language-code { outline: 2px solid var(--l-green); outline-offset: 3px; border-radius: 5px; }
+.language-control option { color: var(--l-text); background: var(--l-canvas); }
+/* Allow translated copy to wrap without squeezing the illustration column. */
+h1, h2, h3 { overflow-wrap: anywhere; }
+:root:not(:lang(en)) h1 { font-size: clamp(40rem, 4.5vw, 62rem); letter-spacing: -2px; line-height: 1.12; }
+:root:not(:lang(en)) h1 em { letter-spacing: -2px; }
+:root:lang(zh) h1, :root:lang(ja) h1, :root:lang(ko) h1 { letter-spacing: 0; }
+:root:lang(zh) h1 em, :root:lang(ja) h1 em, :root:lang(ko) h1 em { letter-spacing: 0; }
+.hero-visual figcaption { text-align: center; max-width: 100%; }
+.launch-button { max-width: 100%; }
+.launch-label { min-width: 0; }
+.beneath-link, .key-legend { max-width: 100%; }
+.horizon-heading > div, .horizon-heading > p { min-width: 0; }
+@media (max-width: 720px) {
+  :root:not(:lang(en)) h1 { font-size: clamp(34rem, 9vw, 58rem); }
+  .site-header { gap: 12px; flex-wrap: wrap; padding-block: 12px; }
+  .hero-description { max-width: 340px; }
+  .launch-button { gap: 12px; padding-inline: 12px; }
+  .launch-symbol { padding-right: 12px; }
+  .launch-button .icon { margin-left: 0; }
+  .horizon-heading { flex-wrap: wrap; }
+  .horizon-heading > p { text-align: left; }
 }

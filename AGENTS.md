@@ -353,11 +353,28 @@ needed; empty folders mark the initial structure.
 
 ## Standalone landing
 
-- `landing/src/` mirrors the app's components and assets layout. The English
+- `landing/src/` mirrors the app's components and assets layout. The multilingual
   “Privacy runs deeper” page is independent of launcher APIs and app startup.
   Use `#f` for the library and relative imports within the landing; root app
   aliases still target `src/`. Keep the root component lean, sections in
   `components/views/`, and reusable illustrations/controls in `components/shared/`.
+- `landing/src/i18n/` owns a separate reactive thenameisf instance and catalog,
+  mounted once by the landing root. Support the same eleven locales as the app;
+  tests check parity without importing app initialization. Use relative imports,
+  source English keys, explicit locale objects, and translate during render.
+  Resolve `navigator.languages` in priority order, including regional/Chinese
+  variants, with English fallback. The native header select offers automatic
+  detection and explicit locales; persist only `zillion:landing:locale`, tolerate
+  blocked storage, and clean up root-owned language/storage listeners. Manual
+  selection overrides browser changes until automatic mode is restored.
+  Synchronize `html.lang`, title, descriptions, and accessible labels. Retain
+  English demo captures, the static no-JavaScript fallback and initial metadata;
+  translating screenshots or generating per-locale URLs is not implemented.
+  Catalog/detection tests live in `tests/landing-i18n.test.js`. After building,
+  run the standalone browser regression with
+  `node ../../44billion/bin/run-browser-tests.js -- node tests/landing/i18n.browser.js`.
+  It starts its own static server and tests all locales, responsive layouts,
+  persistence, browser/storage events, blocked storage and keyboard selection.
 - Keep the two-key illustration central, with three smaller benefits and a
   compact future-feature strip. Identity misuse alerts lead “On the horizon”;
   all four roadmap items remain explicitly unavailable. Describe detection of

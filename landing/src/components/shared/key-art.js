@@ -1,7 +1,8 @@
 import { f } from '#f'
+import { t } from '../../i18n/index.js'
 
 f('z-key-art', ({ h, s }) => h`
-  <div class="key-art" role="img" aria-label="A purple identity key and a green content key join to protect one conversation. Both keys are needed.">
+  <div class="key-art" role="img" aria-label=${t('A purple identity key and a green content key join to protect one conversation. Both keys are needed.')}>
     ${s`<svg viewBox="0 0 440 272" fill="none" aria-hidden="true" focusable="false">
       <ellipse class="key-orbit" cx="220" cy="136" rx="184" ry="107" stroke-dasharray="3 7" />
       <g class="key-piece key-purple" transform="rotate(-38 170 103)">
@@ -21,6 +22,6 @@ f('z-key-art', ({ h, s }) => h`
       <rect class="key-center" x="199" y="125" width="42" height="42" rx="14" />
       <path class="key-check" d="m212 146 6 6 11-13" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
     </svg>`}
-    <div class="key-legend" aria-hidden="true"><span><i class="purple-fill"></i>Identity key</span><span class="legend-plus">+</span><span><i class="green-fill"></i>Content key</span></div>
+    <div class="key-legend" aria-hidden="true"><span><i class="purple-fill"></i>${t('Identity key')}</span><span class="legend-plus">+</span><span><i class="green-fill"></i>${t('Content key')}</span></div>
   </div>
 `)
