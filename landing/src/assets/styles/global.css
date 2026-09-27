@@ -67,7 +67,16 @@ h1 em { color: var(--l-green); font-family: Georgia, "Times New Roman", serif; f
 .beneath-link { display: flex; align-items: center; gap: 10px; width: fit-content; color: var(--l-muted); margin-top: 30px; font-size: 12rem; }
 .beneath-link .icon { width: 14px; height: 14px; transform: rotate(90deg); }
 .hero-visual { position: relative; min-height: 555px; display: flex; flex-direction: column; align-items: center; justify-content: center; isolation: isolate; }
-.hero-visual::before { content: ""; position: absolute; z-index: -2; inset: 0 -20px; background: radial-gradient(ellipse at 65% 30%, var(--l-haloPurple), transparent 64%), radial-gradient(ellipse at 40% 66%, var(--l-haloGreen), transparent 65%); }
+.hero-visual::before {
+  content: "";
+  position: absolute;
+  z-index: -2;
+  inset: 0 -20px;
+  background: radial-gradient(ellipse at 65% 30%, var(--l-haloPurple), transparent 64%), radial-gradient(ellipse at 40% 66%, var(--l-haloGreen), transparent 65%);
+  /* Fade the halo completely before every edge, including at mobile sizes. */
+  -webkit-mask-image: radial-gradient(ellipse closest-side at center, #000 35%, transparent 95%);
+  mask-image: radial-gradient(ellipse closest-side at center, #000 35%, transparent 95%);
+}
 .orbit-art { position: absolute; z-index: -1; inset: -8px -18px 0; }
 .orbit-art svg { width: 100%; height: 100%; }
 .orbit { stroke-width: 1; }
