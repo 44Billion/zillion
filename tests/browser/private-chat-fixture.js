@@ -17,7 +17,10 @@ export function installPrivateChatFixture () {
   const select = filter => [...events.values()].filter(event => matchFilter(filter, event))
   relayPool.getEvents = async filter => ({ result: select(filter).map(event => ({ event, relay })), errors: [], success: true, relays })
   relayPool.sendEvent = async event => {
-    if (window.dmTest?.rejectPublication) throw new Error('Controlled relay unavailable')
+    if (window.dmTest?.rejectPublication) {
+      const reason = Object.assign(new Error('PUBLISH_TIMEOUT'), { category: 'timeout' })
+      return { success: false, total: 1, promise: Promise.resolve({ success: false, total: 1, fulfilled: 0, errors: [{ relay, reason }] }) }
+    }
     events.set(event.id, event)
     for (const stream of streams) if (matchFilter(stream.filter, event)) stream.push({ type: 'event', event, relay })
     return { success: true, result: [relay], errors: [] }

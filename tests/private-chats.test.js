@@ -14,7 +14,7 @@ const event = { kind: 9, created_at: 100, tags: [['salt', 'stable']], content: '
 const until = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)) }; assert.fail('condition not reached') }
 
 function fixture ({ primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
-  const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
+  const errors = []; const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
   const signer = { getPublicKey: async () => primary, withSharedKey: (pubkey, info) => { assert.equal(info, 'dm'); return { getPublicKey: async () => `channel:${pubkey}` } } }
   const messenger = {
     update: async options => updates.push(options), pause: async reason => pauses.add(reason), resume: async reason => pauses.delete(reason), close: async () => {},
@@ -31,9 +31,9 @@ function fixture ({ primary = owner, records = new Map(), save = async () => ({ 
     owner: primary, signer, eventStore: { query, addPersonalCopy: async (...args) => { writes.push(args); return save(...args) } },
     Messenger: async options => { callbacks = options; return messenger },
     openOutbox: async () => ({ list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} }),
-    onOutbox: list => states.push(structuredClone(list)), onError () {}
+    onOutbox: list => states.push(structuredClone(list)), onError: error => errors.push(error)
   })
-  return { transport, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
+  return { transport, errors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
 }
 
 test('both peer-chat participants seed recovery, retain NIP-65 routing and exclude self channels', async t => {
@@ -202,4 +202,34 @@ test('attachment transport failure keeps the committed personal copy and retry c
   assert.deepEqual(f.records.get(id).localSaved, [true, true])
   assert.equal(f.sends.length, 0)
   await f.transport.close()
+})
+
+test('relay failures retain diagnostics and remain retryable without resaving the message', async t => {
+  const timeout = Object.assign(new Error('PUBLISH_TIMEOUT', { cause: new Error('socket closed') }), { category: 'timeout' })
+  const rejection = new Error('invalid: temporary relay policy')
+  let fail = true
+  const f = fixture({
+    publish: async () => fail
+      ? { delivery: { reports: [{ success: false, total: 2, promise: Promise.resolve({ total: 2, fulfilled: 0, errors: [{ relay: 'wss://one.test', reason: timeout }, { relay: 'wss://two.test', reason: rejection }] }) }] } }
+      : { delivery: { reports: [{ success: true }] } }
+  })
+  t.after(() => f.transport.close())
+  await f.open()
+  const id = await f.transport.enqueue({ peer, event })
+  await until(() => f.states.at(-1)?.[0]?.status === 'error')
+  const error = f.errors.at(-1)
+  assert.equal(error.code, 'MESSAGE_NOT_PUBLISHED')
+  assert.equal(error.eventId, id)
+  assert.equal(error.eventKind, 9)
+  assert.match(error.message, /wss:\/\/one.test \[timeout\]: PUBLISH_TIMEOUT/)
+  assert.match(error.message, /wss:\/\/two.test: invalid: temporary relay policy/)
+  assert.equal(error.reports[0].errors[0].reason.cause.message, 'socket closed')
+  assert.equal(f.records.get(id).retryable, true, 'relay text is not a signer permission denial')
+  await f.transport.retry(id)
+  assert.equal(f.errors.length, 2)
+  fail = false
+  await f.transport.retry(id)
+  assert.equal(f.records.size, 0)
+  assert.equal(f.writes.length, 1)
+  assert.ok(f.sends.every(send => getEventHash(send.rumor) === id))
 })

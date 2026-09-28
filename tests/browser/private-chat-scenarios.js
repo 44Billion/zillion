@@ -83,6 +83,7 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
   await evaluate('dmTest.rejectPublication = true')
   const durable = await evaluate(`selfChatAccount.chatFor('${peer}').send('Durable across reload')`)
   await browser.until(() => evaluate(`selfChatAccount.outbox$().some(entry => entry.id === '${durable}' && entry.status === 'error')`), 'remote failure persists a retryable entry', 60000)
+  assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${durable}').retryable`), true)
   const origin = await evaluate('location.origin')
   await evaluate('dmTest.close()')
   await browser.evaluate(`(() => { const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)}); frame.src = ${JSON.stringify(origin + '/chat/' + peer)}; })()`)

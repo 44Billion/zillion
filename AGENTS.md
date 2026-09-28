@@ -1019,6 +1019,14 @@ to PrivateMessenger. Keep NIP-65 relay selection and default recovery retention.
 Self-chat has no channel; this role policy is specific to one-to-one contacts
 and does not define future group-chat behavior.
 
+`message-publication.js` consumes failed delivery reports through their public
+`promise`, retaining relay URLs/native errors and inner event ID/kind under
+`MESSAGE_NOT_PUBLISHED`. Success requires one accepting relay per outer event,
+without waiting for remaining relays. Never log the full messenger result: it
+contains plaintext and may include a deletion secret. Relay rejection text must
+not be treated as a local signer denial; publication failures stay retryable.
+See `docs/private-chats.md` for the diagnostic fields and timeout semantics.
+
 ## Profile preview and editor
 
 - `/profile/:contactId` reads the existing account person or bundled contacts.

@@ -5,13 +5,15 @@ import { decodeFileMetadata } from 'libp2r2p/nip94'
 import NMMR from 'nmmr'
 import { createChatOutbox } from './chat-outbox.js'
 import { messengerSigner } from './messenger-signer.js'
+import { assertMessagePublished } from './message-publication.js'
 
 export function wireEvent (value, owner) {
   const event = { kind: value.kind, created_at: value.created_at, tags: structuredClone(value.tags), content: value.content, pubkey: value.pubkey || owner }
   if (value.sig) return { ...event, id: value.id, sig: value.sig }
   return event
 }
-const retryable = error => !/DENIED|PERMISSION|REVOKED|READ_ONLY|INVALID|BLOCKED|EXPIRED|NOT_IN_PERSONA/i.test(`${error?.code || ''} ${error?.message || ''}`)
+// Relay rejection text must not be interpreted as a local signer denial.
+const retryable = error => error?.code === 'MESSAGE_NOT_PUBLISHED' || !/DENIED|PERMISSION|REVOKED|READ_ONLY|INVALID|BLOCKED|EXPIRED|NOT_IN_PERSONA/i.test(`${error?.code || ''} ${error?.message || ''}`)
 
 export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () => {}, onError = () => {}, Messenger = createPrivateMessenger, openOutbox = createChatOutbox }) {
   const userSigner = messengerSigner(signer)
@@ -109,7 +111,7 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
     const options = { channelPubkey: channels.get(peer)?.pubkey, receiverPubkeys: [peer] }
     const report = event.sig ? await messenger.broadcastEvent({ ...options, event }) : await messenger.broadcastRumor({ ...options, rumor: event })
     // Published is relay acceptance, never a peer receipt.
-    if (!report?.delivery?.reports?.length || !report.delivery.reports.every(item => item.success)) throw new Error('MESSAGE_NOT_PUBLISHED')
+    await assertMessagePublished(report, event)
   }
   async function pump () {
     if (sending || !available || closed || !messenger || !storage) return

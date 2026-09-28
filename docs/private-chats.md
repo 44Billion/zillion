@@ -84,6 +84,32 @@ pending publication of the selected message first. Already accepted in-flight
 remote copies cannot be revoked locally; remote deletions do not guarantee that
 all copies everywhere disappear. Removing a contact does not delete history.
 
+## Publication diagnostics
+
+Each `delivery.reports` item represents an outer transport event, not a relay.
+Every outer event needs acceptance from at least one selected relay; one failed
+relay alone does not fail a redundant send. The installed relay pool uses a
+3-second first-acknowledgement deadline, including connection work. Missing that
+deadline is a publication failure even if the relay is online; it does not prove
+that the peer could not receive an event accepted without a timely acknowledgement.
+
+`MESSAGE_NOT_PUBLISHED` keeps its stable `code`. Its message includes failed
+report positions, relay counts, URLs, categories and native rejection/timeout
+messages. `eventId` and `eventKind` identify the outgoing inner event (including
+quoted context or attachment chunks); `reports` retains only failed publication
+summaries with the original relay errors and their causes. `reason` distinguishes
+`NO_DELIVERY_REPORTS` from `RELAY_PUBLICATION_FAILED`; empty relay sets say
+`NO_RELAYS`. Only failed reports await their detailed promise, which the installed
+pool settles before returning failure. Successful sends keep the first-ack fast
+path. Diagnostics go through the existing console error callback and are not
+persisted in the outbox. Never log the complete broadcast result: it contains
+plaintext and may include `delivery.deletionSeckey`.
+
+Relay response text does not classify local signer permission failures. Publication
+failures remain retryable, preserving the inner ID and committed local copy.
+These diagnostics identify future failures; the former generic error cannot
+establish the cause of an earlier incident.
+
 ## Availability and presentation
 
 Signer-state notifications pause/resume inbox network work and outbox sending.

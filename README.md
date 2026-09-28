@@ -11,6 +11,8 @@ Both participants in a contact chat act as seeders for their shared channel,
 announcing presence and retaining encrypted recovery data through the messenger.
 Each explicitly knows the other as its remote seeder. Relay selection continues
 to follow NIP-65; self-chat remains local.
+Failed publications log relay-specific reasons with `MESSAGE_NOT_PUBLISHED` and
+the affected event ID; see [publication diagnostics](docs/private-chats.md#publication-diagnostics).
 
 Self-chat text uses `libp2r2p/nip27.compactWhitespace` before sending and for
 displaying history, reply excerpts and conversation previews. Spaces and tabs
