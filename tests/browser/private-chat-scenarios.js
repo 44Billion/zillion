@@ -25,6 +25,7 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
   assert.deepEqual(await evaluate(`window.napp.getSignerState({pubkey:'${peer}'})`), { pubkey: peer, connection: 'connected', access: 'allowed', isLocked: false, isReadOnly: false })
   console.log('Private chats: both real identities authorized')
   await evaluate('installPrivateChatFixture()')
+  assert.deepEqual(await evaluate('dmTest.checkTemporaryLeaves()'), { count: 130, otherCount: 130 })
   await evaluate(`dmTest.openPeer('${peer}')`)
   console.log('Private chats: peer listener ready')
   await evaluate(`selfChatAccount.setContact('${peer}', true)`)
@@ -35,6 +36,17 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
   assert.equal(await evaluate('dmTest.messages[0].pubkey'), pubkey)
   await browser.until(() => evaluate(`Object.values(dmTest.messenger.readState().channels).some(channel => channel.mode === 'seeder' && channel.seeders.includes('${pubkey}') && channel.seederActivity?.['${pubkey}']?.announcedAt > 0)`), 'peer runs as seeder and receives the primary participant seeder announcement', 60000)
   await browser.until(() => evaluate(`dmTest.messenger.seedQueue.some(seed => seed.innerEventId === '${sent}')`), 'peer retains encrypted recovery data for the received message', 60000)
+  await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => entry.id === '${sent}')`), 'initial message publication completes', 20000)
+  await evaluate('dmTest.holdAcknowledgements = true')
+  const delayed = await evaluate(`selfChatAccount.chatFor('${peer}').send('Message with delayed relay acknowledgement')`)
+  await browser.until(() => evaluate('dmTest.pendingAcknowledgements() > 0'), 'relay has received a publication and holds its OK', 20000)
+  await evaluate('new Promise(resolve => setTimeout(resolve, 3500))')
+  assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${delayed}')?.status`), 'pending', 'the old three-second cutoff must not mark the pending message as failed')
+  await evaluate('dmTest.holdAcknowledgements = false; dmTest.releaseAcknowledgements()')
+  await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => entry.id === '${delayed}')`), 'late relay acknowledgement confirms the message', 20000)
+  await browser.until(() => evaluate(`dmTest.messages.some(event => event.id === '${delayed}')`), 'peer receives the message sent with a delayed OK', 20000)
+
+  console.log('Private chats: delayed confirmation and temporary leaf isolation verified')
   const reply = await evaluate(`dmTest.chat.send('Private reply', '${sent}')`)
   await browser.until(() => evaluate(`selfChatAccount.conversations$()['${peer}']?.messages.some(event => event.id === '${reply}')`), 'peer reply in primary account', 60000)
   assert.equal(await evaluate(`selfChatAccount.conversations$()['${peer}'].messages.find(event => event.id === '${reply}').pubkey`), peer)
@@ -53,6 +65,7 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
     return dmTest.chat.send('Peer image', undefined, attachment);
   })()`)
   await browser.until(() => evaluate(`document.querySelector('[data-message-id="${fileId}"] .attachment-frame img')?.naturalWidth === 1`), 'peer attachment bytes and metadata arrive', 60000)
+  console.log('Private chats: reply and attachment received')
   const forwarded = await evaluate(`(async () => {
     const context = {kind:9, pubkey:'${pubkey}', created_at:Math.floor(Date.now()/1000), tags:[['salt','unverified-context']], content:'Context only'};
     const id = dmTest.getEventHash(context);
@@ -80,10 +93,12 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
   await evaluate(`selfChatAccount.setContact('${peer}', false)`)
   assert.equal(await evaluate(`selfChatAccount.contacts$().some(contact => contact.pubkey === '${peer}')`), false)
   await evaluate(`selfChatAccount.setContact('${peer}', true)`)
+  console.log('Private chats: both deletions verified; checking failed-send persistence')
   await evaluate('dmTest.rejectPublication = true')
   const durable = await evaluate(`selfChatAccount.chatFor('${peer}').send('Durable across reload')`)
   await browser.until(() => evaluate(`selfChatAccount.outbox$().some(entry => entry.id === '${durable}' && entry.status === 'error')`), 'remote failure persists a retryable entry', 60000)
   assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${durable}').retryable`), true)
+  console.log('Private chats: retryable failure persisted; reloading')
   const origin = await evaluate('location.origin')
   await evaluate('dmTest.close()')
   await browser.evaluate(`(() => { const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)}); frame.src = ${JSON.stringify(origin + '/chat/' + peer)}; })()`)

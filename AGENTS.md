@@ -1022,7 +1022,9 @@ and does not define future group-chat behavior.
 `message-publication.js` consumes failed delivery reports through their public
 `promise`, retaining relay URLs/native errors and inner event ID/kind under
 `MESSAGE_NOT_PUBLISHED`. Success requires one accepting relay per outer event,
-without waiting for remaining relays. Never log the full messenger result: it
+without waiting for remaining relays. libp2r2p 0.10.26 waits up to 30 seconds
+for that first acknowledgement; it no longer fails an unconfirmed send at 3 seconds.
+Never log the full messenger result: it
 contains plaintext and may include a deletion secret. Relay rejection text must
 not be treated as a local signer denial; publication failures stay retryable.
 See `docs/private-chats.md` for the diagnostic fields and timeout semantics.

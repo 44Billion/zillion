@@ -1,7 +1,8 @@
+import NMMR from 'nmmr'
 import { prepareAttachment } from '#services/chat-attachments.js'
 import { chatReferenceUri } from '#services/chat-references.js'
 import { getEventHash } from 'libp2r2p/event'
-import { relayPool } from 'libp2r2p/relay'
+import { RelayPool, relayPool } from 'libp2r2p/relay'
 import { createPrivateMessenger } from 'libp2r2p/private-messenger'
 import { createPrivateChats } from '#services/private-chats.js'
 import { createChat } from '#services/self-chat.js'
@@ -16,15 +17,39 @@ export function installPrivateChatFixture () {
   const relays = [{ relay, status: 'eose' }]
   const select = filter => [...events.values()].filter(event => matchFilter(filter, event))
   relayPool.getEvents = async filter => ({ result: select(filter).map(event => ({ event, relay })), errors: [], success: true, relays })
-  relayPool.sendEvent = async event => {
-    if (window.dmTest?.rejectPublication) {
-      const reason = Object.assign(new Error('PUBLISH_TIMEOUT'), { category: 'timeout' })
-      return { success: false, total: 1, promise: Promise.resolve({ success: false, total: 1, fulfilled: 0, errors: [{ relay, reason }] }) }
+  const acknowledgements = []
+  const publisher = new RelayPool({
+    WebSocket: class ControlledRelaySocket {
+      constructor (url) {
+        this.url = url
+        this.readyState = 0
+        queueMicrotask(() => { if (this.readyState === 0) { this.readyState = 1; this.onopen?.() } })
+      }
+
+      send (raw) {
+        const [op, event] = JSON.parse(raw)
+        if (op !== 'EVENT' || window.dmTest?.rejectPublication) return
+        if (!events.has(event.id)) {
+          events.set(event.id, event)
+          for (const stream of streams) if (matchFilter(stream.filter, event)) stream.push({ type: 'event', event, relay })
+        }
+        const acknowledge = () => { if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(['OK', event.id, true, '']) }) }
+        if (window.dmTest?.holdAcknowledgements) acknowledgements.push(acknowledge)
+        else queueMicrotask(acknowledge)
+      }
+
+      close () {
+        if (this.readyState === 3) return
+        this.readyState = 3
+        queueMicrotask(() => this.onclose?.({ code: 1000, reason: '', wasClean: true }))
+      }
     }
-    events.set(event.id, event)
-    for (const stream of streams) if (matchFilter(stream.filter, event)) stream.push({ type: 'event', event, relay })
-    return { success: true, result: [relay], errors: [] }
-  }
+  })
+  // The installed library owns acknowledgement timing; only socket I/O is fake.
+  relayPool.sendEvent = (event, urls, options = {}) => publisher.sendEvent(event, urls, {
+    ...options,
+    ...(window.dmTest?.rejectPublication ? { timeout: 25 } : {})
+  })
   const subscribe = (filter, urls, { signal } = {}) => {
     const queue = select(filter).map(event => ({ type: 'event', event, relay })).concat({ type: 'eose', relays })
     let waiter; let closed = false
@@ -43,6 +68,28 @@ export function installPrivateChatFixture () {
   relayPool.getEventsFeedGenerator = subscribe
   relayPool.getLiveEventsGenerator = subscribe
   const fixture = { prepareAttachment, chatReferenceUri, getEventHash, errors: [], messages: [], outbox: [], events }
+  fixture.checkTemporaryLeaves = async () => {
+    const a = new NMMR(); const b = new NMMR()
+    try {
+      for (let index = 0; index < 130; index++) {
+        await a.append(Uint8Array.of(index))
+        await b.append(Uint8Array.of(255 - index))
+      }
+      let count = 0
+      for await (const chunk of a.getChunks()) {
+        if (chunk.contentBytes[0] !== count++) throw new Error('TEMPORARY_LEAVES_MIXED')
+        NMMR.verifyProof({ ...chunk, root: a.getRoot() })
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
+      await a.close()
+      let otherCount = 0
+      for await (const chunk of b.getChunks()) {
+        if (chunk.contentBytes[0] !== 255 - otherCount++) throw new Error('OTHER_TEMPORARY_LEAVES_LOST')
+        NMMR.verifyProof({ ...chunk, root: b.getRoot() })
+      }
+      return { count, otherCount }
+    } finally { await a.close(); await b.close() }
+  }
   fixture.openPeer = async peer => {
     const owner = await window.nostr.peekPublicKey()
     const signer = window.napp.getWindowNostrFor(peer)
@@ -61,6 +108,8 @@ export function installPrivateChatFixture () {
     await fixture.chat.start()
     fixture.signer = signer; fixture.eventStore = eventStore
   }
-  fixture.close = async () => { fixture.stopState?.(); fixture.chat?.close(); await fixture.transport?.close() }
+  fixture.pendingAcknowledgements = () => acknowledgements.length
+  fixture.releaseAcknowledgements = () => { for (const acknowledge of acknowledgements.splice(0)) acknowledge() }
+  fixture.close = async () => { fixture.stopState?.(); fixture.chat?.close(); await fixture.transport?.close(); await publisher.disconnectAll(); acknowledgements.length = 0 }
   window.dmTest = fixture
 }

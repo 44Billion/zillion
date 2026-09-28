@@ -88,9 +88,11 @@ all copies everywhere disappear. Removing a contact does not delete history.
 
 Each `delivery.reports` item represents an outer transport event, not a relay.
 Every outer event needs acceptance from at least one selected relay; one failed
-relay alone does not fail a redundant send. The installed relay pool uses a
-3-second first-acknowledgement deadline, including connection work. Missing that
-deadline is a publication failure even if the relay is online; it does not prove
+relay alone does not fail a redundant send. libp2r2p 0.10.26 uses the
+30-second operation deadline for publication, returning immediately on the first
+accepting relay. The former 3-second first-acknowledgement cutoff is disabled by
+default; connection establishment keeps its separate 3-second limit. Missing the
+publication deadline is a failure even if the relay is online; it does not prove
 that the peer could not receive an event accepted without a timely acknowledgement.
 
 `MESSAGE_NOT_PUBLISHED` keeps its stable `code`. Its message includes failed
