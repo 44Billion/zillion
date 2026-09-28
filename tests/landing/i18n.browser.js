@@ -46,14 +46,24 @@ try {
     console.log(name + ': ' + JSON.stringify(cssContentSize))
   }
 
+  const settle = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  const key = async (name, code, modifiers = 0) => {
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: name, code: name === ' ' ? 'Space' : name, windowsVirtualKeyCode: code, modifiers, ...(name === 'Enter' ? { text: '\r', unmodifiedText: '\r' } : {}) }, browser.sessionId)
+    await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: name, code: name, windowsVirtualKeyCode: code, modifiers }, browser.sessionId)
+    await settle()
+  }
+  const openMenu = async () => {
+    await evaluate('document.querySelector(".language-trigger").click()')
+    await browser.until(() => evaluate('document.activeElement.getAttribute("role") === "menuitemradio"'), 'menu focus')
+    await settle()
+  }
   const choose = async value => {
-    await evaluate(`(() => {
-      const select = document.querySelector('.language-control select');
-      select.value = ${JSON.stringify(value)};
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    })()`)
+    await openMenu()
+    await evaluate(`document.querySelector('.language-option[data-locale="${value}"]').click()`)
     await browser.until(() => evaluate('document.documentElement.lang').then(lang => lang === (value === 'auto' ? 'pt-BR' : value)), 'locale ' + value)
-    await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    await settle()
+    assert.equal(await evaluate('document.querySelector(".language-trigger").getAttribute("aria-expanded")'), 'false')
+    assert.equal(await evaluate('document.activeElement.className'), 'language-trigger')
   }
   const { identifier: languagesScript } = await browser.send('Page.addScriptToEvaluateOnNewDocument', {
     source: 'Object.defineProperty(navigator, \'languages\', { configurable: true, get: () => [\'xx\', \'pt-PT\', \'en-US\'] })'
@@ -62,14 +72,86 @@ try {
   await media('light')
   await ready(origin + '/zillion/')
   assert.equal(await evaluate('document.documentElement.lang'), 'pt-BR')
-  assert.equal(await evaluate('document.querySelector(".language-control select").value'), 'auto')
+  assert.equal(await evaluate('document.querySelector(\'.language-option[aria-checked="true"]\').dataset.locale'), 'auto')
   assert.equal(await evaluate('document.querySelector(".launch-label strong").textContent'), 'Abrir Zillion')
   assert.equal(await evaluate('typeof window.napp'), 'undefined')
   await screenshot('i18n-pt-desktop-light')
+  const mouseClick = async selector => {
+    const { x, y } = await evaluate(`(() => {
+      const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    })()`)
+    await browser.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 }, browser.sessionId)
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 }, browser.sessionId)
+    await settle()
+  }
+  await mouseClick('.language-trigger')
+  await browser.until(() => evaluate('document.activeElement.getAttribute("role") === "menuitemradio"'), 'pointer menu focus')
+  assert.equal(await evaluate('getComputedStyle(document.querySelector(".language-trigger")).outlineStyle'), 'none')
+  assert.equal(await evaluate('document.activeElement.dataset.locale'), 'auto')
+  assert.equal(await evaluate('document.querySelectorAll(".language-option[aria-checked=true]").length'), 1)
+  await screenshot('language-menu-desktop-light')
+  await media('dark')
+  await screenshot('language-menu-desktop-dark')
+  await key('End', 35)
+  assert.equal(await evaluate('document.activeElement.dataset.locale'), 'ko')
+  await key('ArrowDown', 40)
+  assert.equal(await evaluate('document.activeElement.dataset.locale'), 'auto')
+  await key('ArrowUp', 38)
+  assert.equal(await evaluate('document.activeElement.dataset.locale'), 'ko')
+  await key('Home', 36)
+  await key('f', 70)
+  assert.equal(await evaluate('document.activeElement.dataset.locale'), 'fr')
+  await key('Escape', 27)
+  assert.equal(await evaluate('document.activeElement.className'), 'language-trigger')
+  assert.equal(await evaluate('document.querySelector(".language-menu").hidden'), true)
+  assert.equal(await evaluate('document.documentElement.lang'), 'pt-BR', 'navigation alone does not change the language')
+  await key('ArrowDown', 40)
+  await browser.until(() => evaluate('document.activeElement.getAttribute("role") === "menuitemradio"'), 'arrow opens menu')
+  await key('Tab', 9)
+  assert.equal(await evaluate('document.activeElement.className'), 'theme-control')
+  assert.equal(await evaluate('document.querySelector(".language-menu").hidden'), true)
+  await openMenu()
+  await key('Tab', 9, 8)
+  assert.equal(await evaluate('document.activeElement.className'), 'language-trigger')
+  assert.equal(await evaluate('document.querySelector(".language-menu").hidden'), true)
+  await openMenu()
+  await mouseClick('.theme-control')
+  assert.equal(await evaluate('document.querySelector(".language-menu").hidden'), true)
+  assert.equal(await evaluate('document.activeElement.className'), 'theme-control', 'outside click keeps its focus')
+  // Restore automatic theme before checking every translated theme label.
+  await evaluate('document.querySelector(".theme-control").click(); document.querySelector(".theme-control").click()')
+  await settle()
+  for (const width of [320, 390, 768, 1440]) {
+    await viewport(width, 480)
+    await openMenu()
+    await browser.until(() => evaluate(`(() => {
+      const r = document.querySelector('.language-menu').getBoundingClientRect();
+      return r.left >= 11 && r.right <= innerWidth - 11 && r.top >= 11 && r.bottom <= innerHeight - 11;
+    })()`), 'menu fits viewport ' + width)
+    await key('End', 35)
+    assert.equal(await evaluate(`(() => {
+      const menu = document.querySelector('.language-menu').getBoundingClientRect();
+      const item = document.activeElement.getBoundingClientRect();
+      return item.top >= menu.top && item.bottom <= menu.bottom;
+    })()`), true, 'last language is reachable ' + width)
+    if (width === 390) await screenshot('language-menu-mobile-dark')
+    await key('Escape', 27)
+  }
+  await viewport(320, 480)
+  await media('light')
+  await evaluate('document.documentElement.style.fontSize = "1.25px"')
+  await openMenu()
+  await screenshot('language-menu-mobile-large-text')
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
+  await key('Escape', 27)
+  await evaluate('document.documentElement.style.removeProperty("font-size")')
+  await viewport(1440)
+  console.log('PASS: themed menu, pointer focus, arrows, Home/End, typeahead, Escape, Tab, outside dismissal and viewport bounds')
   const locales = ['en', 'fr', 'it', 'de', 'es', 'pt-BR', 'ru', 'zh-CN', 'zh-TW', 'ja', 'ko']
   for (const locale of locales) {
     await choose(locale)
-    assert.equal(await evaluate('document.querySelector(".language-control select").value'), locale)
+    assert.equal(await evaluate('document.querySelector(\'.language-option[aria-checked="true"]\').dataset.locale'), locale)
     assert.equal(await evaluate('document.querySelector(".theme-control").getAttribute("aria-label")'), translations['Theme: {{current}}. Switch to {{next}}.'][locale].replace('{{current}}', translations.Auto[locale]).replace('{{next}}', translations.Light[locale]))
     assert.equal(await evaluate('document.title'), translations['Zillion — Privacy runs deeper.'][locale])
     assert.equal(await evaluate('document.querySelector("meta[name=description]").content'), translations['Private messaging on Nostr, protected by two keys working together. No download required.'][locale])
@@ -105,7 +187,7 @@ try {
   await choose('fr')
   await ready(origin + '/')
   assert.equal(await evaluate('document.documentElement.lang'), 'fr')
-  assert.equal(await evaluate('document.querySelector(".language-control select").value'), 'fr')
+  assert.equal(await evaluate('document.querySelector(\'.language-option[aria-checked="true"]\').dataset.locale'), 'fr')
   await evaluate('document.querySelector(".theme-control").click()')
   assert.equal(await evaluate('document.documentElement.dataset.theme'), 'light')
   await choose('auto')
@@ -118,8 +200,8 @@ try {
   await evaluate('dispatchEvent(new StorageEvent(\'storage\', { key: \'zillion:landing:locale\', newValue: \'ko\' }))')
   await browser.until(() => evaluate('document.documentElement.lang').then(value => value === 'ko'), 'cross-tab locale')
   await evaluate('dispatchEvent(new StorageEvent(\'storage\', { key: null, newValue: null }))')
-  await browser.until(() => evaluate('document.querySelector(".language-control select").value').then(value => value === 'auto'), 'cleared preferences')
-  assert.equal(await evaluate('document.querySelector(".language-control select").value'), 'auto')
+  await browser.until(() => evaluate('document.querySelector(\'.language-option[aria-checked="true"]\').dataset.locale').then(value => value === 'auto'), 'cleared preferences')
+  assert.equal(await evaluate('document.querySelector(\'.language-option[aria-checked="true"]\').dataset.locale'), 'auto')
   await evaluate('localStorage.setItem(\'zillion:landing:locale\', \'invalid\')')
   await ready(origin + '/')
   assert.equal(await evaluate('document.documentElement.lang'), 'pt-BR')
@@ -130,11 +212,18 @@ try {
   assert.equal(await evaluate('document.documentElement.lang'), 'en')
   await choose('es')
   assert.equal(await evaluate('document.querySelector(".launch-label strong").textContent'), 'Abrir Zillion')
-  await evaluate('document.querySelector(".language-control select").focus()')
-  await browser.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 }, browser.sessionId)
-  await browser.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Home', code: 'Home', windowsVirtualKeyCode: 36 }, browser.sessionId)
-  await browser.until(() => evaluate('document.documentElement.lang').then(value => value === 'en'), 'native keyboard language selection')
-  assert.equal(await evaluate('document.activeElement.tagName'), 'SELECT')
+  await openMenu()
+  await key('Home', 36)
+  assert.equal(await evaluate('document.activeElement.dataset.locale'), 'auto')
+  await key('Enter', 13)
+  await browser.until(() => evaluate('document.documentElement.lang').then(value => value === 'en'), 'keyboard language selection')
+  assert.equal(await evaluate('document.activeElement.className'), 'language-trigger')
+  await openMenu()
+  await key('End', 35)
+  await key(' ', 32)
+  await browser.until(() => evaluate('document.documentElement.lang').then(value => value === 'ko'), 'Space selects a language')
+  await settle()
+  assert.equal(await evaluate('document.activeElement.className'), 'language-trigger')
   await browser.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: blocked }, browser.sessionId)
   assert.deepEqual(errors, [])
   assert.ok(requests.every(url => new URL(url).origin === origin))

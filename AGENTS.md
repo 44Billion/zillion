@@ -363,10 +363,18 @@ needed; empty folders mark the initial structure.
   tests check parity without importing app initialization. Use relative imports,
   source English keys, explicit locale objects, and translate during render.
   Resolve `navigator.languages` in priority order, including regional/Chinese
-  variants, with English fallback. The native header select offers automatic
+  variants, with English fallback. The themed header popover offers automatic
   detection and explicit locales; persist only `zillion:landing:locale`, tolerate
   blocked storage, and clean up root-owned language/storage listeners. Manual
   selection overrides browser changes until automatic mode is restored.
+  The language control uses a native trigger button and `menuitemradio` choices,
+  positioned with the public `@floating-ui/dom` API already used by the app.
+  Keep the landing independent of app hooks and launcher APIs. Scope position
+  observers and outside-pointer listeners to the open menu and clean them up.
+  Support arrows, Home/End, name-prefix search, Enter/Space, Escape and Tab;
+  return focus after selection/Escape without trapping Tab or stealing outside focus.
+  Use theme tokens, viewport collision handling, and internal scrolling. Pointer
+  clicks should not add a focus ring; keyboard focus must remain visible.
   Synchronize `html.lang`, title, descriptions, and accessible labels. Retain
   English demo captures, the static no-JavaScript fallback and initial metadata;
   translating screenshots or generating per-locale URLs is not implemented.
