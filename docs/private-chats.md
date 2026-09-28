@@ -112,6 +112,52 @@ failures remain retryable, preserving the inner ID and committed local copy.
 These diagnostics identify future failures; the former generic error cannot
 establish the cause of an earlier incident.
 
+## Recovery diagnostics
+
+`PRIVATE_CHANNEL_FETCH_INCOMPLETE` describes a historical read, independently of
+outgoing publication. The current library waits up to 5000ms per admitted relay;
+a timeout, early closure or another incomplete outcome keeps the interval pending,
+even when other relays returned messages. Successfully ingested messages remain
+available. The first watch can scan seven days, so an error near Send need not
+belong to that send. Rewatch/resume and relay-list changes can retry pending ranges;
+there is no dedicated periodic retry for failed historical reads.
+
+The account callback includes a copyable JSON diagnostic in the console message,
+with `owner` distinguishing simultaneous instances. It explicitly serializes
+non-enumerable `AggregateError.errors` and nested `cause` fields, including native
+codes, categories and WebSocket close details. It also retains the original Error
+as a separate console argument for stack inspection. A field allowlist excludes
+message bodies, signer objects, full messenger results and deletion capabilities;
+cyclic/deep causes are bounded. Native error text is retained verbatim.
+
+libp2r2p 0.10.27 adds `code`, `operation`, `request`,
+`receivedEventCount`, `elapsedMs`, `relays` and `relayErrors`. Request metadata
+identifies channel/receiver, requested time range and the 5000ms timeout; relay
+outcomes identify successful as well as incomplete relays. Elapsed time measures
+the read (including admission), not decryption/storage. The event count describes
+outer transport events, not messages acknowledged by the app. Status-only failures
+remain visible even when the aggregate has no native errors.
+
+Subscription transport failures also carry `relay` and
+`operation: 'private-channel.subscribe'` with the companion library update.
+They preserve the native message, code, category and WebSocket close details;
+`cause` retains the original error without mutating it, since a transport error
+can be shared by multiple subscriptions. Aggregate errors retain their nested
+errors. A missing relay remains unspecified rather than being guessed from the
+configured relay list. Delivery and reconnect behavior are unchanged.
+
+**Integration status:** Zillion resolves published libp2r2p 0.10.27, including
+historical fetch diagnostics. Subscription relay/operation context requires the
+next library release and dependency update; the app's logger already accepts
+these fields. No local source imports, node_modules edits or tarball dependency
+are used. An app cannot reconstruct relay metadata discarded by an older library.
+
+When collecting a recurrence, copy the complete JSON line and stack from both
+instances. Compare owners, requested ranges, relay statuses, categories and close
+causes before changing timeout or relay policy. One successful relay must not mark
+history complete: different relays may retain different events. The generic
+original log cannot establish which relay or condition caused this incident.
+
 ## Availability and presentation
 
 Signer-state notifications pause/resume inbox network work and outbox sending.

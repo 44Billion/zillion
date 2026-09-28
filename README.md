@@ -14,6 +14,10 @@ to follow NIP-65; self-chat remains local.
 Publication waits up to 30 seconds for confirmation and returns immediately on
 the first accepting relay. Failed publications log relay-specific reasons with `MESSAGE_NOT_PUBLISHED` and
 the affected event ID; see [publication diagnostics](docs/private-chats.md#publication-diagnostics).
+Private-chat errors also log copyable nested causes, the instance owner and
+relay/operation context when provided by the library;
+[recovery diagnostics](docs/private-chats.md#recovery-diagnostics) explain incomplete
+history reads and the companion library update needed for subscription context.
 
 Self-chat text uses `libp2r2p/nip27.compactWhitespace` before sending and for
 displaying history, reply excerpts and conversation previews. Spaces and tabs

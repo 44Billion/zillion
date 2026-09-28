@@ -1029,6 +1029,14 @@ contains plaintext and may include a deletion secret. Relay rejection text must
 not be treated as a local signer denial; publication failures stay retryable.
 See `docs/private-chats.md` for the diagnostic fields and timeout semantics.
 
+Private-chat console errors use `private-chat-diagnostics.js` to serialize an
+allowlist of Error fields, nested aggregate/cause errors and relay/request reports,
+with the instance owner. Keep the original Error for stack inspection and the
+JSON in the log text for copying. Never serialize full messenger results or
+message bodies. Include the top-level `relay` and `operation` supplied by the
+library. Published libp2r2p 0.10.27 includes fetch metadata; subscription context
+requires the companion update. See `docs/private-chats.md` for that boundary.
+
 ## Profile preview and editor
 
 - `/profile/:contactId` reads the existing account person or bundled contacts.

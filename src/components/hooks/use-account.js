@@ -1,5 +1,6 @@
 import { createContacts } from '#services/contacts.js'
 import { createPrivateChats } from '#services/private-chats.js'
+import { privateChatDiagnostic } from '#services/private-chat-diagnostics.js'
 import { demoPeople, demoEnabled } from '#services/demo.js'
 import { npubEncode } from 'libp2r2p/nip19'
 import { onOnline } from 'libp2r2p/network'
@@ -190,7 +191,7 @@ function useInitPrivateChats (account) {
         account.outbox$(entries)
         for (const chat of runtime.chats.values()) chat.applyOutbox(entries)
       },
-      onError: error => { if (!closed) console.warn('Private chat operation failed', error) }
+      onError: error => { if (!closed) console.warn(`Private chat operation failed ${JSON.stringify(privateChatDiagnostic(error, owner))}`, error) }
     })
     runtime.contacts = createContacts({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
