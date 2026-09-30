@@ -1,3 +1,4 @@
+import { compareChatMessages as compareMessages } from '#helpers/conversation-preview.js'
 import { createChatHistory, createChatWorkers } from './chat-history.js'
 import { createConversationMediaReader } from './conversation-media.js'
 import { encodedFileName } from '#helpers/attachment-presentation.js'
@@ -17,11 +18,6 @@ export const DELETION_KIND = 5
 
 const MAX_SALT_ATTEMPTS = 128
 const SALT_SEARCH_MS = 4
-
-// Oldest first: the reverse of NIP-01's newest-first, lowest-ID-first order.
-function compareMessages (a, b) {
-  return a.created_at - b.created_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
-}
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.

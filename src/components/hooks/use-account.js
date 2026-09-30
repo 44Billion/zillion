@@ -1,3 +1,4 @@
+import { createConversationSummaries } from '#services/conversation-summaries.js'
 import { createContacts } from '#services/contacts.js'
 import { createPrivateChats } from '#services/private-chats.js'
 import { privateChatDiagnostic } from '#services/private-chat-diagnostics.js'
@@ -13,7 +14,7 @@ export function useAccount () {
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0, older$: { loading: false, error: null, hasOlder: false },
     // Inner events resolved from kind-9 references, keyed by event id.
-    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsState$: 'loading', conversations$: {}, signerState$: null, recovery$: 0,
+    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsState$: 'loading', conversations$: {}, summaries$: {}, signerState$: null, recovery$: 0,
     people$ () {
       return [...this.contacts$().map(contact => this.personFor(contact.pubkey)), ...demoPeople]
     },
@@ -39,7 +40,9 @@ export function useAccount () {
 export function useInitAccount () {
   const account = useAccount()
   useInitPrivateChats(account)
-  const runtime = useMemo(() => ({ chat: null }))
+  useInitConversationSummaries(account)
+  const runtime = useMemo(() => ({ chat: null, opened: false }))
+  account.openSelfConversation = () => { runtime.opened = true; return runtime.chat ? runtime.chat.start() : account.recover() }
   account.send = (content, replyTo, attachment) => {
     if (!runtime.chat) throw new Error('Account unavailable')
     return runtime.chat.send(content, replyTo, attachment)
@@ -110,7 +113,7 @@ export function useInitAccount () {
           runtime.chat.applyOutbox(account.outbox$())
           account.ready$(true)
           loadProfile(pubkey, eventStore)
-          return await runtime.chat.start()
+          return runtime.opened ? await runtime.chat.start() : true
         } catch (error) {
           if (!closed) { account.historyState$('unavailable'); account.ready$(true); report(error) }
           return false
@@ -128,6 +131,36 @@ export function useInitAccount () {
   useTask(({ track }) => { const entries = track(() => account.outbox$()); if (!demoEnabled) runtime.chat?.applyOutbox(entries) })
   // Retry the read session without tearing down the account or its outbox.
   useTask(({ track }) => { track(() => account.retry$()); account.recover() })
+}
+
+function useInitConversationSummaries (account) {
+  const runtime = useMemo(() => ({ summaries: null, recovery: -1 }))
+  useTask(({ track, cleanup }) => {
+    const owner = track(() => account.pubkey$())
+    if (!owner) return
+    const summaries = createConversationSummaries({
+      pubkey: owner, signer: window.nostr, eventStore: window.napp.eventStore,
+      onChange: (peer, summary) => account.summaries$(previous => {
+        const next = { ...previous }
+        if (summary) next[peer] = summary
+        else delete next[peer]
+        return next
+      }),
+      onError: error => console.warn('Could not load conversation preview', error)
+    })
+    runtime.summaries = summaries
+    runtime.recovery = -1
+    cleanup(() => { summaries.close(); runtime.summaries = null; account.summaries$({}) })
+  })
+  useTask(({ track }) => {
+    const [owner, ready, contacts, recovery] = track(() => [account.pubkey$(), account.ready$(), account.contacts$(), account.recovery$()])
+    if (!owner || !ready || !runtime.summaries) return
+    if (runtime.recovery !== recovery) {
+      if (runtime.recovery >= 0) runtime.summaries.recover().catch(() => {})
+      runtime.recovery = recovery
+    }
+    runtime.summaries.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
+  })
 }
 
 function useInitPrivateChats (account) {
@@ -223,8 +256,8 @@ function useInitPrivateChats (account) {
       if (!available || !changed) return delivery
       const reads = [runtime.contacts.start()]
       account.recovery$(value => value + 1)
-      // Initial root/route tasks already start history. Reopen only on recovery,
-      // and in parallel, so self-chat cannot delay the active peer conversation.
+      // Routes start history lazily. Recovery reopens only visited histories,
+      // independently of the lightweight summaries maintained for the list.
       if (wasAvailable || account.historyState$() === 'unavailable') reads.push(account.recover?.())
       if (wasAvailable) for (const chat of runtime.chats.values()) reads.push(chat.start())
       wasAvailable = true
@@ -277,8 +310,11 @@ export function useConversation (id$, { open = false } = {}) {
     retry$ () { this.recover() }
   }))
   useTask(({ track }) => {
-    const [peer, owner, ready] = track(() => [view.peer$(), account.pubkey$(), account.signerState$()])
-    if (open && peer && owner && peer !== owner && ready?.connection === 'connected' && !ready.isLocked && !demoPeople.some(person => person.id === peer)) account.openConversation(peer).catch(() => {})
+    const [peer, owner, ready, initialized] = track(() => [view.peer$(), account.pubkey$(), account.signerState$(), account.ready$()])
+    if (open && peer && owner && initialized && ((ready?.connection === 'connected' && !ready.isLocked) || demoEnabled) && !demoPeople.some(person => person.id === peer)) {
+      const work = peer === owner ? account.openSelfConversation() : account.openConversation(peer)
+      work?.catch(() => {})
+    }
   })
   return view
 }

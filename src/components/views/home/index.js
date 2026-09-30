@@ -1,4 +1,4 @@
-import { chatTimeline } from '#helpers/chat-timeline.js'
+import { compareChatMessages, conversationPreview } from '#helpers/conversation-preview.js'
 import { t } from '#i18n/messages.js'
 import { i18n } from '#i18n/index.js'
 import { f, useStore } from '#f'
@@ -26,25 +26,22 @@ f('z-home', ({ h }) => {
     },
     conversations$ () {
       const self = account.person$()
-      const latest = account.messages$().at(-1)
-      const date = latest ? new Date(latest.created_at * 1000) : null
-      // Preview from the resolved message model so a kind 9 that only
-      // references a file shows its caption/filename instead of the URI.
-      const preview = latest ? chatTimeline([latest], { locale: i18n.getLocale(), references: account.references$(), t })[0] : null
-      const previewText = preview ? (preview.attachment ? (preview.caption || preview.attachment.filename || '') : preview.displayText) : ''
       const rows = demoEnabled ? data.conversations : [{ id: 'user', contactId: 'user', unread: 0 }, ...account.people$().filter(person => person.saved).map(person => ({ id: person.id, contactId: person.id, unread: 0 }))]
-      return rows.map(conversation => {
-        if (conversation.contactId === self.id) {
-          return {
-            ...conversation, contact: self, real: true, unread: 0,
-            message: previewText, lastMessageAt: date?.toISOString() ?? '',
-            timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
-          }
-        }
-        if (demoEnabled) return { ...conversation, contact: account.personFor(conversation.contactId) }
+      return rows.flatMap(conversation => {
         const person = account.personFor(conversation.contactId)
-        const message = account.conversations$()[person.id]?.messages?.at(-1)
-        return { ...conversation, contact: person, real: true, message: message?.content || '', lastMessageAt: message ? new Date(message.created_at * 1000).toISOString() : '', timeLabel: '' }
+        if (demoEnabled && !person.self) return [{ ...conversation, contact: person }]
+        const summary = account.summaries$()[person.pubkey]
+        const chat = person.self ? { messages: account.messages$(), references: account.references$() } : account.conversations$()[person.pubkey]
+        const local = chat?.messages?.at(-1)
+        const latest = local && (!summary?.event || compareChatMessages(local, summary.event) > 0) ? local : summary?.event
+        if (!latest && !person.self) return []
+        const date = latest ? new Date(latest.created_at * 1000) : null
+        return [{
+          ...conversation, contact: person.self ? self : person, real: true, unread: 0,
+          message: conversationPreview(latest, { ...summary?.references, ...chat?.references }, t),
+          lastMessageAt: date?.toISOString() ?? '',
+          timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
+        }]
       }).toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
     }
   }))

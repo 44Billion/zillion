@@ -76,6 +76,14 @@ Preview content uses fixed English source keys translated at render time, with
 local portraits. Contacts and conversation rows open real DMs, including the self-chat. Sample data is opt-in via `ZILLION_DEMO=1`. Home Search and new-conversation remain inert previews. The home profile
 portrait opens the account profile. Real user messages never pass through the translation catalog.
 
+The conversation list reads the latest local message for self and saved contacts
+without opening their histories. Media previews use caption or filename from
+local metadata, without downloading media. Active chats sort by that message's
+date and update on new messages and deletions, before any chat is visited.
+Contacts without messages stay in the contacts strip/directory; self-chat keeps
+its empty Notes shortcut. Full history loads only when opening a chat, including
+self-chat.
+
 The shared [toast](src/components/shared/toast.md) supports success, error,
 warning and info, expandable details and navigation through unique notices. It
 stays centered inside the same mobile column and follows locale/theme changes.

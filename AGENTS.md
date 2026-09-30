@@ -551,10 +551,35 @@ needed; empty folders mark the initial structure.
   boot and be reinstalled from the printed local link.
 
 
+## Conversation list snapshots
+
+- `conversation-summaries.js` owns one `initial: true, limit: 1` kind-9 local
+  subscription per self/saved-contact context, with four shared workers. Resolve
+  only that newest timestamp's ties in pages of 16, using the same inner-event
+  comparator as the chat; encrypted wrapper IDs cannot decide the last bubble.
+  Do not preload full histories to populate or sort the home list.
+- Resolve the last message's chat/file references through the existing personal-
+  copy reader. Captions and filenames need metadata only; do not fetch previews,
+  file chunks, media originals or external references for the list. Known chat
+  pointers use a translated fallback while unavailable, never a raw nevent label.
+- A shared local kind-5/1063 subscription invalidates the affected context, then
+  rereads authoritative storage; do not execute deletion claims in presentation.
+  New/live kind-9 messages update unopened chats; older backfills cannot replace
+  a newer preview. Generation guards discard stale metadata/read completions.
+- `useInitAccount` owns summaries separately from retained chat histories. Signer
+  recovery restarts summary reads, and contact removal closes its list reader.
+  Existing/pending visible chat messages can supplement a newer local preview.
+  Nonself empty contacts remain in the strip/directory, not the active-chat list;
+  self keeps the Notes shortcut but is sorted by its actual last-message time.
+- Guarded `tests/browser/home-summaries.browser.js` checks a cold home with held
+  transport, captions/filenames, no media-byte reads, ordering, live updates,
+  deletions and lazy self/peer histories. Visiting a chat must not repair its row.
+
 ## Real self chat
 
 - `useInitAccount` runs once in `z-app`, calls `peekPublicKey` early and owns
-  profile/history subscriptions. `useAccount` readers do not start subscriptions.
+  profile and conversation-summary subscriptions. Histories, including self-chat,
+  start only when a chat/viewer route opens; readers do not start subscriptions.
   Its internal `recover()` coalesces identity/history recovery across the clip,
   gallery Retry and conversation Retry. Never recreate a same-account service
   just to retry reads: that would discard its outbox and prepared attachments.
@@ -674,7 +699,7 @@ needed; empty folders mark the initial structure.
   eight line breaks and threshold of three consecutive breaks collapsing to two.
   `chatTimeline` derives compact display text for historical and live messages;
   bubbles, copy/share, posted quotes and composer reply summaries consume it.
-  The home preview compacts the latest event separately. Never rewrite existing
+  The home preview compacts its independent latest-message snapshot. Never rewrite existing
   stored events or change their IDs. Keep escaped templates and `pre-wrap` CSS
   so surviving formatting works and presentation policy can change later; no
   original-text toggle is provided. Do not compact draft text while typing.
@@ -1186,8 +1211,8 @@ queries and reconciles the recent snapshot; kind-5 live registration comes first
 
 The active chat requests another page near the top, preserving its visible
 anchor through the existing viewport controller. Visited pages remain in memory:
-this is pagination, not virtualization. Reference/media preparation starts near
-visibility; the media viewer still pages 1063 independently and snapshots URL
+this is pagination, not virtualization. Timeline reference/media preparation starts near
+visibility; the list resolves only its latest message metadata independently; the media viewer still pages 1063 independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
 
 ## Private media transport
