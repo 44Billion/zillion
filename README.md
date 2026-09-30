@@ -664,3 +664,7 @@ keeping a second ciphertext copy. A persistent per-recipient authorization expir
 with the sharing window and never pins file bytes; explicit new sends renew it,
 retries do not. Watchtowers retain ciphertext recovery. The coordinated package
 remains the unpublished libp2r2p 0.11.0 release.
+
+Private chat transport now uses the reusable libp2r2p session and event-store
+adapters. Recovery seeds and file authorizations are synchronized personal copies;
+file bytes retain NostrDB's existing IRFS storage and reference lifecycle.

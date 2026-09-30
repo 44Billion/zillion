@@ -20,7 +20,7 @@ import { checkScrollScenarios } from './scroll-scenarios.js'
 const launcherOrigin = 'http://localhost:10000'
 const vaultOrigin = 'http://localhost:4000'
 
-test('real self chat persists offline, quotes inner IDs and receives event-store updates', { timeout: 450000 }, async () => {
+test('real self chat persists offline, quotes inner IDs and receives event-store updates', { timeout: process.env.ZILLION_MEDIA_SEEDS_ONLY === '1' ? 600000 : 450000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions

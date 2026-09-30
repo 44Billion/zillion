@@ -1180,10 +1180,21 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   after readiness; retain partial chunks. Resolved references carry mediaPeer
   only as presentation context; wireEvent must strip it.
 - Router p migration requires coordinated libp2r2p 0.11 consumers. Group channels
-  and multi-device seed synchronization remain out of scope.
+  remain out of scope; paired-device recovery records use eventStore adapters.
 
 - File seeder authorization is explicit: authorize each outbox file/thumbnail
   for its recipient using the stable main event timestamp before publication.
   Never grant access because a root exists locally or a request names it.
   File replies may carry `irfsChunk_v1`; save reconstructed chunks as owner
   templates, without copying announcer identity. No legacy file-seed migration.
+
+## Shared private-session persistence
+
+- libp2r2p 0.11.1 owns the reusable private-message session and event-store
+  adapters. private-chats.js only connects account state, media presentation,
+  existing encrypted outbox/download-intent storage and callbacks.
+- Seeds and grants live as immutable 30078 personal copies in context ''.
+  Revocation uses private kind 5. Do not copy them into the former local seed
+  catalog, pin IRFS roots with grants, or renew timestamps after sync/retry.
+- Preserve existing zillion outbox/download database names and encryption scopes;
+  extraction is not a pending-work migration. No legacy file-seed migration.

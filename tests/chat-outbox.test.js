@@ -99,10 +99,11 @@ test('coordinator reopens the real encrypted outbox and retries only unfinished 
     let hadEntry = false
     let storageClosed = false
     const transport = createPrivateChats({
+      recoveryStorage: null,
       owner, signer, Messenger: async () => messenger,
       FileTransfer: () => ({ observe () {} }),
       openDownloads: options => createChatOutbox({ ...options, indexedDB, namespace: 'downloads' }),
-      eventStore: { addPersonalCopy: async value => { writes.push(value); return { result: { ok: true } } } },
+      eventStore: { query: async () => ({ results: [] }), addPersonalCopy: async value => { writes.push(value); return { result: { ok: true } } } },
       openOutbox: async options => {
         const outbox = await createChatOutbox({ ...options, indexedDB })
         return { ...outbox, async close () { await outbox.close(); storageClosed = true } }

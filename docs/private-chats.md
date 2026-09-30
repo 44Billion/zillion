@@ -301,3 +301,23 @@ and completed with a 2,592 MiB peak (3,072 MiB cap, no swap). Three public-relay
 read diagnostics passed via the 44billion relay; another diagnostic relay was
 unavailable. These runs used the prepared, still unpublished 0.11.0 archive.
 There is no legacy file-seed conversion.
+
+## Shared session and synchronized recovery (0.11.1)
+
+`private-chats.js` composes `libp2r2p/private-messenger/session` with the library's
+`private-messenger/event-store` adapters. The session owns transport scheduling,
+ACK-after-persistence, staged upload/retry and manual download resumption; Zillion
+owns account availability and media presentation. Existing encrypted outbox and
+download-intent stores retain their names/scopes and pending work.
+
+Seeds and file grants are self-authored kind-30078 personal copies in context ''.
+NostrDB synchronization can transfer these records along with existing chunks.
+A paired device needs channel configuration and available chunks to serve grants;
+a watchtower only needs preserved ciphertext. Requests and replies keep their
+current DM/file channels. No local-to-personal-copy seed migration is performed.
+
+The library codecs define immutable unversioned coordinates, obfuscated selectors
+and daily D candidates. Grants never use r root references. Revocation is private
+kind 5; local removal/expiry is not a distributed deletion. Sync never renews a
+share. The vault's own synchronization messenger retains local seeds to avoid a
+recursive sync loop. NostrDB quota, signer lock and storage errors remain visible.

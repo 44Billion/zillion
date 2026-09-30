@@ -1,4 +1,5 @@
 import NMMR from 'nmmr'
+import { createPersonalCopyRecoveryStorage } from 'libp2r2p/private-messenger/event-store'
 import { createQueue } from 'libp2r2p/idb-queue'
 import { prepareAttachment } from '#services/chat-attachments.js'
 import { chatReferenceUri } from '#services/chat-references.js'
@@ -118,6 +119,11 @@ export function installPrivateChatFixture () {
       result[suffix] = { count: rows.length, hasPayload: rows.some(row => 'payloadRow' in row || 'content' in row), bytes: new TextEncoder().encode(JSON.stringify(rows)).length }
       await queue.close()
     }
+    result.localAuthorizations = result['file-authorizations'].count
+    const recovery = createPersonalCopyRecoveryStorage({ eventStore: fixture.eventStore, signer: fixture.signer })
+    const grants = await Array.fromAsync(recovery.authorizations.iterate())
+    result['file-authorizations'] = { count: grants.length, hasPayload: grants.some(row => 'payloadRow' in row || 'content' in row), bytes: new TextEncoder().encode(JSON.stringify(grants)).length }
+    recovery.close()
     return result
   }
   fixture.pendingAcknowledgements = () => acknowledgements.length

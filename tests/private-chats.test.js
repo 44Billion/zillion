@@ -28,6 +28,7 @@ function fixture ({ fileAuthorize = async () => {}, fileDownload = async () => {
   }
   let callbacks
   const transport = createPrivateChats({
+    recoveryStorage: null,
     FileTransfer: () => ({
       observe () {},
       authorizeSeeding: async (file, options) => { grants.push({ file, ...options }); await fileAuthorize(file, options) },

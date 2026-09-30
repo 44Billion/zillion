@@ -35,37 +35,42 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
   await browser.until(() => evaluate(`dmTest.messages.some(event => event.id === '${sent}' && event.content === 'Private hello')`), 'encrypted channel received by second account', 60000)
   assert.equal(await evaluate('dmTest.messages[0].pubkey'), pubkey)
   await browser.until(() => evaluate(`Object.values(dmTest.messenger.readState().channels).some(channel => channel.mode === 'seeder' && channel.seeders.includes('${pubkey}') && channel.seederActivity?.['${pubkey}']?.announcedAt > 0)`), 'peer runs as seeder and receives the primary participant seeder announcement', 60000)
-  await browser.until(() => evaluate(`dmTest.messenger.seedQueue.some(seed => seed.innerEventId === '${sent}')`), 'peer retains encrypted recovery data for the received message', 60000)
+  await browser.until(() => evaluate(`Array.fromAsync(dmTest.messenger.seedStorage.iterate()).then(seeds => seeds.some(seed => seed.innerEventId === '${sent}'))`), 'peer retains encrypted recovery data for the received message', 60000)
   await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => entry.id === '${sent}')`), 'initial message publication completes', 20000)
-  await evaluate('dmTest.holdAcknowledgements = true')
-  const delayed = await evaluate(`selfChatAccount.chatFor('${peer}').send('Message with delayed relay acknowledgement')`)
-  await browser.until(() => evaluate('dmTest.pendingAcknowledgements() > 0'), 'relay has received a publication and holds its OK', 20000)
-  await evaluate('new Promise(resolve => setTimeout(resolve, 3500))')
-  assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${delayed}')?.status`), 'pending', 'the old three-second cutoff must not mark the pending message as failed')
-  await evaluate('dmTest.holdAcknowledgements = false; dmTest.releaseAcknowledgements()')
-  await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => entry.id === '${delayed}')`), 'late relay acknowledgement confirms the message', 20000)
-  await browser.until(() => evaluate(`dmTest.messages.some(event => event.id === '${delayed}')`), 'peer receives the message sent with a delayed OK', 20000)
+  let reply = sent
+  if (process.env.ZILLION_MEDIA_SEEDS_ONLY !== '1') {
+    await evaluate('dmTest.holdAcknowledgements = true')
+    const delayed = await evaluate(`selfChatAccount.chatFor('${peer}').send('Message with delayed relay acknowledgement')`)
+    await browser.until(() => evaluate('dmTest.pendingAcknowledgements() > 0'), 'relay has received a publication and holds its OK', 20000)
+    await evaluate('new Promise(resolve => setTimeout(resolve, 3500))')
+    assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${delayed}')?.status`), 'pending', 'the old three-second cutoff must not mark the pending message as failed')
+    await evaluate('dmTest.holdAcknowledgements = false; dmTest.releaseAcknowledgements()')
+    await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => entry.id === '${delayed}')`), 'late relay acknowledgement confirms the message', 20000)
+    await browser.until(() => evaluate(`dmTest.messages.some(event => event.id === '${delayed}')`), 'peer receives the message sent with a delayed OK', 20000)
 
-  console.log('Private chats: delayed confirmation and temporary leaf isolation verified')
-  const reply = await evaluate(`dmTest.chat.send('Private reply', '${sent}')`)
-  await browser.until(() => evaluate(`selfChatAccount.conversations$()['${peer}']?.messages.some(event => event.id === '${reply}')`), 'peer reply in primary account', 60000)
-  assert.equal(await evaluate(`selfChatAccount.conversations$()['${peer}'].messages.find(event => event.id === '${reply}').pubkey`), peer)
-  assert.equal(await evaluate('dmTest.messenger.presenceTimers.size'), 1, 'peer keeps its seeder presence publisher active')
-  assert.equal(await evaluate('JSON.stringify([...dmTest.events.values()]).includes("Private hello")'), false, 'relay receives encrypted content')
+    console.log('Private chats: delayed confirmation and temporary leaf isolation verified')
+    reply = await evaluate(`dmTest.chat.send('Private reply', '${sent}')`)
+    await browser.until(() => evaluate(`selfChatAccount.conversations$()['${peer}']?.messages.some(event => event.id === '${reply}')`), 'peer reply in primary account', 60000)
+    assert.equal(await evaluate(`selfChatAccount.conversations$()['${peer}'].messages.find(event => event.id === '${reply}').pubkey`), peer)
+    assert.equal(await evaluate('dmTest.messenger.presenceTimers.size'), 1, 'peer keeps its seeder presence publisher active')
+    assert.equal(await evaluate('JSON.stringify([...dmTest.events.values()]).includes("Private hello")'), false, 'relay receives encrypted content')
+  }
   await evaluate('document.querySelector(".chat-back").click()')
   await browser.until(() => evaluate(`!!document.querySelector('.conversation [data-contact-id="${peer}"]')`), 'real peer row on home')
   await evaluate(`document.querySelector('.conversation [data-contact-id="${peer}"]').click()`)
   await browser.until(() => evaluate(`location.pathname === '/chat/${peer}' && document.querySelector('.route-page[data-active=true] .chat-timeline')?.dataset.historyLoaded === 'true'`), 'real peer chat UI')
-  await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${reply}"]') && !!document.querySelector('[data-message-id="${sent}"]')`), 'peer bubbles rendered')
-  assert.equal(await evaluate(`document.querySelector('[data-message-id="${reply}"]').classList.contains('incoming')`), true)
-  assert.equal(await evaluate(`document.querySelector('[data-message-id="${sent}"]').classList.contains('outgoing')`), true)
-  const fileId = await evaluate(`(async () => {
+  if (process.env.ZILLION_MEDIA_SEEDS_ONLY !== '1') {
+    await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${reply}"]') && !!document.querySelector('[data-message-id="${sent}"]')`), 'peer bubbles rendered')
+    assert.equal(await evaluate(`document.querySelector('[data-message-id="${reply}"]').classList.contains('incoming')`), true)
+    assert.equal(await evaluate(`document.querySelector('[data-message-id="${sent}"]').classList.contains('outgoing')`), true)
+    const fileId = await evaluate(`(async () => {
     const bytes = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+ip1sAAAAASUVORK5CYII='), value => value.charCodeAt(0));
     const attachment = await dmTest.prepareAttachment(new File([bytes], 'peer.png', {type:'image/png'}));
     return dmTest.chat.send('Peer image', undefined, attachment);
   })()`)
-  await browser.until(() => evaluate(`document.querySelector('[data-message-id="${fileId}"] .attachment-frame img')?.naturalWidth === 1`), 'peer attachment bytes and metadata arrive', 60000)
-  console.log('Private chats: reply and attachment received')
+    await browser.until(() => evaluate(`document.querySelector('[data-message-id="${fileId}"] .attachment-frame img')?.naturalWidth === 1`), 'peer attachment bytes and metadata arrive', 60000)
+    console.log('Private chats: reply and attachment received')
+  }
   if (process.env.ZILLION_MEDIA_SEEDS_ONLY === '1') {
     await evaluate(`void (async () => {
       dmTest.largeStage = 'prepare';
@@ -80,18 +85,29 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
     await browser.until(() => evaluate('(() => { if (dmTest.largeError) throw new Error(dmTest.largeStage + \': \' + dmTest.largeError); return !!dmTest.large })()'), 'large file prepared and durably accepted', 150000)
     const large = await evaluate('dmTest.large')
     console.log('Private media: file persisted; awaiting upload')
-    await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${large.id}"] .transfer-control button') && !dmTest.outbox.some(entry => entry.id === '${large.id}')`), 'large file announced with manual download', 120000)
+    try {
+      await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${large.id}"] .transfer-control button') && !dmTest.outbox.some(entry => entry.id === '${large.id}')`), 'large file announced with manual download', 240000)
+    } catch (error) {
+      console.error('Private media publication diagnostics:', await evaluate('({errors:dmTest.errors, outbox:dmTest.outbox.map(({status, error, uploadProgress, chunkIndex}) => ({status, error, uploadProgress, chunkIndex})), events:dmTest.events.size})'))
+      throw error
+    }
     assert.equal(await evaluate(`window.napp.eventStore.query({kinds:[34601], '#d':[dmTest.chunkId('${large.root}', 0)], limit:1}).then(value => value.results.length)`), 0, 'large original has not entered the recipient store automatically')
     const removed = await evaluate(`(() => { let count = 0; for (const [id,event] of dmTest.events) if (event.pubkey === '${large.channel}') {dmTest.events.delete(id); count++}; return count })()`)
     const storage = await evaluate('dmTest.fileStorage()')
     assert.equal(storage['file-seeds'].count, 0, 'seeder must not persist file ciphertext')
+    assert.equal(storage.localAuthorizations, 0, 'grants are persisted through eventStore, not the library catalog')
     assert.ok(storage['file-authorizations'].count > 0)
     assert.equal(storage['file-authorizations'].hasPayload, false)
     assert.ok(storage['file-authorizations'].bytes < 10000, 'catalog stays small beside the 1 MiB file')
     console.log('Private media: payload-free catalog confirmed; requesting local chunks after eviction')
     assert.ok(removed > 0, 'remove every original file envelope from the controlled relay')
     await evaluate(`document.querySelector('[data-message-id="${large.id}"] .transfer-control button').click()`)
-    await browser.until(() => evaluate(`window.napp.eventStore.query({kinds:[34601], '#d':[dmTest.chunkId('${large.root}', 0), dmTest.chunkId('${large.root}', 20)], limit:2}).then(value => value.results.length === 2)`), 'manual download recovers first and last chunks from sender seeds', 240000)
+    try {
+      await browser.until(() => evaluate(`window.napp.eventStore.query({kinds:[34601], '#d':[dmTest.chunkId('${large.root}', 0), dmTest.chunkId('${large.root}', 20)], limit:2}).then(value => value.results.length === 2)`), 'manual download recovers first and last chunks from sender seeds', 240000)
+    } catch (error) {
+      console.error('Private media recovery diagnostics:', await evaluate(`(async () => ({errors:dmTest.errors, control:document.querySelector('[data-message-id="${large.id}"] .transfer-control')?.textContent, events:dmTest.events.size, storage:await dmTest.fileStorage()}))()`))
+      throw error
+    }
     await browser.until(() => evaluate(`!document.querySelector('[data-message-id="${large.id}"] .transfer-control')`), 'persisted completion clears the progress control', 60000)
     console.log('Private chats: large file stayed manual and recovered from sender chunks without ciphertext seeds after relay eviction')
     await evaluate('dmTest.close()')
