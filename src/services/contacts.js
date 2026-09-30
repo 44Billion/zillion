@@ -28,7 +28,7 @@ export function contactMembership (lists, owner) {
   return [...contacts.values()]
 }
 
-export function createContacts ({ owner, signer, eventStore, onChange, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS, _isOnline = isOnline, _onOnline = onOnline }) {
+export function createContacts ({ owner, signer, eventStore, onChange, onState = () => {}, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS, _isOnline = isOnline, _onOnline = onOnline }) {
   const lists = [null, null, null]
   let streams = []
   let generation = 0
@@ -36,6 +36,7 @@ export function createContacts ({ owner, signer, eventStore, onChange, onError =
   let context
   let coordinates
   let starting
+  let loaded = false
   let remote
   const requestEvents = _getEvents ?? ((filter, relays, options) => relayPool.getEvents(filter, relays, options))
   const notify = () => onChange(contactMembership(lists, owner))
@@ -119,49 +120,74 @@ export function createContacts ({ owner, signer, eventStore, onChange, onError =
     remote?.abort()
     remote = new AbortController()
     const signal = remote.signal
-    // Rebuild each current list from its snapshot, including empty snapshots
-    // after a deletion. Keep the displayed directory until all three complete.
+    const initial = Promise.withResolvers()
+    const cancel = () => initial.resolve(false)
+    signal.addEventListener('abort', cancel, { once: true })
+    let failed = false
+    const fail = error => {
+      if (version !== generation) return
+      failed = true
+      loaded = false
+      onState('unavailable')
+      onError(error)
+      initial.resolve(false)
+    }
+    loaded = false
+    onState('loading')
+    // Keep displayed contacts until all three local snapshots are decrypted.
+    // Neither relay discovery nor message transport readiness gates these reads.
     lists.fill(null)
-    // Local snapshots render first. A bounded public-list refresh feeds the
-    // same local subscription instead of introducing a second list authority.
-    // Generic connectivity probes must not gate relays, and the refresh keeps
-    // retrying with backoff while no local public list is known.
-    refreshPublicList(version, signal).catch(error => { if (version === generation && !signal.aborted) onError(error) })
     for (const stream of streams) stream.return().catch(() => {})
     streams = []
-    context = await signer.obfuscate('', String(PERSONAL_COPY), '')
-    if (version !== generation) return
-    coordinates = await Promise.all([[3, ''], [30000, CONTACTS_DTAG]].map(([kind, d]) => signer.obfuscate(`${context}:${kind}:${owner}:${d}`, String(PERSONAL_COPY), '.coordinate')))
-    const filters = [
-      { kinds: [3], authors: [owner], limit: 1 },
-      { kinds: [PERSONAL_COPY], authors: [owner], '#c': [context], '#k': ['3'], '#v': ['0', '1'], '#d': [coordinates[0]], limit: 1 },
-      { kinds: [PERSONAL_COPY], authors: [owner], '#c': [context], '#k': ['30000'], '#v': ['0', '1'], '#d': [coordinates[1]], limit: 1 }
-    ]
-    if (version !== generation) return
-    const snapshots = new Set()
-    await Promise.all(filters.map(async (filter, index) => {
-      const stream = eventStore.subscribe(filter, { initial: true })
-      streams.push(stream)
-      const consume = async () => {
-        for await (const item of stream) {
-          if (version !== generation) return
-          if (item.type === 'eose') { snapshots.add(index); if (snapshots.size === 3) notify(); continue }
-          if (item.type !== 'event') continue
-          const event = index ? await decryptPersonalCopy(item.event, { pubkey: owner, signer, encodedContext: context }) : item.event
-          if (version !== generation) return
-          if (!event || event.pubkey !== owner || (!index && !isValidEvent(event))) continue
-          if (index === 2 && !event.tags.some(tag => tag[0] === 'd' && tag[1] === CONTACTS_DTAG)) continue
-          lists[index] = preferred(lists[index], event)
-          if (snapshots.size === 3) notify()
+    try {
+      context = await signer.obfuscate('', String(PERSONAL_COPY), '')
+      if (version !== generation) return false
+      coordinates = await Promise.all([[3, ''], [30000, CONTACTS_DTAG]].map(([kind, d]) => signer.obfuscate(`${context}:${kind}:${owner}:${d}`, String(PERSONAL_COPY), '.coordinate')))
+      if (version !== generation) return false
+      const filters = [
+        { kinds: [3], authors: [owner], limit: 1 },
+        { kinds: [PERSONAL_COPY], authors: [owner], '#c': [context], '#k': ['3'], '#v': ['0', '1'], '#d': [coordinates[0]], limit: 1 },
+        { kinds: [PERSONAL_COPY], authors: [owner], '#c': [context], '#k': ['30000'], '#v': ['0', '1'], '#d': [coordinates[1]], limit: 1 }
+      ]
+      const snapshots = new Set()
+      for (const [index, filter] of filters.entries()) {
+        const stream = eventStore.subscribe(filter, { initial: true })
+        streams.push(stream)
+        const consume = async () => {
+          for await (const item of stream) {
+            if (version !== generation) return
+            if (item.type === 'eose') {
+              snapshots.add(index)
+              if (snapshots.size === 3 && !failed && !loaded) {
+                loaded = true
+                notify()
+                onState('loaded')
+                initial.resolve(true)
+                // A missing public list can recover remotely in the background.
+                // A cached list needs no startup relay discovery or retry loop.
+                refreshPublicList(version, signal).catch(error => { if (version === generation && !signal.aborted) onError(error) })
+              }
+              continue
+            }
+            if (item.type !== 'event') continue
+            const event = index ? await decryptPersonalCopy(item.event, { pubkey: owner, signer, encodedContext: context }) : item.event
+            if (version !== generation) return
+            if (!event || event.pubkey !== owner || (!index && !isValidEvent(event))) continue
+            if (index === 2 && !event.tags.some(tag => tag[0] === 'd' && tag[1] === CONTACTS_DTAG)) continue
+            lists[index] = preferred(lists[index], event)
+            if (loaded) notify()
+          }
+          if (version === generation && !snapshots.has(index)) throw new Error('CONTACTS_SNAPSHOT_INCOMPLETE')
         }
+        consume().catch(fail)
       }
-      consume().catch(error => { if (version === generation) onError(error) })
-    }))
+      return await initial.promise
+    } catch (error) { fail(error); return false } finally { signal.removeEventListener('abort', cancel) }
   }
   function set (peer, included) {
     if (!hex(peer) || peer === owner) return Promise.reject(new Error('INVALID_CONTACT'))
     const work = writes.catch(() => {}).then(async () => {
-      if (!coordinates) await start()
+      if (!loaded && !await start()) throw new Error('CONTACTS_UNAVAILABLE')
       // Refresh the override before editing; CRDT merging preserves concurrent peers.
       const { results } = await eventStore.query({ kinds: [PERSONAL_COPY], authors: [owner], '#c': [context], '#k': ['30000'], '#v': ['0', '1'], '#d': [coordinates[1]], limit: 1 })
       for (const wrapper of results) {

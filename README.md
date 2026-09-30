@@ -90,7 +90,11 @@ dimensions in `px`, allowing the browser's preferred font size to scale text.
 `/contacts` lists saved contacts alphabetically, with self-chat separately and
 live search. More opens this directory; Add Contact opens `/contacts/add` with
 search focused. Complete identifiers can resolve an unsaved profile. Its chat
-keeps history visible but requires adding the person before sending.
+keeps history visible but requires adding the person before sending. Direct chat
+loads show a neutral loading state until all local contact lists have been read;
+only a confirmed noncontact sees the invitation. Read failures offer Retry and
+keep sending disabled. Local contact/history reads do not wait for message
+transport recovery, and a cached public contact list avoids startup relay discovery.
 
 Demonstration builds retain the fictional directory and `luna@example.com` flow.
 Back/Forward preserves search, scroll and chat drafts. Contact changes in normal

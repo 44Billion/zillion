@@ -13,7 +13,7 @@ export function useAccount () {
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0, older$: { loading: false, error: null, hasOlder: false },
     // Inner events resolved from kind-9 references, keyed by event id.
-    outbox$: [], references$: {}, directory$: {}, contacts$: [], conversations$: {}, signerState$: null, recovery$: 0,
+    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsState$: 'loading', conversations$: {}, signerState$: null, recovery$: 0,
     people$ () {
       return [...this.contacts$().map(contact => this.personFor(contact.pubkey)), ...demoPeople]
     },
@@ -155,6 +155,7 @@ function useInitPrivateChats (account) {
     await runtime.chats.get(peer).start()
   }
   account.chatFor = peer => runtime.chats.get(peer)
+  account.recoverContacts = () => runtime.contacts?.start() ?? Promise.resolve(false)
   account.setContact = async (peer, included) => {
     if (demoPeople.some(person => person.pubkey === peer)) return false
     if (!runtime.contacts) throw new Error('Account unavailable')
@@ -182,7 +183,7 @@ function useInitPrivateChats (account) {
     const owner = track(() => account.pubkey$())
     if (!owner || demoEnabled) return
     let closed = false
-    let contactsStarted = false
+    account.contactsState$('loading')
     runtime.transport = createPrivateChats({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
       onOutbox: entries => {
@@ -204,36 +205,35 @@ function useInitPrivateChats (account) {
         const load = async () => { while (index < contacts.length) { if (closed) break; await account.loadPerson(contacts[index++].pubkey) } }
         for (let worker = 0; worker < 4; worker++) load()
       },
+      onState: state => { if (!closed) account.contactsState$(state) },
       onError: error => { if (!closed) console.warn('Could not load contacts', error) }
     })
     let availableApplied = false
-    let stateVersion = 0
-    const stateChanged = async state => {
+    let wasAvailable = false
+    const stateChanged = async (state, { resume = false } = {}) => {
       if (closed) return
-      const version = ++stateVersion
       account.signerState$(state)
       const available = state.connection === 'connected' && state.access === 'allowed' && !state.isLocked && state.isReadOnly === false
-      await runtime.transport.setState(state).catch(error => { if (!closed) console.warn('Could not resume message delivery', error) })
-      if (closed || version !== stateVersion) return
-      if (!available) {
-        availableApplied = false
-        return
-      }
-      if (availableApplied) return
-      availableApplied = true
-      contactsStarted = true
-      await runtime.contacts.start().catch(error => { if (!closed) console.warn('Could not resume contacts', error) })
-      if (closed || version !== stateVersion) return
+      const changed = available !== availableApplied
+      if (!changed && !resume) return
+      availableApplied = available
+      // Begin transport recovery and local reads independently. setState can
+      // wait for encrypted queues, channels and remote recovery work.
+      const delivery = runtime.transport.setState(state).catch(error => { if (!closed) console.warn('Could not resume message delivery', error) })
+      if (!available || !changed) return delivery
+      const reads = [runtime.contacts.start()]
       account.recovery$(value => value + 1)
-      await account.recover?.()
-      for (const chat of runtime.chats.values()) { if (closed || version !== stateVersion) break; await chat.start() }
+      // Initial root/route tasks already start history. Reopen only on recovery,
+      // and in parallel, so self-chat cannot delay the active peer conversation.
+      if (wasAvailable || account.historyState$() === 'unavailable') reads.push(account.recover?.())
+      if (wasAvailable) for (const chat of runtime.chats.values()) reads.push(chat.start())
+      wasAvailable = true
+      await Promise.all([delivery, ...reads])
     }
     const stopState = window.napp.onSignerStateChanged(stateChanged)
     stopState.ready?.catch(error => { if (!closed) console.warn('Signer state unavailable', error) })
     const stopOnline = onOnline(async () => {
-      if (closed) return
-      await stateChanged(await window.napp.getSignerState())
-      if (contactsStarted) await runtime.contacts.start()
+      if (!closed) await stateChanged(await window.napp.getSignerState(), { resume: true })
     })
     cleanup(() => {
       closed = true
@@ -243,6 +243,7 @@ function useInitPrivateChats (account) {
       for (const chat of runtime.chats.values()) chat.close()
       runtime.version++
       runtime.chats.clear(); runtime.profiles.clear(); runtime.outbox = []
+      account.contacts$([]); account.contactsState$('loading')
     })
   })
 }
@@ -261,7 +262,11 @@ export function useConversation (id$, { open = false } = {}) {
     error$ () { return this.self$() ? account.error$() : this.data$().error },
     ready$ () { return account.ready$() },
     older$ () { return this.self$() ? account.older$() : this.data$().older || { loading: false, hasOlder: false } },
-    send (...args) { return this.self$() ? account.send(...args) : account.chatFor(this.peer$()).send(...args) },
+    send (...args) {
+      if (this.self$()) return account.send(...args)
+      if (account.contactsState$() !== 'loaded' || !account.personFor(this.peer$())?.saved) throw new Error('CHAT_UNAVAILABLE')
+      return account.chatFor(this.peer$()).send(...args)
+    },
     retryMessage (id) { return this.self$() ? account.retryMessage(id) : account.chatFor(this.peer$())?.retry(id) },
     deleteMessage (...args) { return this.self$() ? account.deleteMessage(...args) : account.chatFor(this.peer$())?.deleteMessage(...args) },
     resolveReference (reference) { return this.self$() ? account.resolveReference(reference) : account.chatFor(this.peer$())?.resolveReference(reference) },

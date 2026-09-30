@@ -1014,6 +1014,21 @@ needed; empty folders mark the initial structure.
 
 ## Real contacts and private chats
 
+- `contactsState$` distinguishes loading, loaded and unavailable; an empty initial
+  `contacts$` array is not evidence of nonmembership. Chat invitations/profile
+  warnings require a completed local snapshot. Keep the composer mounted but
+  sending gated while membership is unknown, preserving typed drafts. Failures
+  offer Retry and must not enable Send or display a noncontact invitation.
+  Derive the decision from account membership/readiness together, never combine
+  current readiness with potentially stale route presentation props.
+- `createContacts.start()` settles after all three local snapshots and their
+  decryptions; private overrides may remove a public contact. Only then notify
+  membership/readiness and refresh a missing public list in the background.
+  Local read failures stay distinct from remote refresh errors. A cached public
+  list needs no startup relay discovery. Contact reads run independently of
+  transport setup; recovery starts self/peer history reads concurrently, and
+  network reconnects must not unnecessarily restart local contact subscriptions.
+
 See [private chats](docs/private-chats.md) for delivery, storage and lifecycle
 contracts. The root inbox is restricted to the instance owner and their effective
 contacts. Never open additional persona inboxes implicitly. Use scoped signer

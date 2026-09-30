@@ -57,7 +57,15 @@ f('z-chat', ({ h, props }) => {
     remove (id, options) { this.activeId$(null); return account.deleteMessage(id, options) },
     reply$ () { return this.messages$().find(message => message.id === this.replyTo$()) },
     historyLoaded$ () { return !this.real$() || account.historyLoaded$() || !!account.error$() },
-    canSend$ () { return this.real$() && props.person$().saved !== false && account.ready$() && !!account.pubkey$() && (props.person$().self || (identity.signerState$()?.connection === 'connected' && identity.signerState$()?.isLocked === false && identity.signerState$()?.isReadOnly === false)) },
+    contactsPending$ () { return this.real$() && !props.person$().self && identity.contactsState$() !== 'loaded' },
+    saved$ () { return this.real$() ? identity.contacts$().some(contact => contact.pubkey === props.person$().pubkey) : props.person$().saved !== false },
+    // Read membership and readiness from the same account store. The route's
+    // presentation props can lag one render behind a completed contact snapshot.
+    nonContact$ () { return !props.person$().self && !this.contactsPending$() && !this.saved$() },
+    loadError$ () { return account.error$() || (this.contactsPending$() && identity.contactsState$() === 'unavailable') },
+    loading$ () { return this.contactsPending$() || !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) },
+    recover () { if (this.contactsPending$()) identity.recoverContacts(); account.recover() },
+    canSend$ () { return this.real$() && !this.contactsPending$() && (props.person$().self || this.saved$()) && account.ready$() && !!account.pubkey$() && (props.person$().self || (identity.signerState$()?.connection === 'connected' && identity.signerState$()?.access === 'allowed' && identity.signerState$()?.isLocked === false && identity.signerState$()?.isReadOnly === false)) },
     send (text, attachment) { return account.send(text, this.replyTo$(), attachment) }
   }))
   const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length)
@@ -137,9 +145,9 @@ f('z-chat', ({ h, props }) => {
       `}</style>
       <z-chat-header props=${{ person$: props.person$, entry$: props.entry$, route$: props.route$ }} />
       <div class="chat-timeline" ref=${view.timelineRef$} data-history-loaded=${String(!view.real$() || account.historyLoaded$())}><div class="timeline-content">
-        ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!account.error$() && account.ready$() && !!account.pubkey$() && view.messages$().length > 0}>${account.error$() ? t('Could not load conversation') : !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t(props.person$().self ? 'Notes to yourself' : 'New message') : ''}${account.error$() ? h` <button type="button" class="retry-btn" onclick=${account.recover}>${t('Retry')}</button>` : null}</div>` : props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : h`<div class="chat-date">${t('Today')}</div>`}
+        ${view.real$() ? h`<div class="chat-date" role="status" ?hidden=${!view.loadError$() && !view.loading$() && !!account.pubkey$() && view.messages$().length > 0}>${view.loadError$() ? t('Could not load conversation') : view.loading$() ? t('Loading conversation') : !account.pubkey$() ? t('Sign in to save notes') : !view.messages$().length ? t(props.person$().self ? 'Notes to yourself' : 'New message') : ''}${view.loadError$() ? h` <button type="button" class="retry-btn" onclick=${view.recover}>${t('Retry')}</button>` : null}</div>` : props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : h`<div class="chat-date">${t('Today')}</div>`}
         ${view.real$() && account.historyLoaded$() ? h`<div class="chat-date" role="status" ?hidden=${!account.older$().loading && !account.older$().error}>${account.older$().error ? t('Could not load earlier messages') : t('Loading earlier messages')}${account.older$().error ? h` <button type="button" class="retry-btn" onclick=${account.loadOlder}>${t('Retry')}</button>` : null}</div>` : null}
-        ${view.real$() && props.person$().saved === false ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : null}
+        ${view.real$() && view.nonContact$() ? h`<z-contact-profile props=${{ person$: props.person$ }} />` : null}
         <ol class="message-list" aria-label=${t('Messages')}>
           <span hidden></span>
           ${view.days$().map(day => h({ key: day.key })`
@@ -150,7 +158,7 @@ f('z-chat', ({ h, props }) => {
           `)}
         </ol>
       </div></div>
-      ${props.person$().saved === false ? h`<z-contact-invitation props=${{ person$: props.person$ }} />` : h`<z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null), readFiles: account.readFiles, references$: account.references$ }} />`}
+      ${view.nonContact$() ? h`<z-contact-invitation props=${{ person$: props.person$ }} />` : h`<z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null), readFiles: account.readFiles, references$: account.references$ }} />`}
     </main>
   `
 })
