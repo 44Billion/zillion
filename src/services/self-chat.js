@@ -35,6 +35,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   const messages = new Map()
   const deleted = new Set()
   const outbox = new Map()
+  const preparations = new Map()
   const controller = new AbortController()
   let closed = false
   const retained = new Map()
@@ -55,7 +56,8 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   const confirm = (id, event, notify = true) => {
     if (closed || deleted.has(id) || messages.get(id)?.status === 'saved') return
     rememberOrder({ ...event, id })
-    messages.set(id, { ...event, id, status: transport && outbox.has(id) ? outbox.get(id).status : 'saved' })
+    const pending = preparations.get(id)
+    messages.set(id, { ...(pending ? messages.get(id) : {}), ...event, id, status: transport && outbox.has(id) ? outbox.get(id).status : pending ? messages.get(id)?.status ?? 'pending' : 'saved' })
     outbox.get(id)?.attachment?.close?.()
     if (!transport) outbox.delete(id)
     if (notify) emit()
@@ -87,6 +89,12 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   function remove (ids) {
     for (const id of ids) {
       deleted.add(id)
+      const preparation = preparations.get(id)
+      preparation?.controller.abort()
+      if (preparation && !preparation.work) {
+        preparation.attachment?.close?.()
+        preparations.delete(id)
+      }
       messages.delete(id)
       outbox.get(id)?.attachment?.close?.()
       outbox.delete(id)
@@ -186,7 +194,8 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     })().finally(() => { loading = null })
     return loading
   }
-  async function prepareEntry (entry) {
+  async function prepareEntry (entry, signal = controller.signal) {
+    signal.throwIfAborted()
     if (entry.attachment) {
       const { prepared, metadata } = entry.attachment
       for (const resource of [prepared, entry.attachment.thumbnailPrepared].filter(Boolean)) {
@@ -194,12 +203,13 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
         // queue of encoded chunks, and retries retain the original template.
         let batch = []
         const saveChunk = async chunk => {
-          controller.signal.throwIfAborted()
+          signal.throwIfAborted()
           const d = chunk.tags.find(tag => tag[0] === 'd')[1]
           const existing = await eventStore.query({ kinds: [34601], '#d': [d], limit: 1 })
           if (existing.results?.some(event => {
             try { return decodeIrfsChunk(event).root === resource.root } catch { return false }
           })) return
+          signal.throwIfAborted()
           const saved = await eventStore.addPersonalCopy(chunk, { context })
           if (!saved?.result?.ok) throw new Error(`Chunk storage failed: ${saved?.result?.code ?? 'unknown'}`)
         }
@@ -209,16 +219,17 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
           const failed = results.find(result => result.status === 'rejected')
           if (failed) throw failed.reason
         }
-        for await (const chunk of resource.chunks({ created_at: entry.event.created_at, signal: controller.signal })) {
+        for await (const chunk of resource.chunks({ created_at: entry.event.created_at, signal })) {
           batch.push(saveChunk(chunk).then(() => ({ status: 'fulfilled' }), reason => ({ status: 'rejected', reason })))
           if (batch.length === 3) await settle()
         }
         await settle()
       }
-      await verifyFile(metadata, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(120000)]) })
-      controller.signal.throwIfAborted()
+      await verifyFile(metadata, { signal: AbortSignal.any([signal, AbortSignal.timeout(120000)]) })
+      signal.throwIfAborted()
     }
     // The file metadata is committed before the kind 9 that references it.
+    signal.throwIfAborted()
     if (entry.fileEvent) {
       const savedFile = await eventStore.addPersonalCopy(entry.fileEvent, { context })
       if (!savedFile?.result?.ok) throw new Error(`File storage failed: ${savedFile?.result?.code ?? 'unknown'}`)
@@ -244,6 +255,54 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       messages.set(id, { ...messages.get(id), status: 'error' })
       emit()
     }).finally(() => { entry.work = null })
+    return entry.work
+  }
+  function prepareSend (id) {
+    const entry = preparations.get(id)
+    if (closed || !entry || deleted.has(id)) return Promise.resolve()
+    if (entry.work) return entry.work
+    const signal = AbortSignal.any([controller.signal, entry.controller.signal])
+    messages.set(id, { ...messages.get(id), status: 'pending' })
+    emit()
+    entry.work = Promise.resolve().then(async () => {
+      await prepareEntry(entry, signal)
+      const context = []
+      if (entry.reply) {
+        // One quoted level only, with the metadata of its direct attachments.
+        for (const part of parseChatContent(entry.reply.content)) {
+          if (part.key !== 'event' || part.event.kind !== CHAT_FILE_KIND) continue
+          const file = await Promise.resolve(references.prepare(part.event)).catch(() => null)
+          if (file) context.push(file)
+        }
+        context.push(entry.reply)
+      }
+      signal.throwIfAborted()
+      if (entry.fileEvent) context.push(entry.fileEvent)
+      entry.enqueuing = true
+      await transport.enqueue({ peer, event: { ...entry.event, pubkey }, context, requiredFiles: entry.fileEvent ? [getEventHash({ ...entry.fileEvent, pubkey })] : [] })
+      entry.accepted = true
+    }).catch(() => {
+      if (signal.aborted || entry.observed) return
+      messages.set(id, { ...messages.get(id), status: 'error' })
+      emit()
+    }).finally(async () => {
+      // cancel() fences publication immediately; repeat after an in-flight
+      // enqueue so its late durable write cannot survive cancellation.
+      if (entry.controller.signal.aborted && entry.enqueuing) {
+        try { await transport.cancel(id) } catch (error) { if (!closed) onError(error) }
+      }
+      entry.work = null
+      if (signal.aborted || entry.accepted || entry.observed) {
+        entry.attachment?.close?.()
+        entry.attachment = null
+        if (signal.aborted || entry.observed) preparations.delete(id)
+        const message = messages.get(id)
+        if (!closed && message) {
+          messages.set(id, { ...message, localSource: undefined, localAttachment: undefined })
+          emit()
+        }
+      }
+    })
     return entry.work
   }
   function send (content, replyTo, attachment) {
@@ -296,40 +355,29 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       id = getEventHash({ ...event, pubkey })
     }
     rememberOrder({ ...event, id })
-    if (transport) {
-      const entry = { event, fileEvent, attachment }
-      return (async () => {
-        await prepareEntry(entry)
-        const context = []
-        if (reply) {
-          // One quoted level only, with the metadata of its direct attachments.
-          for (const part of parseChatContent(reply.content)) {
-            if (part.key !== 'event' || part.event.kind !== CHAT_FILE_KIND) continue
-            const file = await Promise.resolve(references.prepare(part.event)).catch(() => null)
-            if (file) context.push(file)
-          }
-          context.push(reply)
-        }
-        if (fileEvent) context.push(fileEvent)
-        await transport.enqueue({ peer, event: { ...event, pubkey }, context, requiredFiles: fileEvent ? [getEventHash({ ...fileEvent, pubkey })] : [] })
-        attachment?.close?.()
-        return id
-      })()
-    }
     messages.set(id, { ...event, pubkey, id, status: 'pending', localSource: attachment?.source, localAttachment: attachment?.metadata })
     if (fileEvent) {
       const fileId = getEventHash({ ...fileEvent, pubkey })
       references.locals.set(fileId, { ...fileEvent, pubkey, id: fileId })
     }
     references.locals.set(id, { ...event, pubkey, id })
-    outbox.set(id, { event, fileEvent, attachment, work: null })
-    write(id)
+    if (transport) {
+      preparations.set(id, { event, fileEvent, attachment, reply, controller: new AbortController(), work: null, accepted: false, observed: false })
+      prepareSend(id)
+    } else {
+      outbox.set(id, { event, fileEvent, attachment, work: null })
+      write(id)
+    }
     return id
   }
   function close () {
     closed = true
     generation++
     controller.abort()
+    for (const entry of preparations.values()) {
+      if (!entry.work) entry.attachment?.close?.()
+    }
+    preparations.clear()
     for (const entry of outbox.values()) entry.attachment?.close?.()
     outbox.clear()
     references.clear()
@@ -344,6 +392,13 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     if (closed) throw new Error('Self chat is closed')
     const message = messages.get(id)
     if (!message || (everyone && message.pubkey !== pubkey) || (!transport && message.status !== 'saved')) return Promise.resolve(false)
+    const preparation = preparations.get(id)
+    if (preparation && !preparation.accepted && !preparation.observed) {
+      preparation.controller.abort()
+      remove([id])
+      const cancel = preparation.enqueuing ? transport.cancel(id) : Promise.resolve()
+      return Promise.resolve(cancel).then(() => preparation.work).then(() => true)
+    }
     messages.delete(id)
     emit()
     const quoted = new Set(message.tags.filter(tag => tag[0] === 'q' && tag[3] === message.pubkey).map(tag => tag[1]))
@@ -374,15 +429,26 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     loadOlder: () => history?.loadOlder() ?? Promise.resolve(false),
     send,
     deleteMessage,
-    retry: transport ? id => transport.retry(id) : write,
+    retry: transport ? id => preparations.has(id) && !preparations.get(id).accepted ? prepareSend(id) : transport.retry(id) : write,
     applyOutbox (entries) {
       const pending = new Set()
       for (const entry of entries) {
         if (entry.peer !== peer || deleted.has(entry.id)) continue
         pending.add(entry.id)
+        const preparation = preparations.get(entry.id)
+        if (preparation) {
+          preparation.observed = true
+          if (!preparation.work) preparations.delete(entry.id)
+        }
         outbox.set(entry.id, entry)
         rememberOrder(entry.event)
         messages.set(entry.id, { ...entry.event, status: entry.status, uploadProgress: entry.uploadProgress })
+      }
+      for (const [id, preparation] of preparations) {
+        if (preparation.accepted && !preparation.work) {
+          preparations.delete(id)
+          if (!pending.has(id) && messages.has(id)) messages.set(id, { ...messages.get(id), status: 'saved' })
+        }
       }
       for (const id of outbox.keys()) {
         if (!pending.has(id)) {

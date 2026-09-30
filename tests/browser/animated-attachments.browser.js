@@ -21,6 +21,10 @@ test('animated attachments play in bubbles and release sources across viewer nav
     options.sourcemap = false
     options.plugins.push({
       name: 'animated-attachments-test', setup (build) {
+        build.onLoad({ filter: /src\/components\/views\/chat\/composer\.js$/ }, async args => ({
+          contents: (await readFile(args.path, 'utf8')).replace("from '#services/chat-attachments.js'", "from '../../../../tests/browser/fixtures/staged-attachment.js'"),
+          loader: 'js', resolveDir: path.dirname(args.path)
+        }))
         build.onLoad({ filter: /src\/components\/app\.js$/ }, async args => ({
           contents: await readFile(args.path, 'utf8') + '\nimport "../../tests/browser/fixtures/route-driver.js"\nimport "../../tests/browser/fixtures/animated-attachments-driver.js"',
           loader: 'js', resolveDir: path.dirname(args.path)
@@ -73,6 +77,22 @@ test('animated attachments play in bubbles and release sources across viewer nav
     await evaluate('testNavigation.pushState({}, "", "/chat/user")')
     await evaluate('animationTest.account.recover()')
     await browser.until(() => evaluate('animationTest.account.historyState$() === "loaded"'), 'chat ready')
+    const stagedBytes = [...await readFile(path.join(root, 'tests/browser/fixtures/media/animated-playback.png'))]
+    await evaluate(`(() => {
+      window.holdAttachment = true;
+      const input = document.querySelector('.chat-composer input[type=file]');
+      const files = new DataTransfer();
+      files.items.add(new File([new Uint8Array(${JSON.stringify(stagedBytes)})], 'immediate.png', {type:'image/png'}));
+      input.files = files.files;
+      input.dispatchEvent(new Event('change', {bubbles:true}));
+    })()`)
+    await browser.until(() => evaluate('!!document.querySelector(".composer-attachment .attachment-remove") && document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'composer attachment ready')
+    await evaluate('document.querySelector(".compose-action").click()')
+    await browser.until(() => evaluate('window.attachmentWaiting && !document.querySelector(".composer-attachment") && animationTest.account.messages$().some(m => m.status === "pending") && !!document.querySelector(".message-row .transfer-action")'), 'composer clears and pending bubble appears while persistence is blocked', 5000)
+    const stagedId = await evaluate('animationTest.account.messages$().find(m => m.status === "pending").id')
+    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").disabled'), false, 'composer remains available during preparation')
+    await evaluate('window.holdAttachment = false; window.releaseAttachment()')
+    await browser.until(() => evaluate(`animationTest.account.messages$().find(m => m.id === '${stagedId}')?.status === 'saved'`), 'staged attachment saved after release')
     const ids = []
     const imageSelector = id => `.route-page[data-active=true] [data-message-id="${id}"] .attachment-frame img:not(.attachment-placeholder)`
     const show = async id => {

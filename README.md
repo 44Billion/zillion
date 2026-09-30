@@ -411,8 +411,13 @@ choose the green Retry icon. Icons occupy only their own width. Confirmation smo
 that space to reveal the time, including any resulting bubble height change.
 Contraction is immediate; initial history and reduced motion skip the animation.
 Retries reuse the original event and never overwrite a newer draft.
-Pending and failed accepted messages survive reload in the encrypted outbox.
-Only unsubmitted composer drafts remain local to retained routes.
+Clicking Send immediately moves the selection into a pending bubble and frees
+the composer. Local chunk persistence, verification and durable enqueue run
+behind that bubble; failures remain there for Retry, reusing the prepared bytes.
+Cancel prevents a later enqueue from restoring the message. Once durably queued,
+pending and failed messages survive reload in the encrypted outbox. The initial
+preparation phase is held in memory and cannot survive closing the app before
+that durable handoff; unsubmitted composer drafts remain local to retained routes.
 The app root owns history/profile subscriptions and cleans them up on unmount;
 home's self avatar and last-message preview share that state.
 

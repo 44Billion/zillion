@@ -636,7 +636,13 @@ needed; empty folders mark the initial structure.
   cannot be undone by a late write. List non-destructively in ID-index order.
   Await queue closure; the coordinator does not use queue reservations. The old
   custom database is not migrated or read and may be removed manually.
-  Accept only after durable preparation; preserve composer state on rejection.
+  `send()` accepts the UI draft synchronously: move its attachment into a pending
+  bubble before local persistence/verification, and release the composer. Track
+  this in-memory preparation separately from durable outbox snapshots. Failures
+  stay in the bubble for Retry with the same identity and prepared bytes. Cancel
+  fences enqueue/publication, including a late durable insertion; teardown must
+  not close bytes while a reader still owns them. Only the durable handoff survives
+  app restart; do not claim persistence for the initial preparation phase.
   Retried stages reuse identity and track local and remote commits separately.
   Direct standalone `createSelfChat` without a coordinator remains a local service
   API used by focused tests; the app supplies the durable coordinator.

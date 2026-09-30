@@ -705,3 +705,137 @@ test('malformed decrypted JSON is skipped without failing initial history', asyn
     assert.deepEqual(f.errors, [])
   } finally { f.chat.close() }
 })
+
+async function stagedAttachment () {
+  const prepared = await prepareIrfsFile(new Uint8Array([1, 2, 3]))
+  let closes = 0
+  return { prepared, metadata: { root: prepared.root, mime: 'application/octet-stream', size: 3, filename: 'staged.bin' }, source: 'blob:staged', close () { closes++; prepared.close() }, get closes () { return closes } }
+}
+
+for (const failure of ['verification', 'enqueue']) {
+  test(`transport sends show immediately and retry ${failure} failures with the same identity`, async () => {
+    const gate = Promise.withResolvers()
+    const attachment = await stagedAttachment()
+    const sent = []
+    let fail = true
+    const f = fixture([], {
+      verifyFile: async () => { await gate.promise; if (fail && failure === 'verification') throw new Error('Storage failed') },
+      transport: { enqueue: async entry => { sent.push(entry); if (fail && failure === 'enqueue') throw new Error('Quota exceeded') }, retry: () => assert.fail('Preparation must retry before durable acceptance') }
+    })
+    const id = f.chat.send('Caption', null, attachment)
+    assert.equal(typeof id, 'string')
+    assert.equal(f.messages[0].status, 'pending')
+    assert.equal(f.messages[0].localSource, 'blob:staged')
+    f.chat.applyOutbox([])
+    assert.equal(f.messages[0].status, 'pending', 'unrelated snapshots cannot complete a preparation')
+    assert.equal(sent.length, 0)
+    gate.resolve()
+    await f.chat.retry(id)
+    assert.equal(f.messages[0].status, 'error')
+    assert.equal(attachment.closes, 0, 'failed sends retain bytes for retry')
+    fail = false
+    const retry = f.chat.retry(id)
+    assert.equal(f.chat.retry(id), retry)
+    await retry
+    assert.equal(f.messages[0].id, id)
+    assert.equal(getEventHash(sent.at(-1).event), id)
+    assert.equal(attachment.closes, 1)
+    f.chat.applyOutbox([{ id, peer: pubkey, event: { ...sent.at(-1).event, id }, status: 'pending' }])
+    assert.equal(f.messages[0].status, 'pending')
+    f.chat.applyOutbox([])
+    assert.equal(f.messages[0].status, 'saved')
+    f.chat.close()
+    assert.equal(attachment.closes, 1)
+  })
+}
+
+test('cancel during local preparation never enqueues and releases bytes after the reader settles', async () => {
+  const entered = Promise.withResolvers()
+  const gate = Promise.withResolvers()
+  const attachment = await stagedAttachment()
+  const f = fixture([], {
+    verifyFile: async () => { entered.resolve(); await gate.promise },
+    transport: { enqueue: () => assert.fail('Canceled preparation must not enqueue') }
+  })
+  const id = f.chat.send('', null, attachment)
+  await entered.promise
+  const canceled = f.chat.deleteMessage(id)
+  assert.equal(f.messages.length, 0)
+  assert.equal(attachment.closes, 0)
+  gate.resolve()
+  assert.equal(await canceled, true)
+  assert.equal(attachment.closes, 1)
+  f.chat.applyOutbox([])
+  assert.equal(f.messages.length, 0)
+  f.chat.close()
+})
+
+test('cancel racing durable enqueue fences publication and removes its late queue entry', async () => {
+  const entered = Promise.withResolvers()
+  const gate = Promise.withResolvers()
+  const canceled = []
+  const durable = new Set()
+  const f = fixture([], {
+    transport: {
+      enqueue: async ({ event }) => { entered.resolve(); await gate.promise; durable.add(getEventHash(event)) },
+      cancel: async id => { canceled.push(id); durable.delete(id) }
+    }
+  })
+  const id = f.chat.send('Pending')
+  await entered.promise
+  const cancel = f.chat.deleteMessage(id)
+  assert.deepEqual(canceled, [id])
+  gate.resolve()
+  await cancel
+  assert.deepEqual(canceled, [id, id])
+  assert.equal(durable.size, 0)
+  assert.equal(f.messages.length, 0)
+  f.chat.close()
+})
+
+test('synchronous durable snapshots can complete a send before enqueue returns', async () => {
+  const attachment = await stagedAttachment()
+  const f = fixture([], {
+    verifyFile: async () => {}, transport: {
+      enqueue: async ({ event }) => {
+        const id = getEventHash(event)
+        f.chat.applyOutbox([{ id, peer: pubkey, event: { ...event, id }, status: 'pending' }])
+        f.chat.applyOutbox([])
+      }
+    }
+  })
+  const id = f.chat.send('', null, attachment)
+  await f.chat.retry(id)
+  assert.equal(f.messages[0].status, 'saved')
+  assert.equal(attachment.closes, 1)
+  f.chat.close()
+})
+
+test('closing during preparation aborts the send without reporting an error or closing active bytes early', async () => {
+  const entered = Promise.withResolvers()
+  const gate = Promise.withResolvers()
+  const attachment = await stagedAttachment()
+  const f = fixture([], { verifyFile: async () => { entered.resolve(); await gate.promise }, transport: { enqueue: () => assert.fail('Closed preparation must not enqueue') } })
+  const id = f.chat.send('', null, attachment)
+  const work = f.chat.retry(id)
+  await entered.promise
+  f.chat.close()
+  assert.equal(attachment.closes, 0)
+  gate.resolve()
+  await work
+  assert.equal(attachment.closes, 1)
+  assert.deepEqual(f.errors, [])
+})
+
+test('canceling failed preparation releases its retained attachment without enqueueing', async () => {
+  const attachment = await stagedAttachment()
+  const f = fixture([], { verifyFile: async () => { throw new Error('Locked') }, transport: { enqueue: () => assert.fail('Must not enqueue') } })
+  const id = f.chat.send('', null, attachment)
+  await f.chat.retry(id)
+  assert.equal(f.messages[0].status, 'error')
+  assert.equal(await f.chat.deleteMessage(id), true)
+  assert.equal(attachment.closes, 1)
+  assert.equal(f.messages.length, 0)
+  f.chat.close()
+  assert.equal(attachment.closes, 1)
+})
