@@ -1,3 +1,4 @@
+import { privateMediaPeer } from './private-media.js'
 import { prepareIrfsFile } from 'libp2r2p/irfs'
 import { encodedFileName } from '#helpers/attachment-presentation.js'
 import { nfileEncode } from 'libp2r2p/nip19'
@@ -8,7 +9,7 @@ import { rememberAttachmentPreview } from './attachment-previews.js'
 
 export function messageAttachment (event) {
   if (event?.kind !== 1063) return null
-  try { return decodeFileMetadata(event) } catch { return null }
+  try { const file = decodeFileMetadata(event); return { ...file, ...(file.service === 'irfs' && new URL(file.url).origin === 'https://nostr.alt' && privateMediaPeer(event) ? { peer: privateMediaPeer(event), sharedAt: event.created_at } : {}) } } catch { return null }
 }
 
 export function attachmentCatalog (events) {
@@ -25,8 +26,8 @@ export function attachmentCatalog (events) {
 export async function prepareAttachment (file, { signal, onProgress, compress = true } = {}) {
   const controller = new AbortController()
   const combined = AbortSignal.any([controller.signal, ...(signal ? [signal] : [])])
-  let prepared, artifact, source
-  const close = () => { controller.abort(); prepared?.close(); if (source) URL.revokeObjectURL(source); return artifact?.close() || Promise.resolve() }
+  let prepared, thumbnailPrepared, artifact, source
+  const close = () => { controller.abort(); prepared?.close(); thumbnailPrepared?.close(); if (source) URL.revokeObjectURL(source); return artifact?.close() || Promise.resolve() }
   try {
     artifact = await createUploadArtifact(file, { signal: combined, onProgress, compress })
     const upload = artifact.file
@@ -39,9 +40,21 @@ export async function prepareAttachment (file, { signal, onProgress, compress = 
     const filename = encodedFileName({ filename: upload.name, root: prepared.root, mime })
     const entity = nfileEncode({ root: prepared.root, mime, filename })
     const metadata = { root: prepared.root, size: upload.size, mime, filename, url: `https://nostr.alt/${entity}?localOnly=1`, service: 'irfs', ...(preview ? { width: preview.width, height: preview.height, thumbhash: preview.thumbhash } : {}) }
+    if (preview) {
+      let small = preview
+      for (const target of [160, 80]) {
+        if (small.blob.size <= 51000) break
+        small = await prepareMediaPreview(upload, mime, { signal: combined, target })
+      }
+      if (small.blob.size <= 51000) {
+        thumbnailPrepared = await prepareIrfsFile(small.blob, { signal: combined })
+        const thumbnailMime = small.blob.type || 'image/png'
+        metadata.thumbnail = { root: thumbnailPrepared.root, size: small.blob.size, url: `https://nostr.alt/${nfileEncode({ root: thumbnailPrepared.root, mime: thumbnailMime })}?localOnly=1` }
+      }
+    }
     rememberAttachmentPreview(metadata, preview)
     source = preview ? URL.createObjectURL(preview.blob) : null
-    return { prepared, source, close, metadata, compression: { changed: artifact.changed, reason: artifact.reason } }
+    return { prepared, thumbnailPrepared, source, close, metadata, compression: { changed: artifact.changed, reason: artifact.reason } }
   } catch (error) { await close(); throw error }
 }
 

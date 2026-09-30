@@ -126,6 +126,7 @@ export function chatTimeline (events, { locale, now = Date.now(), t = value => v
       real: true,
       outgoing: !owner || event.pubkey === owner,
       status: event.status ?? 'saved',
+      uploadProgress: event.uploadProgress,
       localSource: event.localSource,
       attachment,
       caption: attachment?.caption ?? '',

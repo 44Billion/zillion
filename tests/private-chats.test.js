@@ -13,8 +13,8 @@ const active = { access: 'allowed', connection: 'connected', isLocked: false, is
 const event = { kind: 9, created_at: 100, tags: [['salt', 'stable']], content: 'hello', pubkey: owner }
 const until = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)) }; assert.fail('condition not reached') }
 
-function fixture ({ primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
-  const errors = []; const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
+function fixture ({ fileAuthorize = async () => {}, fileDownload = async () => {}, downloadPut = async () => {}, downloadRemove = async () => {}, primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
+  const grants = []; const errors = []; const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
   const signer = { getPublicKey: async () => primary, withSharedKey: (pubkey, info) => { assert.equal(info, 'dm'); return { getPublicKey: async () => `channel:${pubkey}` } } }
   const messenger = {
     update: async options => updates.push(options), pause: async reason => pauses.add(reason), resume: async reason => pauses.delete(reason), close: async () => {},
@@ -28,12 +28,19 @@ function fixture ({ primary = owner, records = new Map(), save = async () => ({ 
   }
   let callbacks
   const transport = createPrivateChats({
+    FileTransfer: () => ({
+      observe () {},
+      authorizeSeeding: async (file, options) => { grants.push({ file, ...options }); await fileAuthorize(file, options) },
+      publishChunk: async (file, event) => { const options = { channelPubkey: `media:${file.root}`, rumor: event }; sends.push(options); return publish(options) },
+      download: fileDownload, cancel () {}
+    }),
+    openDownloads: async () => ({ list: async () => [], put: downloadPut, remove: downloadRemove, close: async () => {} }),
     owner: primary, signer, eventStore: { query, addPersonalCopy: async (...args) => { writes.push(args); return save(...args) } },
     Messenger: async options => { callbacks = options; return messenger },
     openOutbox: async () => ({ list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} }),
     onOutbox: list => states.push(structuredClone(list)), onError: error => errors.push(error)
   })
-  return { transport, errors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
+  return { transport, grants, errors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
 }
 
 test('both peer-chat participants seed recovery, retain NIP-65 routing and exclude self channels', async t => {
@@ -232,4 +239,96 @@ test('relay failures retain diagnostics and remain retryable without resaving th
   assert.equal(f.records.size, 0)
   assert.equal(f.writes.length, 1)
   assert.ok(f.sends.every(send => getEventHash(send.rumor) === id))
+})
+
+test('original and thumbnail chunks publish on their own channels before the announcement', async () => {
+  const { prepareIrfsFile } = await import('libp2r2p/irfs')
+  const { createFileMetadata } = await import('libp2r2p/nip94')
+  const { nfileEncode } = await import('libp2r2p/nip19')
+  const original = await prepareIrfsFile(new Uint8Array(51001).fill(12))
+  const thumbnail = await prepareIrfsFile(new Uint8Array(200).fill(13))
+  const chunks = new Map()
+  for (const file of [original, thumbnail]) for await (const event of file.chunks()) chunks.set(event.tags[0][1], event)
+  const f = fixture({ query: async filter => ({ results: filter['#d'].map(id => chunks.get(id)).filter(Boolean) }) })
+  try {
+    await f.open()
+    const metadata = { ...createFileMetadata({ url: `https://nostr.alt/${nfileEncode({ root: original.root, mime: 'image/png' })}?localOnly=1`, root: original.root, size: original.size, mime: 'image/png', service: 'irfs', thumbnail: { root: thumbnail.root, size: thumbnail.size, url: `https://nostr.alt/${nfileEncode({ root: thumbnail.root, mime: 'image/png' })}?localOnly=1` } }), pubkey: owner }
+    await f.transport.enqueue({ peer, event, context: [metadata], requiredFiles: [getEventHash(metadata)] })
+    await until(() => f.records.size === 0)
+    assert.deepEqual(f.sends.map(send => send.rumor.kind), [34601, 34601, 34601, 1063, 9])
+    assert.deepEqual(f.sends.map(send => send.channelPubkey), [`media:${original.root}`, `media:${original.root}`, `media:${thumbnail.root}`, `channel:${peer}`, `channel:${peer}`])
+    assert.deepEqual(f.grants.map(grant => [grant.file.root, grant.receiverPubkeys, grant.sharedAt]), [[original.root, [peer], event.created_at], [thumbnail.root, [peer], event.created_at]])
+    assert.ok(f.states.some(entries => entries.some(entry => entry.uploadProgress?.completed > 0)))
+  } finally { await f.transport.close(); original.close(); thumbnail.close() }
+})
+
+test('cancel during encrypted download-intent write cannot resurrect the transfer', async () => {
+  const started = Promise.withResolvers(); const release = Promise.withResolvers()
+  let invoked = false; let removed = false
+  const f = fixture({ fileDownload: async () => { invoked = true }, downloadPut: async () => { started.resolve(); await release.promise }, downloadRemove: async () => { removed = true } })
+  try {
+    await f.open()
+    const file = { peer, root: 'e'.repeat(64), size: 2000000 }
+    const downloading = f.transport.download(file, { manual: true })
+    const rejected = assert.rejects(downloading, /cancelled/)
+    await started.promise
+    const cancelled = f.transport.cancelDownload(file)
+    release.resolve()
+    await Promise.all([cancelled, rejected])
+    assert.equal(invoked, false)
+    assert.equal(removed, true)
+  } finally { await f.transport.close() }
+})
+
+test('new text is published between attachment chunks', async () => {
+  const { prepareIrfsFile } = await import('libp2r2p/irfs')
+  const { createFileMetadata } = await import('libp2r2p/nip94')
+  const { nfileEncode } = await import('libp2r2p/nip19')
+  const prepared = await prepareIrfsFile(new Uint8Array(51001).fill(19))
+  const chunks = new Map()
+  for await (const chunk of prepared.chunks()) chunks.set(chunk.tags[0][1], chunk)
+  const first = Promise.withResolvers()
+  const release = Promise.withResolvers()
+  let held = false
+  const f = fixture({
+    query: async filter => ({ results: filter['#d'].map(id => chunks.get(id)).filter(Boolean) }), publish: async options => {
+      if (options.rumor.kind === 34601 && !held) { held = true; first.resolve(); await release.promise }
+      return { delivery: { reports: [{ success: true }] } }
+    }
+  })
+  try {
+    await f.open()
+    const metadata = { ...createFileMetadata({ url: `https://nostr.alt/${nfileEncode({ root: prepared.root, mime: 'application/octet-stream' })}?localOnly=1`, root: prepared.root, size: prepared.size, mime: 'application/octet-stream', service: 'irfs' }), pubkey: owner }
+    await f.transport.enqueue({ peer, event, context: [metadata] })
+    await first.promise
+    await f.transport.enqueue({ peer, event: { ...event, content: 'Urgent text' } })
+    release.resolve()
+    await until(() => f.records.size === 0)
+    assert.equal(f.sends[0].rumor.kind, 34601)
+    assert.equal(f.sends[1].rumor.content, 'Urgent text')
+    assert.equal(f.sends[2].rumor.kind, 34601)
+  } finally { await f.transport.close(); prepared.close() }
+})
+
+test('authorization failure blocks publication and retry preserves sharing time; a new send renews it', async () => {
+  const { prepareIrfsFile } = await import('libp2r2p/irfs')
+  const { createFileMetadata } = await import('libp2r2p/nip94')
+  const { nfileEncode } = await import('libp2r2p/nip19')
+  const prepared = await prepareIrfsFile(new Uint8Array(20).fill(5))
+  const [chunk] = await Array.fromAsync(prepared.chunks())
+  let failed = false
+  const f = fixture({ query: async () => ({ results: [chunk] }), fileAuthorize: async () => { if (!failed) { failed = true; throw new Error('catalog quota') } } })
+  try {
+    await f.open()
+    const metadata = { ...createFileMetadata({ url: `https://nostr.alt/${nfileEncode({ root: prepared.root, mime: 'application/octet-stream' })}?localOnly=1`, root: prepared.root, size: prepared.size, mime: 'application/octet-stream', service: 'irfs' }), pubkey: owner }
+    const id = await f.transport.enqueue({ peer, event, context: [metadata] })
+    await until(() => f.records.get(id)?.status === 'error')
+    assert.equal(f.sends.length, 0)
+    await f.transport.retry(id)
+    await until(() => f.records.size === 0)
+    await f.transport.enqueue({ peer, event: { ...event, created_at: 200 }, context: [metadata] })
+    await until(() => f.records.size === 0)
+    assert.deepEqual(f.grants.map(grant => grant.sharedAt), [100, 100, 200])
+    assert.ok(f.grants.every(grant => grant.file.root === prepared.root))
+  } finally { await f.transport.close(); prepared.close() }
 })

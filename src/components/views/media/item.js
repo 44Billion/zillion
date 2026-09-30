@@ -1,3 +1,4 @@
+import { ensurePrivateMedia } from '#services/private-media.js'
 import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
 import { f, useStore, useTask } from '#f'
 import { t } from '#i18n/messages.js'
@@ -43,6 +44,7 @@ f('z-viewer-item', ({ h, props }) => {
       if (pending || controller.signal.aborted || view.source$()) return
       pending = true
       try {
+        await ensurePrivateMedia(item, { manual: view.selected$(), signal: controller.signal })
         const signal = preparationSignal(controller.signal)
         const local = new URL(url).origin === 'https://nostr.alt' || /^data:image\//.test(url)
         const source = type === 'video'

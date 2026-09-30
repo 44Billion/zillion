@@ -1,4 +1,5 @@
 import NMMR from 'nmmr'
+import { createQueue } from 'libp2r2p/idb-queue'
 import { prepareAttachment } from '#services/chat-attachments.js'
 import { chatReferenceUri } from '#services/chat-references.js'
 import { getEventHash } from 'libp2r2p/event'
@@ -67,7 +68,7 @@ export function installPrivateChatFixture () {
   }
   relayPool.getEventsFeedGenerator = subscribe
   relayPool.getLiveEventsGenerator = subscribe
-  const fixture = { prepareAttachment, chatReferenceUri, getEventHash, errors: [], messages: [], outbox: [], events }
+  const fixture = { chunkId: (root, index) => NMMR.deriveChunkId(root, index), prepareAttachment, chatReferenceUri, getEventHash, errors: [], messages: [], outbox: [], events }
   fixture.checkTemporaryLeaves = async () => {
     const a = new NMMR(); const b = new NMMR()
     try {
@@ -107,6 +108,17 @@ export function installPrivateChatFixture () {
     fixture.chat = createChat({ pubkey: peer, peer: owner, signer, eventStore, transport: fixture.transport, onMessages: messages => { fixture.messages = messages }, onError })
     await fixture.chat.start()
     fixture.signer = signer; fixture.eventStore = eventStore
+  }
+  fixture.fileStorage = async () => {
+    const owner = await fixture.signer.getPublicKey()
+    const result = {}
+    for (const suffix of ['file-seeds', 'file-authorizations']) {
+      const queue = await createQueue({ prefix: `libp2r2p:private-messenger:${owner}:${suffix}`, indexes: { key: { keyPath: 'key', unique: true }, channel: 'fileChannelPubkey' } })
+      const rows = await Array.fromAsync(queue.storedItemsBy('key'))
+      result[suffix] = { count: rows.length, hasPayload: rows.some(row => 'payloadRow' in row || 'content' in row), bytes: new TextEncoder().encode(JSON.stringify(rows)).length }
+      await queue.close()
+    }
+    return result
   }
   fixture.pendingAcknowledgements = () => acknowledgements.length
   fixture.releaseAcknowledgements = () => { for (const acknowledge of acknowledgements.splice(0)) acknowledge() }

@@ -1,3 +1,4 @@
+import { useMediaTransfer } from './hooks/use-media-transfer.js'
 import { useSignerRecovery, canRecoverSignerFailure } from '#hooks/use-signer-recovery.js'
 import { mediaOpenHandlers } from '#helpers/media-open.js'
 import '#shared/icons/icon-arrows-diagonal.js'
@@ -30,6 +31,7 @@ f('z-chat-attachment', ({ h, props }) => {
     size$ () { return this.dimensions$() || mediaDimensions(this.file$()) }
   })
   useSignerRecovery(() => { if (view.failed$() && view.retryable) view.retry$(n => n + 1) })
+  const transfer = useMediaTransfer(view.file$, () => !props.preview)
   const download = useMediaDownload(() => view.file$().url, () => !props.preview, () => fileName(view.file$(), t('unnamed-file')).full, view.file$)
   useTask(({ track, cleanup }) => {
     track(() => view.retry$())
@@ -74,8 +76,8 @@ f('z-chat-attachment', ({ h, props }) => {
     resolve()
   }, { when: 'visible', rootMargin: '0px' })
   useTask(({ track, cleanup }) => {
-    const { video, source, active, poster } = track(() => ({ video: view.videoRef$(), source: view.source$(), active: page.isActive$(), poster: view.poster$() }))
-    if (!video || !source || !active) return
+    const { video, source, active, poster, transferStatus } = track(() => ({ video: view.videoRef$(), source: view.source$(), active: page.isActive$(), poster: view.poster$(), transferStatus: transfer.state$()?.status }))
+    if (!video || !source || !active || (view.file$().peer && transferStatus !== 'complete')) return
     // The DOM node can survive pending -> confirmed with an unchanged URL.
     // Own src here so cleanup cannot leave uhtml's attribute cache stale.
     video.src = poster ? view.file$().url : source
@@ -110,7 +112,7 @@ f('z-chat-attachment', ({ h, props }) => {
   const forceDownload = file.download === '1' && !props.preview
   const isMedia = /^(image|video)\//.test(file.mime)
   const visual = h`${view.placeholder$() && !view.loaded$() ? h`<img class="attachment-placeholder" src=${view.placeholder$()} alt="">` : null}${view.source$() && !view.failed$() && isMedia
-    ? file.mime.startsWith('image/') || (view.poster$() && (props.preview || forceDownload))
+    ? file.mime.startsWith('image/') || (view.poster$() && (props.preview || forceDownload || (file.peer && transfer.state$()?.status !== 'complete')))
       ? h`<img ref=${view.imageRef$} alt=${file.alt || name.full}>`
       : h`<video ref=${view.videoRef$} poster=${view.poster$() ? view.source$() : null} ?controls=${!forceDownload && !props.preview} ?muted=${forceDownload || props.preview} playsinline preload=${view.poster$() ? 'none' : 'metadata'} onplay=${event => { if (forceDownload || props.preview) event.target.pause() }} onloadeddata=${() => view.loaded$(true)} onerror=${() => view.failed$(true)}></video>`
     : null}`
@@ -131,6 +133,9 @@ f('z-chat-attachment', ({ h, props }) => {
       .attachment-download > icon-file-download { display: block !important; flex: none; }
       .attachment-name { flex: 1; min-width: 0; overflow: hidden; font-size: 14rem; }
       .attachment-size { display: block; color: var(--z-muted); font-size: 11rem; }
+      .transfer-control { display: flex; gap: 8px; align-items: center; font-size: 13rem; }
+      .transfer-control progress { flex: 1; min-width: 0; }
+      .transfer-control button { border: 0; padding: 6px; background: var(--z-control); color: var(--z-accent-text); border-radius: 6px; cursor: pointer; }
       .attachment-caption {
         display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
         width: 100%; margin: 0; padding: 0; border: 0; background: transparent;
@@ -161,7 +166,7 @@ f('z-chat-attachment', ({ h, props }) => {
   ? forceDownload
     ? h`<a class="attachment-frame download-media" href=${download.href$()} target=${download.target} download=${download.attribute$()} aria-label=${t('Download file')} aria-disabled=${String(!download.href$())} onclick=${download.click}>${visual}</a>`
     : h`<span class="attachment-frame" role=${props.openMedia && file.mime.startsWith('image/') ? 'button' : null} tabindex=${props.openMedia && file.mime.startsWith('image/') ? '0' : null} aria-label=${props.openMedia ? t('View media') : null} onpointerdown=${open.down} onclick=${open.click} onkeydown=${open.key}>${visual}${props.openMedia && file.mime.startsWith('video/') ? h`<button class="media-expand" type="button" aria-label=${t('View media')} onclick=${open.expand}><icon-arrows-diagonal props=${{ size: '15px', weight: 'regular' }} /></button>` : null}</span>`
-        : null}<a class="attachment-download" href=${download.href$() || null} target=${download.target} download=${download.attribute$()} aria-disabled=${String(!download.href$())} title=${t('Download file')} onclick=${download.click}><icon-file-download props=${{ size: '24px', weight: 'regular' }} /><span class="attachment-name"><z-file-name props=${{ file$: view.file$ }} />${size ? h`<span class="attachment-size">${size}</span>` : null}</span></a>${!props.preview && props.caption$?.() ? h`<button type="button" class="attachment-caption" aria-expanded=${String(view.captionLines$() > 2)} onpointerdown=${event => event.stopPropagation()} onclick=${event => { event.stopPropagation(); view.captionLines$(value => value + 2) }} ref=${view.captionRef$}>${props.caption$()}</button>` : null}`}
+        : null}<a class="attachment-download" href=${download.href$() || null} target=${download.target} download=${download.attribute$()} aria-disabled=${String(!download.href$())} title=${t('Download file')} onclick=${download.click}><icon-file-download props=${{ size: '24px', weight: 'regular' }} /><span class="attachment-name"><z-file-name props=${{ file$: view.file$ }} />${size ? h`<span class="attachment-size">${size}</span>` : null}</span></a>${file.peer && transfer.state$()?.status !== 'complete' ? h`<div class="transfer-control">${transfer.busy$() ? h`<progress max="100" value=${transfer.percent$()} aria-label=${t('Downloading file')}></progress><span>${transfer.percent$()}%</span><button type="button" onclick=${transfer.cancel}>${t('Cancel')}</button>` : h`<button type="button" onclick=${transfer.start}>${transfer.state$()?.status === 'error' ? t('Retry') : t('Download file')}</button>`}</div>` : null}${!props.preview && props.caption$?.() ? h`<button type="button" class="attachment-caption" aria-expanded=${String(view.captionLines$() > 2)} onpointerdown=${event => event.stopPropagation()} onclick=${event => { event.stopPropagation(); view.captionLines$(value => value + 2) }} ref=${view.captionRef$}>${props.caption$()}</button>` : null}`}
   </div>`
 })
 

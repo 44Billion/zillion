@@ -189,7 +189,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   async function prepareEntry (entry) {
     if (entry.attachment) {
       const { prepared, metadata } = entry.attachment
-      if (prepared) {
+      for (const resource of [prepared, entry.attachment.thumbnailPrepared].filter(Boolean)) {
         // Each batch settles before the next is constructed. No unbounded
         // queue of encoded chunks, and retries retain the original template.
         let batch = []
@@ -198,7 +198,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
           const d = chunk.tags.find(tag => tag[0] === 'd')[1]
           const existing = await eventStore.query({ kinds: [34601], '#d': [d], limit: 1 })
           if (existing.results?.some(event => {
-            try { return decodeIrfsChunk(event).root === metadata.root } catch { return false }
+            try { return decodeIrfsChunk(event).root === resource.root } catch { return false }
           })) return
           const saved = await eventStore.addPersonalCopy(chunk, { context })
           if (!saved?.result?.ok) throw new Error(`Chunk storage failed: ${saved?.result?.code ?? 'unknown'}`)
@@ -209,7 +209,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
           const failed = results.find(result => result.status === 'rejected')
           if (failed) throw failed.reason
         }
-        for await (const chunk of prepared.chunks({ created_at: entry.event.created_at, signal: controller.signal })) {
+        for await (const chunk of resource.chunks({ created_at: entry.event.created_at, signal: controller.signal })) {
           batch.push(saveChunk(chunk).then(() => ({ status: 'fulfilled' }), reason => ({ status: 'rejected', reason })))
           if (batch.length === 3) await settle()
         }
@@ -255,10 +255,10 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     const createdAt = Math.max(Math.floor(Date.now() / 1000), latest?.created_at ?? 0)
     const reply = replyTo ? messages.get(replyTo) : null
     if (attachment) {
-      const { root, mime, size, width, height, thumbhash } = attachment.metadata
+      const { root, mime, size, width, height, thumbhash, thumbnail } = attachment.metadata
       const filename = encodedFileName(attachment.metadata)
       const url = `https://nostr.alt/${nfileEncode({ root, mime, filename })}?localOnly=1`
-      attachment = { ...attachment, metadata: { root, mime, size, width, height, thumbhash, filename, url, service: 'irfs' } }
+      attachment = { ...attachment, metadata: { root, mime, size, width, height, thumbhash, thumbnail, filename, url, service: 'irfs' } }
     }
     const fileSalt = attachment ? getRandomId() : null
     const saltTag = ['salt', getRandomId()]
@@ -382,7 +382,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
         pending.add(entry.id)
         outbox.set(entry.id, entry)
         rememberOrder(entry.event)
-        messages.set(entry.id, { ...entry.event, status: entry.status })
+        messages.set(entry.id, { ...entry.event, status: entry.status, uploadProgress: entry.uploadProgress })
       }
       for (const id of outbox.keys()) {
         if (!pending.has(id)) {

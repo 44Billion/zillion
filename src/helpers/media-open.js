@@ -1,3 +1,4 @@
+import { ensurePrivateMedia } from '#services/private-media.js'
 import { isVideoControlPointer } from '#helpers/conversation-media.js'
 
 // Own only activation. Native controls, scrolling and download intent retain
@@ -5,7 +6,8 @@ import { isVideoControlPointer } from '#helpers/conversation-media.js'
 export function mediaOpenHandlers (open, file) {
   const activate = event => {
     event.stopPropagation()
-    open?.(file(), event.currentTarget.closest?.('.media-frame, .attachment-frame')?.querySelector('video')?.currentTime ?? 0)
+    const element = event.currentTarget
+    ensurePrivateMedia(file(), { manual: true }).then(() => open?.(file(), element.closest?.('.media-frame, .attachment-frame')?.querySelector('video')?.currentTime ?? 0)).catch(() => {})
   }
   return {
     down: event => event.stopPropagation(),

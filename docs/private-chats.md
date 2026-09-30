@@ -1,6 +1,6 @@
 # Private chats
 
-The account-root coordinator owns one libp2r2p 0.10.20 PrivateMessenger for the
+The account-root coordinator owns one libp2r2p 0.11.0 PrivateMessenger for the
 instance's primary account. It survives route changes. `createChat` provides the
 same pages of 50, four-worker decryption, viewport, references, attachments and
 viewer for self and peer chats. Self-chat never publishes remotely. Additional
@@ -146,11 +146,11 @@ can be shared by multiple subscriptions. Aggregate errors retain their nested
 errors. A missing relay remains unspecified rather than being guessed from the
 configured relay list. Delivery and reconnect behavior are unchanged.
 
-**Integration status:** Zillion resolves published libp2r2p 0.10.27, including
-historical fetch diagnostics. Subscription relay/operation context requires the
-next library release and dependency update; the app's logger already accepts
-these fields. No local source imports, node_modules edits or tarball dependency
-are used. An app cannot reconstruct relay metadata discarded by an older library.
+**Integration status:** the coordinated update targets libp2r2p 0.11.0, including
+historical and subscription diagnostics and the per-file transfer coordinator.
+Publish that library release before installing the updated consumers from npm.
+Validation uses the locally packed release through its public package exports;
+production source contains no sibling-checkout imports or tarball dependencies.
 
 When collecting a recurrence, copy the complete JSON line and stack from both
 instances. Compare owners, requested ranges, relay statuses, categories and close
@@ -214,3 +214,90 @@ and file delivery, owner-attributed hearsay with its explanation dialog, vault
 lock/unlock, contact removal/re-addition, local/remote deletion, an interrupted
 outbox resumed after reload under the same event ID, and terminal persona
 revocation with account details hidden. Its guarded peak was 2329 MiB.
+
+## Per-file data channels (libp2r2p 0.11)
+
+All IRFS chunks, including thumbnails, travel on
+`withSharedKey(peer, 'dm:media:' + root)`. The normal `dm` carries 1063/9 and
+small `fileChunksRequest_p5cc` controls; compact `fileChunksReply_p5cc` responses
+travel on the corresponding file channel. Upload originals and thumbnails and
+confirm each wrapper at a relay before publishing metadata/message. Repeated
+messages can reuse the same pair/root; their retaining metadata remains separate.
+
+`private-chats.js` supplies signer and event-store adapters to the library's
+account-wide file coordinator. Its two download slots, bounded 16-index batches,
+staggered seeders, proof checks and persisted-byte progress are shared by bubbles,
+quotes, gallery previews, the viewer and native downloads. Local state is never
+an event tag. Resolved reference view models carry `mediaPeer`; `wireEvent`
+strips presentation fields before storage/publication. Self-chat remains local.
+
+Automatic originals are at most 1 MiB. Larger/unknown files wait for action and
+show download/retry/cancel and progress. A preview uses the advertised thumbnail;
+it never fetches a large original to manufacture a thumbnail. Preparation tries
+320, 160 and 80 pixel targets until its thumbnail fits one 51,000-byte IRFS block;
+if none fits, retain ThumbHash only. Thumbnail chunks also use their own root
+channel, and the 1063 includes `thumb` plus an unordered
+`['r', root, 'mark thumb', 'size <bytes>']` reference. Both roots are retained by
+normal launcher reference counting. Deleting one message does not delete another
+message's shared bytes or the independent attachment catalog copy.
+
+The encrypted manual-download queue is
+`zillion:downloads:<owner>:idb-queue`, using the idb-queue `items`/`state` stores
+and unique `byId` index. Entries contain an opaque hashed ID and NIP-44 ciphertext
+(scope `zillion:downloads`, kind 9). Decrypted descriptors remain in memory.
+Completion/cancellation removes intent; reload, signer readiness and network
+resume retry it. No accepted intent is evicted by an app quota. Partial chunks
+remain in launcher storage. Multi-device seed synchronization is deferred.
+
+File seeders store a small durable authorization catalog, not ciphertext copies
+of the file. Before publishing each original/thumbnail the outbox calls
+`authorizeSeeding` with the recipient and the stable kind-9 timestamp (standalone
+1063 uses its own timestamp). A new explicit share renews the grant; replay,
+restart and retry do not. The catalog starts empty; no unpublished file-seed
+migration is performed. Read failures propagate and missing positions are skipped.
+
+A grant authorizes only that recipient on that control/data channel pair, expires
+with parent recovery retention, and never pins the NostrDB root. Recovery serves
+available `storage.read` chunks as `irfsChunk_v1` records inside the normal
+recipient-encrypted reply. Reconstructed chunks are persisted as local templates,
+without attributing them to the original announcer. Direct validated downloads
+may authorize their actual local receiver using metadata's stable sharing time;
+cache hits and recovery replies never grant the announcer access or renew grants.
+Watchtowers retain the existing 64 MiB FIFO of ciphertext and
+`routerEnvelopeRow_v1` responses. Ordinary DM recovery is unchanged.
+
+
+The sender yields between chunks and gives queued text/deletion controls a turn.
+Seeder replies run outside the DM dispatcher with bounded reply workers. Manual
+intent writes are serialized with cancellation so a late encrypted write cannot
+restart a cancelled download. Consumers join an active download without
+rescanning the growing local chunk set on each progress notification.
+
+The isolated browser recovery scenario verifies a file above the automatic
+threshold, removes its data from the relay, clicks the real download control,
+asserts an empty ciphertext-seed store and a catalog below 10 KiB,
+and requires verified first/last chunks plus UI completion from local sender chunks:
+`node ../../44billion/bin/run-browser-tests.js -- env ZILLION_FILES_ONLY=1 ZILLION_PRIVATE_ONLY=1 ZILLION_MEDIA_SEEDS_ONLY=1 node --test tests/browser/self-chat.browser.js`.
+
+
+Validation on 2026-09-29 used the prepared libp2r2p 0.11.0 archive through public
+exports: 650 library, 157 Zillion, 1,023 launcher and 313 vault Node tests passed.
+Changed library source and Zillion lint passed, as did all three application
+builds (the vault build used its development output to preserve tracked docs).
+Guarded browser runs passed attachment/native-download regressions, the ordinary
+two-account chat scenario, and manual recovery of a 1,048,577-byte file after
+relay eviction. The last scenario verified sender-local seeds without a sender
+file subscription and completed within the 3 GiB limit (2,859 MiB observed peak,
+no swap). Three external relay diagnostics also passed; these checks do not
+establish public relay retention or availability guarantees. The package and
+applications have not been published or deployed by this change.
+
+
+The follow-up authorization implementation on 2026-09-29 passed 658 library,
+158 Zillion, 1,023 launcher and 313 vault Node tests. The guarded private-media
+browser scenario recovered the >1 MiB original after relay eviction using local
+chunks, confirmed zero file ciphertext seeds and a catalog below 10,000 bytes,
+and completed with a 2,592 MiB peak (3,072 MiB cap, no swap). Three public-relay
+read diagnostics passed via the 44billion relay; another diagnostic relay was
+unavailable. These runs used the prepared, still unpublished 0.11.0 archive.
+There is no legacy file-seed conversion.

@@ -643,3 +643,24 @@ visibility; the media viewer still pages 1063 independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
 
 See [history regression and real-vault measurements](tests/browser/HISTORY.md).
+
+### Private media channels
+
+Originals and bounded thumbnails now use a separate encrypted channel per peer
+pair and MMR root. Metadata/messages follow confirmed upload. Small originals
+(up to 1 MiB) download automatically; larger files wait for action. Bubbles show
+ThumbHash/thumbnail previews and upload/download progress with cancellation and
+retry. Manual download intent survives reload encrypted; partial bytes are reused.
+All media entry points share the library coordinator. See
+[private media transport](docs/private-chats.md#per-file-data-channels-libp2r2p-011).
+
+This change targets libp2r2p 0.11.0, whose encrypted router recipient tag is p.
+Publish that prepared library release and update communicating consumers together
+before deployment. Local validation uses the packed release; production imports
+remain public package subpaths. Multi-device seeds and groups are follow-ups.
+
+File recovery seeders reuse verified chunks already in the launcher rather than
+keeping a second ciphertext copy. A persistent per-recipient authorization expires
+with the sharing window and never pins file bytes; explicit new sends renew it,
+retries do not. Watchtowers retain ciphertext recovery. The coordinated package
+remains the unpublished libp2r2p 0.11.0 release.

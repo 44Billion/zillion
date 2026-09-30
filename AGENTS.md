@@ -769,7 +769,7 @@ needed; empty folders mark the initial structure.
 - Preparation uses `media-preparation/` before hashing sequential 51,000-byte
   slices. `artifact.js` is asynchronous and compresses new media by default. Its
   finalized File must supply BOTH preview and IRFS hashing;
-  never upload a thumbnail or the experimental DC-only JPEG reconstruction.
+  publish a separate bounded thumbnail on its own file channel; never upload the experimental DC-only JPEG reconstruction.
   The compact preparation cancel control precedes a separate live status.
 - One shared queue serializes compression and local preview work. Read File slices or validated
   local nfile HEAD/ranges in bounded pieces; never materialize a whole local
@@ -835,7 +835,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.10.19`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.0`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1166,3 +1166,24 @@ anchor through the existing viewport controller. Visited pages remain in memory:
 this is pagination, not virtualization. Reference/media preparation starts near
 visibility; the media viewer still pages 1063 independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
+
+## Private media transport
+
+- All original and thumbnail chunks use `dm:media:<root>` signers; no file bytes
+  on the ordinary dm. Requests use dm, replies the file channel. Publish all bytes
+  before announcements. Use `private-messenger/file`, never duplicate recovery.
+- Automatic original downloads stop at 1 MiB; thumbnails at 51,000 bytes. Large
+  or unknown originals require action. All entry points use private-media.js;
+  previews cannot fetch an original to bypass that policy. Keep native downloads.
+- `zillion:downloads:<owner>:idb-queue` stores opaque IDs and encrypted manual
+  intent (scope zillion:downloads, kind 9). Remove on completion/cancel and retry
+  after readiness; retain partial chunks. Resolved references carry mediaPeer
+  only as presentation context; wireEvent must strip it.
+- Router p migration requires coordinated libp2r2p 0.11 consumers. Group channels
+  and multi-device seed synchronization remain out of scope.
+
+- File seeder authorization is explicit: authorize each outbox file/thumbnail
+  for its recipient using the stable main event timestamp before publication.
+  Never grant access because a root exists locally or a request names it.
+  File replies may carry `irfsChunk_v1`; save reconstructed chunks as owner
+  templates, without copying announcer identity. No legacy file-seed migration.

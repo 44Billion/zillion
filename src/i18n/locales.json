@@ -1853,5 +1853,44 @@
     "zh-TW": "為所有人刪除會傳送刪除請求；其他裝置上可能仍有副本。",
     "ja": "全員への削除を要求しますが、他の端末にコピーが残る場合があります。",
     "ko": "모두에게 삭제를 요청하지만 다른 기기에 사본이 남을 수 있습니다."
+  },
+  "Downloading file": {
+    "en": "Downloading file",
+    "fr": "Téléchargement du fichier",
+    "it": "Download del file",
+    "de": "Datei wird heruntergeladen",
+    "es": "Descargando archivo",
+    "pt-BR": "Baixando arquivo",
+    "ru": "Загрузка файла",
+    "zh-CN": "正在下载文件",
+    "zh-TW": "正在下載檔案",
+    "ja": "ファイルをダウンロード中",
+    "ko": "파일 다운로드 중"
+  },
+  "Uploading file": {
+    "en": "Uploading file",
+    "fr": "Envoi du fichier",
+    "it": "Invio del file",
+    "de": "Datei wird hochgeladen",
+    "es": "Subiendo archivo",
+    "pt-BR": "Enviando arquivo",
+    "ru": "Отправка файла",
+    "zh-CN": "正在上传文件",
+    "zh-TW": "正在上傳檔案",
+    "ja": "ファイルを送信中",
+    "ko": "파일 업로드 중"
+  },
+  "Cancel": {
+    "en": "Cancel",
+    "fr": "Annuler",
+    "it": "Annulla",
+    "de": "Abbrechen",
+    "es": "Cancelar",
+    "pt-BR": "Cancelar",
+    "ru": "Отмена",
+    "zh-CN": "取消",
+    "zh-TW": "取消",
+    "ja": "キャンセル",
+    "ko": "취소"
   }
 }

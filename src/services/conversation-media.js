@@ -1,3 +1,4 @@
+import { rememberPrivateMediaEvent } from './private-media.js'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { decryptPersonalCopy } from './chat-references.js'
 import { messageAttachment } from './chat-attachments.js'
@@ -84,8 +85,9 @@ export function createConversationMediaReader ({ pubkey, signer, eventStore, con
   async function decode (wrapper) {
     if (cache.has(wrapper.id)) return cache.get(wrapper.id)
     const version = revision
-    const event = await decrypt(wrapper).catch(() => null)
+    let event = await decrypt(wrapper).catch(() => null)
     check()
+    event = rememberPrivateMediaEvent(event, context.startsWith('dm:') && context.slice(3) !== pubkey ? context.slice(3) : null)
     const file = messageAttachment(event)
     const valid = event?.kind === 1063 && isViewerMime(file?.mime) && safeMediaUrl(file?.url)
     const item = {

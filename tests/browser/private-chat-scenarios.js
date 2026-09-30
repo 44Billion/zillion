@@ -66,6 +66,38 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
   })()`)
   await browser.until(() => evaluate(`document.querySelector('[data-message-id="${fileId}"] .attachment-frame img')?.naturalWidth === 1`), 'peer attachment bytes and metadata arrive', 60000)
   console.log('Private chats: reply and attachment received')
+  if (process.env.ZILLION_MEDIA_SEEDS_ONLY === '1') {
+    await evaluate(`void (async () => {
+      dmTest.largeStage = 'prepare';
+      const attachment = await dmTest.prepareAttachment(new File([new Uint8Array(1048577).fill(31)], 'manual.bin', {type:'application/octet-stream'}));
+      const root = attachment.metadata.root;
+      dmTest.largeStage = 'derive';
+      const channel = await dmTest.signer.withSharedKey('${pubkey}', 'dm:media:' + root).getPublicKey();
+      dmTest.largeStage = 'persist';
+      const id = await dmTest.chat.send('Manual seed recovery', undefined, attachment);
+      dmTest.large = {id, root, channel};
+    })().catch(error => { dmTest.largeError = error.message })`)
+    await browser.until(() => evaluate('(() => { if (dmTest.largeError) throw new Error(dmTest.largeStage + \': \' + dmTest.largeError); return !!dmTest.large })()'), 'large file prepared and durably accepted', 150000)
+    const large = await evaluate('dmTest.large')
+    console.log('Private media: file persisted; awaiting upload')
+    await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${large.id}"] .transfer-control button') && !dmTest.outbox.some(entry => entry.id === '${large.id}')`), 'large file announced with manual download', 120000)
+    assert.equal(await evaluate(`window.napp.eventStore.query({kinds:[34601], '#d':[dmTest.chunkId('${large.root}', 0)], limit:1}).then(value => value.results.length)`), 0, 'large original has not entered the recipient store automatically')
+    const removed = await evaluate(`(() => { let count = 0; for (const [id,event] of dmTest.events) if (event.pubkey === '${large.channel}') {dmTest.events.delete(id); count++}; return count })()`)
+    const storage = await evaluate('dmTest.fileStorage()')
+    assert.equal(storage['file-seeds'].count, 0, 'seeder must not persist file ciphertext')
+    assert.ok(storage['file-authorizations'].count > 0)
+    assert.equal(storage['file-authorizations'].hasPayload, false)
+    assert.ok(storage['file-authorizations'].bytes < 10000, 'catalog stays small beside the 1 MiB file')
+    console.log('Private media: payload-free catalog confirmed; requesting local chunks after eviction')
+    assert.ok(removed > 0, 'remove every original file envelope from the controlled relay')
+    await evaluate(`document.querySelector('[data-message-id="${large.id}"] .transfer-control button').click()`)
+    await browser.until(() => evaluate(`window.napp.eventStore.query({kinds:[34601], '#d':[dmTest.chunkId('${large.root}', 0), dmTest.chunkId('${large.root}', 20)], limit:2}).then(value => value.results.length === 2)`), 'manual download recovers first and last chunks from sender seeds', 240000)
+    await browser.until(() => evaluate(`!document.querySelector('[data-message-id="${large.id}"] .transfer-control')`), 'persisted completion clears the progress control', 60000)
+    console.log('Private chats: large file stayed manual and recovered from sender chunks without ciphertext seeds after relay eviction')
+    await evaluate('dmTest.close()')
+    return
+  }
+
   const forwarded = await evaluate(`(async () => {
     const context = {kind:9, pubkey:'${pubkey}', created_at:Math.floor(Date.now()/1000), tags:[['salt','unverified-context']], content:'Context only'};
     const id = dmTest.getEventHash(context);

@@ -1,3 +1,5 @@
+import { ensurePrivateMedia } from './private-media.js'
+import { nfileDecode } from 'libp2r2p/nip19'
 import { prepareMediaPreview } from './media-preparation/index.js'
 
 // Disposable small previews. A resident entry owns one stable URL; leases keep
@@ -69,7 +71,17 @@ export async function acquireAttachmentPreview (file, { signal } = {}) {
   if (!entry) {
     const controller = new AbortController()
     entry = { controller, consumers: 0 }
-    entry.work = prepareMediaPreview(file.url, file.mime, { signal: controller.signal }).then(value => {
+    entry.work = (async () => {
+      const thumb = file.thumbnail
+      if (thumb?.root) {
+        await ensurePrivateMedia({ ...thumb, peer: file.peer, sharedAt: file.sharedAt }, { thumbnail: true, signal: controller.signal })
+        const mime = nfileDecode(new URL(thumb.url).pathname.slice(1)).mime || 'image/png'
+        const preview = await prepareMediaPreview(thumb.url, mime, { signal: controller.signal })
+        return preview && { ...preview, width: file.width, height: file.height, animated: false }
+      }
+      await ensurePrivateMedia(file, { signal: controller.signal })
+      return prepareMediaPreview(file.url, file.mime, { signal: controller.signal })
+    })().then(value => {
       if (!controller.signal.aborted) return rememberAttachmentPreview(file, value)
       return null
     }).finally(() => { if (pending.get(key) === entry) pending.delete(key) })

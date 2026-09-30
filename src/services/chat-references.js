@@ -1,3 +1,4 @@
+import { rememberPrivateMediaEvent } from './private-media.js'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { neventEncode } from 'libp2r2p/nip19'
 import { getEventHash, isSerializableEvent, isValidEvent } from 'libp2r2p/event'
@@ -75,7 +76,8 @@ export function createChatReferences ({
   }))
 
   async function readWrapper (wrapper) {
-    return decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: await encodedContext(), authors: null, hearsay: true })
+    const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: await encodedContext(), authors: null, hearsay: true })
+    return rememberPrivateMediaEvent(event, context.startsWith('dm:') && context.slice(3) !== pubkey ? context.slice(3) : null)
   }
 
   async function load (id) {

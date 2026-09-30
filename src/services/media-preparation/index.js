@@ -5,15 +5,15 @@ import { queueMedia } from './queue.js'
 
 // Local preparation is cancellable, not subject to the HTTP preview's 15s
 // deadline. A stalled decoder is still bounded by a two-minute watchdog.
-export function prepareMediaPreview (input, mime, { signal, onProgress } = {}) {
+export function prepareMediaPreview (input, mime, { signal, onProgress, target = 320 } = {}) {
   if (!/^(image|video)\//.test(mime)) return Promise.resolve(null)
   const current = AbortSignal.any([AbortSignal.timeout(120000), ...(signal ? [signal] : [])])
   return queueMedia(async () => {
     onProgress?.({ phase: 'preview' })
-    const source = await mediaSource(input, { signal: current })
+    const source = await mediaSource(input, { signal: current, target })
     const result = mime.startsWith('image/')
-      ? await (await import('./image.js')).imagePreview(source, mime, { signal: current })
-      : await (await import('./video.js')).videoPreview(source, { signal: current, input })
+      ? await (await import('./image.js')).imagePreview(source, mime, { signal: current, target })
+      : await (await import('./video.js')).videoPreview(source, { signal: current, input, target })
     current.throwIfAborted()
     const thumbhash = bytesToBase64(rgbaToThumbHash(result.hashWidth, result.hashHeight, result.pixels))
     return { blob: result.blob, width: result.width, height: result.height, thumbhash, animated: result.animated === true, backend: result.backend }

@@ -1,3 +1,5 @@
+import { createPrivateFileTransfer } from 'libp2r2p/private-messenger/file'
+import { attachPrivateMediaTransport, reportPrivateMedia } from './private-media.js'
 import { createPrivateMessenger } from 'libp2r2p/private-messenger'
 import { getEventHash, isValidEvent, isSerializableEvent } from 'libp2r2p/event'
 import { decodeIrfsChunk, IRFS_CHUNK_BYTES } from 'libp2r2p/irfs'
@@ -15,7 +17,7 @@ export function wireEvent (value, owner) {
 // Relay rejection text must not be interpreted as a local signer denial.
 const retryable = error => error?.code === 'MESSAGE_NOT_PUBLISHED' || !/DENIED|PERMISSION|REVOKED|READ_ONLY|INVALID|BLOCKED|EXPIRED|NOT_IN_PERSONA/i.test(`${error?.code || ''} ${error?.message || ''}`)
 
-export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () => {}, onError = () => {}, Messenger = createPrivateMessenger, openOutbox = createChatOutbox }) {
+export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () => {}, onError = () => {}, Messenger = createPrivateMessenger, openOutbox = createChatOutbox, FileTransfer = createPrivateFileTransfer, openDownloads = options => createChatOutbox({ ...options, namespace: 'downloads' }) }) {
   const userSigner = messengerSigner(signer)
   const peers = new Set()
   const channels = new Map()
@@ -23,6 +25,16 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
   const entries = new Map()
   const cancelled = new Set()
   let messenger
+  let fileTransfers
+  let downloads
+  const downloadIntents = new Map()
+  const downloadEpochs = new Map()
+  let downloadWriteTail = Promise.resolve()
+  const writeDownloadIntent = operation => {
+    const work = downloadWriteTail.catch(() => {}).then(operation)
+    downloadWriteTail = work
+    return work
+  }
   let storage
   let initialized
   let closed = false
@@ -61,6 +73,38 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
     if (closed || !available || version !== lifecycle) { await messenger.pause('signer'); return }
     await messenger.update({ channels: values })
     await messenger.resume('signer')
+    if (!fileTransfers) {
+      fileTransfers = FileTransfer({
+        messenger, onError,
+        resolveChannel: ({ peerPubkey, info }) => messengerSigner(signer.withSharedKey(peerPubkey, info)),
+        storage: {
+          async read (root, index) {
+            const { results } = await eventStore.query({ kinds: [34601], '#d': [NMMR.deriveChunkId(root, index)], limit: 1 })
+            return results[0]
+          },
+          async save (event, file) {
+            // MMR authenticates the bytes; do not attribute a reconstructed chunk
+            // to the original announcer or retain a third-party event identity.
+            const local = { kind: 34601, created_at: event.created_at, tags: structuredClone(event.tags), content: event.content }
+            const saved = await eventStore.addPersonalCopy(local, { context: `dm:${file.peerPubkey}` })
+            if (!saved?.result?.ok) throw new Error('FILE_STORAGE_FAILED')
+          }
+        }
+      })
+      fileTransfers.observe(state => {
+        const peer = [...channels].find(([, value]) => value.pubkey === state.controlChannelPubkey)?.[0]
+        if (peer) {
+          reportPrivateMedia({ ...state, peer })
+          if (state.status === 'complete') {
+            const id = intentId({ peer, root: state.root })
+            if (downloadIntents.delete(id)) writeDownloadIntent(() => downloads?.remove(id)).catch(onError)
+          }
+        }
+      })
+      downloads = await openDownloads({ owner, signer })
+      for (const entry of await downloads.list()) downloadIntents.set(entry.id, entry)
+    }
+    for (const entry of downloadIntents.values()) if (peers.has(entry.file.peer)) download(entry.file, { manual: true }).catch(onError)
     drain(); pump()
   }
   function schedule () {
@@ -113,6 +157,71 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
     // Published is relay acceptance, never a peer receipt.
     await assertMessagePublished(report, event)
   }
+  async function sendEntry (entry) {
+    entry.status = 'pending'; emit()
+    try {
+      const active = async () => {
+        if (storage.has && !await storage.has(entry.id)) cancelled.add(entry.id)
+        if (closed || !available || cancelled.has(entry.id) || (entry.peer !== owner && !peers.has(entry.peer))) throw new Error('CHAT_UNAVAILABLE')
+      }
+      // Personal copies must commit even if publishing attachment bytes
+      // fails offline. Remote progress remains independently retryable.
+      for (let index = 0; index < entry.events.length; index++) {
+        await active()
+        const event = entry.events[index]
+        if (!entry.localSaved[index]) {
+          const hearsay = !event.sig && event.pubkey !== owner
+          const result = await eventStore.addPersonalCopy(event, { context: `dm:${entry.peer}`, hearsay })
+          if (result?.result?.code === 'blocked') { cancelled.add(entry.id); await active() }
+          if (!result?.result?.ok) throw Object.assign(new Error('MESSAGE_STORAGE_FAILED'), { code: result?.result?.code?.toUpperCase() })
+          entry.localSaved[index] = true
+          await storage.put(entry, { existing: true })
+        }
+      }
+      // Read/publish one chunk at a time. Progress is durable after each
+      // accepted chunk; replay after interruption keeps its original identity.
+      for (; entry.peer !== owner && entry.fileIndex < entry.files.length; entry.fileIndex++, entry.chunkIndex = 0) {
+        const file = entry.files[entry.fileIndex]
+        await active()
+        await fileTransfers.authorizeSeeding({ controlChannelPubkey: channels.get(entry.peer).pubkey, peerPubkey: entry.peer, root: file.root, size: file.size }, { receiverPubkeys: [entry.peer], sharedAt: entry.event.created_at })
+        for (; entry.chunkIndex < Math.ceil(file.size / IRFS_CHUNK_BYTES); entry.chunkIndex++) {
+          await active()
+          const d = NMMR.deriveChunkId(file.root, entry.chunkIndex)
+          const { results } = await eventStore.query({ kinds: [34601], '#d': [d], limit: 1 })
+          const chunk = results[0]
+          if (!chunk || decodeIrfsChunk(chunk).root !== file.root) { if (file.optional) break; throw new Error('FILE_UNAVAILABLE') }
+          if (!fileTransfers) throw new Error('FILE_TRANSFER_UNAVAILABLE')
+          await fileTransfers.publishChunk({ controlChannelPubkey: channels.get(entry.peer).pubkey, peerPubkey: entry.peer, root: file.root, size: file.size }, wireEvent(chunk, owner))
+          const completed = entry.files.slice(0, entry.fileIndex).reduce((sum, value) => sum + value.size, 0) + Math.min(file.size, (entry.chunkIndex + 1) * IRFS_CHUNK_BYTES)
+          entry.uploadProgress = { completed, total: entry.files.reduce((sum, value) => sum + value.size, 0) }
+          emit()
+          await active()
+          await storage.put({ ...entry, chunkIndex: entry.chunkIndex + 1 }, { existing: true })
+          // Newly queued text and deletion controls can pass an in-flight file.
+          let admitted = 0
+          for (const pending of entries.values()) {
+            if (closed || !available || admitted >= 8) break
+            if (pending.files.length || pending.failed || cancelled.has(pending.id) || (pending.peer !== owner && !peers.has(pending.peer))) continue
+            admitted++
+            await sendEntry(pending)
+          }
+        }
+      }
+      for (; entry.index < entry.events.length; entry.index++) {
+        await active()
+        const event = entry.events[entry.index]
+        if (entry.peer !== owner) await publish(entry.peer, event)
+        await active()
+        await storage.put({ ...entry, index: entry.index + 1 }, { existing: true })
+      }
+      await storage.remove(entry.id)
+      entries.delete(entry.id)
+      emit()
+    } catch (error) {
+      if (cancelled.has(entry.id)) { await storage.remove(entry.id); entries.delete(entry.id) } else { entry.status = 'error'; entry.failed = true; entry.retryable = retryable(error); await storage.put(entry, { existing: true }).catch(onError); onError(error) }
+      emit()
+    }
+  }
   async function pump () {
     if (sending || !available || closed || !messenger || !storage) return
     sending = true
@@ -120,59 +229,40 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
       for (const entry of entries.values()) {
         if (closed || !available) break
         if ((entry.peer !== owner && !peers.has(entry.peer)) || entry.failed || cancelled.has(entry.id)) continue
-        entry.status = 'pending'; emit()
-        try {
-          const active = async () => {
-            if (storage.has && !await storage.has(entry.id)) cancelled.add(entry.id)
-            if (closed || !available || cancelled.has(entry.id) || (entry.peer !== owner && !peers.has(entry.peer))) throw new Error('CHAT_UNAVAILABLE')
-          }
-          // Personal copies must commit even if publishing attachment bytes
-          // fails offline. Remote progress remains independently retryable.
-          for (let index = 0; index < entry.events.length; index++) {
-            await active()
-            const event = entry.events[index]
-            if (!entry.localSaved[index]) {
-              const hearsay = !event.sig && event.pubkey !== owner
-              const result = await eventStore.addPersonalCopy(event, { context: `dm:${entry.peer}`, hearsay })
-              if (result?.result?.code === 'blocked') { cancelled.add(entry.id); await active() }
-              if (!result?.result?.ok) throw Object.assign(new Error('MESSAGE_STORAGE_FAILED'), { code: result?.result?.code?.toUpperCase() })
-              entry.localSaved[index] = true
-              await storage.put(entry, { existing: true })
-            }
-          }
-          // Read/publish one chunk at a time. Progress is durable after each
-          // accepted chunk; replay after interruption keeps its original identity.
-          for (; entry.peer !== owner && entry.fileIndex < entry.files.length; entry.fileIndex++, entry.chunkIndex = 0) {
-            const file = entry.files[entry.fileIndex]
-            for (; entry.chunkIndex < Math.ceil(file.size / IRFS_CHUNK_BYTES); entry.chunkIndex++) {
-              await active()
-              const d = NMMR.deriveChunkId(file.root, entry.chunkIndex)
-              const { results } = await eventStore.query({ kinds: [34601], '#d': [d], limit: 1 })
-              const chunk = results[0]
-              if (!chunk || decodeIrfsChunk(chunk).root !== file.root) { if (file.optional) break; throw new Error('FILE_UNAVAILABLE') }
-              await publish(entry.peer, wireEvent(chunk, owner))
-              await active()
-              await storage.put({ ...entry, chunkIndex: entry.chunkIndex + 1 }, { existing: true })
-            }
-          }
-          for (; entry.index < entry.events.length; entry.index++) {
-            await active()
-            const event = entry.events[entry.index]
-            if (entry.peer !== owner) await publish(entry.peer, event)
-            await active()
-            await storage.put({ ...entry, index: entry.index + 1 }, { existing: true })
-          }
-          await storage.remove(entry.id)
-          entries.delete(entry.id)
-          emit()
-        } catch (error) {
-          if (cancelled.has(entry.id)) { await storage.remove(entry.id); entries.delete(entry.id) } else { entry.status = 'error'; entry.failed = true; entry.retryable = retryable(error); await storage.put(entry, { existing: true }).catch(onError); onError(error) }
-          emit()
-        }
+        await sendEntry(entry)
       }
     } finally { sending = false; settled() }
   }
+  const intentId = file => getEventHash({ kind: 0, pubkey: owner, created_at: 0, tags: [], content: `${file.peer}:${file.root}` })
+  async function download (file, options = {}) {
+    if (file.peer === owner) return file
+    if (!available || closed || !peers.has(file.peer) || !fileTransfers) throw new Error('CHAT_UNAVAILABLE')
+    const id = intentId(file)
+    if (options.manual) {
+      const epoch = downloadEpochs.get(id) || 0
+      const cancelled = () => { if ((downloadEpochs.get(id) || 0) !== epoch) throw new DOMException('Download cancelled', 'AbortError') }
+      await writeDownloadIntent(async () => {
+        cancelled()
+        await downloads.put({ id, file })
+        cancelled()
+        downloadIntents.set(id, { id, file })
+      })
+    }
+    if (!available || closed || !peers.has(file.peer)) throw new Error('CHAT_UNAVAILABLE')
+    const result = await fileTransfers.download({ controlChannelPubkey: channels.get(file.peer).pubkey, peerPubkey: file.peer, root: file.root, size: file.size, sharedAt: file.sharedAt }, options)
+    if (downloadIntents.delete(id)) await writeDownloadIntent(() => downloads.remove(id))
+    return result
+  }
+  async function cancelDownload (file) {
+    fileTransfers?.cancel(channels.get(file.peer)?.pubkey, file.root)
+    const id = intentId(file)
+    downloadEpochs.set(id, (downloadEpochs.get(id) || 0) + 1)
+    downloadIntents.delete(id)
+    await writeDownloadIntent(() => downloads?.remove(id))
+  }
+  const detachMedia = attachPrivateMediaTransport({ download, cancelDownload })
   return {
+    download, cancelDownload,
     async setPeers (values) {
       peers.clear(); for (const peer of values) if (peer !== owner) peers.add(peer)
       for (const peer of deniedPeers) if (!peers.has(peer)) deniedPeers.delete(peer)
@@ -194,7 +284,7 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
       const main = wireEvent(event, owner)
       const id = getEventHash(main)
       const events = [...context.map(value => wireEvent(value, owner)), main]
-      const files = events.filter(value => value.kind === 1063).map(value => ({ ...decodeFileMetadata(value), optional: !requiredFiles.includes(getEventHash(value)) })).filter(file => file.service === 'irfs')
+      const files = events.filter(value => value.kind === 1063).map(value => ({ ...decodeFileMetadata(value), optional: !requiredFiles.includes(getEventHash(value)) })).filter(file => file.service === 'irfs').flatMap(file => [file, ...(file.thumbnail?.root ? [{ ...file.thumbnail, optional: file.optional }] : [])])
       const entry = { id, peer, event: { ...main, id }, events, files, index: 0, fileIndex: 0, chunkIndex: 0, localSaved: context.map(() => true).concat(false), status: 'pending', deletion }
       await storage.put(entry)
       entries.set(id, entry); emit(); pump()
@@ -213,12 +303,15 @@ export function createPrivateChats ({ owner, signer, eventStore, onOutbox = () =
       emit()
     },
     async close () {
+      detachMedia()
       closed = true; available = false; lifecycle++
       await Promise.allSettled([configuring, initialized])
       await messenger?.pause('closed')
       if (sending || draining) await new Promise(resolve => idleWaiters.add(resolve))
       await messenger?.close()
       await storage?.close()
+      await downloadWriteTail.catch(onError)
+      await downloads?.close()
     }
   }
 }
