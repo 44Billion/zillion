@@ -91,3 +91,32 @@ test('a failed speculative read does not spin in a retry loop', async () => {
     assert.equal(f.calls.length, 2)
   } finally { f.prefetch.close() }
 })
+
+test('all visible histories precede media, and newly visible histories interrupt media', async () => {
+  const calls = []
+  let media
+  const prefetch = createConversationPrefetch({
+    isOpened: () => false, release () {},
+    load: async peer => { calls.push(`history:${peer}`); return true },
+    prepare (peer, signal) {
+      calls.push(`media:${peer}`)
+      const done = Promise.withResolvers()
+      signal.addEventListener('abort', () => done.resolve(), { once: true })
+      media = { signal, done }
+      return done.promise
+    }
+  })
+  try {
+    prefetch.setVisible(['a', 'b']); await tick()
+    assert.deepEqual(calls, ['history:a', 'history:b', 'media:a'])
+    const first = media
+    prefetch.setVisible(['a', 'b', 'c'])
+    assert.equal(first.signal.aborted, true)
+    await tick()
+    assert.deepEqual(calls, ['history:a', 'history:b', 'media:a', 'history:c', 'media:a'])
+    media.done.resolve(); await tick()
+    assert.equal(calls.at(-1), 'media:b')
+    prefetch.setVisible([])
+    assert.equal(media.signal.aborted, true)
+  } finally { prefetch.close() }
+})

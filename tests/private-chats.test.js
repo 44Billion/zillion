@@ -419,3 +419,20 @@ test('cached peer originals remain available while transport initialization neve
   held.resolve()
   await setup
 })
+
+test('local-only preparation checks self and peer files without waiting for or invoking delivery', async t => {
+  const prepared = await prepareIrfsFile(new Uint8Array(51001).fill(9))
+  const chunks = await Array.fromAsync(prepared.chunks())
+  const stored = new Map(chunks.map(chunk => [chunk.tags.find(tag => tag[0] === 'd')[1], chunk]))
+  const f = fixture({
+    fileDownload: () => assert.fail('local-only preparation must not request remote bytes'),
+    query: async filter => { const chunk = stored.get(filter['#d']?.[0]); return { results: chunk ? [chunk] : [] } }
+  })
+  t.after(async () => { await f.transport.close(); prepared.close() })
+  for (const contact of [owner, peer]) {
+    assert.equal(await f.transport.checkLocal({ peer: contact, root: prepared.root, size: prepared.size }), true)
+    assert.equal(await f.transport.checkLocal({ peer: contact, root: 'f'.repeat(64), size: prepared.size }), false)
+  }
+  assert.deepEqual(f.writes, [])
+  assert.deepEqual(f.sends, [])
+})

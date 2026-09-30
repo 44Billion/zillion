@@ -586,10 +586,35 @@ needed; empty folders mark the initial structure.
   must stop speculative work. An unchanged order must not restart on each batch.
 - `conversation-prefetch.js` runs one background chat at a time, using the root's
   existing self/peer services and stores. Read only the first 25 wrappers and local
-  quote/file metadata (one quoted level plus its direct files); never media bytes
-  or external previews. Seed the latest summary and skip retained/live copies.
+  quote/file metadata (one quoted level plus its direct files), before preparing
+  any local media. External previews remain excluded. Seed the latest summary
+  and skip retained/live copies.
   `ensureStarted()` shares pending work and reuses a completed live history;
   explicit recovery still uses `start()` for revalidation.
+- `chat-media-prefetch.js` prepares up to five unique image/video previews from
+  the newest 25 loaded messages, newest first, after all visible histories finish.
+  Valid thumbhashes already qualify without file reads. Otherwise prefer a complete
+  local thumbnail, even if the original is absent; only fall back to a verified
+  complete local original when no preview is available. Skip PDFs, audio, remote
+  URLs, missing/incomplete/corrupt files, and release preview leases after warming.
+  Newly visible histories interrupt speculative media; foreground readers share
+  in-flight local preview work. Keep existing serialized decoder/cancellation
+  and 8 MiB/128-entry limits for the reduced-preview cache. Native decoders retain
+  their existing per-format memory costs.
+- `checkLocalPrivateMedia` delegates to the existing bounded chunk verifier, for
+  self and peer media even during transport recovery. It never enters download
+  coordination or emits transfer states. Local-only preparation cannot join normal
+  work that might fetch remotely. Every preview source explicitly uses
+  `localOnly=1`, including native-video fallback, so eviction between checking and
+  decoding cannot trigger network retrieval. Normal UI requests may fall back to
+  their existing policy after a shared local miss.
+- Bubble dimensions synchronously consult the shared preview cache before their
+  visibility tasks run. Metadata dimensions still reserve space without bytes;
+  when both are absent, a valid thumbhash provides an approximate aspect ratio.
+  Do not claim exact original geometry from the hash. The guarded
+  `home-media-prefetch.browser.js` checks local thumbnails with absent originals,
+  missing/partial files, five-preview selection, local-only URLs and stable
+  first-render geometry for a prepared image without declared dimensions.
 - One four-worker queue covers account history and reference reads. Dispatch
   checks foreground priority dynamically. Home row navigation promotes its chat
   before route cleanup. Abort unneeded incomplete prefetch, keeping admitted
@@ -601,7 +626,7 @@ needed; empty folders mark the initial structure.
   eagerly restarts visited histories.
 - Guarded `tests/browser/home-summaries.browser.js` checks a cold home with held
   transport, captions/filenames, ordering, visible-only first-page prefetch,
-  metadata without media bytes, scroll debounce, live updates and deletions.
+  metadata-only document previews, scroll debounce, live updates and deletions.
   Opening completed prefetch must not restart history; opening held prefetch
   shares its subscription and keeps the latest bubble's DOM node as the earlier
   messages arrive before EOSE. Visiting a chat must not repair its row.
@@ -1249,7 +1274,8 @@ The active chat requests another page near the top, preserving its visible
 anchor through the existing viewport controller. Visited pages remain in memory:
 this is pagination, not virtualization. Timeline reference/media preparation starts near
 visibility; home sorts from independent latest-message summaries and can prefetch
-visible chats' first pages/reference metadata; the media viewer still pages 1063
+visible chats' first pages/reference metadata and up to five local media previews;
+the media viewer still pages 1063
 independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
 

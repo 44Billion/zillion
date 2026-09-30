@@ -48,6 +48,10 @@ export function createPrivateChats (options) {
     setPeers (peers) { peersKnown = true; return track(session.setPeers(peers)) },
     setAvailable (value) { available = value === true; return track(session.setAvailable(value)) },
     setState (state) { return transport.setAvailable(state.access === 'allowed' && state.connection === 'connected' && state.isLocked === false && state.isReadOnly === false) },
+    checkLocal (file, { signal } = {}) {
+      if (available === false) return Promise.resolve(false)
+      return local.check(file, { signal: AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]) })
+    },
     async download (file, request = {}) {
       if (file.peer === options.owner) return session.download(file, request)
       const key = `${file.peer}:${file.root}`

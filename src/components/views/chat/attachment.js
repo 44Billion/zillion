@@ -4,10 +4,9 @@ import { mediaOpenHandlers } from '#helpers/media-open.js'
 import '#shared/icons/icon-arrows-diagonal.js'
 import { useMediaDownload } from './hooks/use-media-download.js'
 import { f, useStore, useTask, useMemo } from '#f'
-import { thumbHashToDataURL } from 'thumbhash'
-import { base64ToBytes } from 'libp2r2p/base64'
+import { attachmentPlaceholder } from '#helpers/attachment-placeholder.js'
 import { t } from '#i18n/messages.js'
-import { acquireAttachmentPreview, acquireCachedAttachmentPreview } from '#services/attachment-previews.js'
+import { attachmentPreviewDimensions, acquireAttachmentPreview, acquireCachedAttachmentPreview } from '#services/attachment-previews.js'
 import { mediaDimensions, prepareImage, prepareVideo, preparationSignal } from '#helpers/media-dimensions.js'
 import { useRoutePage } from '#shared/route-page.js'
 import '#shared/icons/icon-file-download.js'
@@ -25,11 +24,10 @@ f('z-chat-attachment', ({ h, props }) => {
     // Caption starts clamped to two lines; each click reveals two more.
     captionLines$: 2,
     file$ () { return props.attachment$() || {} },
-    placeholder$ () {
-      try { return thumbHashToDataURL(base64ToBytes(this.file$().thumbhash)) } catch { return null }
-    },
+    placeholderInfo$ () { return attachmentPlaceholder(this.file$()) },
+    placeholder$ () { return this.placeholderInfo$()?.source },
     identity$ () { return JSON.stringify([this.file$().url, props.source$?.()]) },
-    size$ () { return this.dimensions$() || mediaDimensions(this.file$()) }
+    size$ () { return this.dimensions$() || attachmentPreviewDimensions(this.file$()) || mediaDimensions(this.file$()) || mediaDimensions(this.placeholderInfo$()) }
   })
   useSignerRecovery(() => { if (view.failed$() && view.retryable) view.retry$(n => n + 1) })
   const transfer = useMediaTransfer(view.file$, () => !props.preview && !props.upload$?.())

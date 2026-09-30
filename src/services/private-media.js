@@ -38,3 +38,10 @@ export async function ensurePrivateMedia (file, options = {}) {
   }
 }
 export const cancelPrivateMedia = file => transport?.cancelDownload(file)
+
+// Speculative preparation must never enter the download coordinator or emit
+// transfer UI states. The local verifier also works before transport recovery.
+export async function checkLocalPrivateMedia (file, { signal } = {}) {
+  signal?.throwIfAborted()
+  return file?.root && transport?.checkLocal ? transport.checkLocal(file, { signal }) : false
+}

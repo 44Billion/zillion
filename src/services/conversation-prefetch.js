@@ -1,6 +1,6 @@
 // One speculative conversation at a time. Opened histories belong to the app;
 // only unvisited background histories participate in this small LRU budget.
-export function createConversationPrefetch ({ load, release, isOpened, isPinned = () => false, capacity = 12 }) {
+export function createConversationPrefetch ({ load, prepare, release, isOpened, isPinned = () => false, capacity = 12 }) {
   const entries = new Map()
   let wanted = []
   let active
@@ -17,17 +17,23 @@ export function createConversationPrefetch ({ load, release, isOpened, isPinned 
   }
   function pump () {
     if (closed || active) return
-    const peer = wanted.find(peer => !isOpened(peer) && !entries.get(peer)?.done)
+    let phase = 'done'
+    let peer = wanted.find(peer => !isOpened(peer) && !entries.get(peer)?.done)
+    if (!peer && prepare) { phase = 'prepared'; peer = wanted.find(peer => !isOpened(peer) && !entries.get(peer)?.prepared) }
     if (!peer) return
     const controller = new AbortController()
     const entry = entries.get(peer)
-    const job = active = { peer, controller }
-    Promise.resolve().then(() => load(peer, controller.signal)).catch(() => false).then(() => {
-      if (!closed && !controller.signal.aborted && entries.get(peer) === entry) entry.done = true
+    const job = active = { peer, controller, phase }
+    Promise.resolve().then(() => (phase === 'done' ? load : prepare)(peer, controller.signal)).catch(() => false).then(result => {
+      if (!closed && !controller.signal.aborted && entries.get(peer) === entry) {
+        entry[phase] = true
+        if (result === false) entry.prepared = true
+      }
     }).finally(() => { if (active === job) active = null; trim(); pump() })
   }
   function stopUnwanted () {
-    if (active && !wanted.includes(active.peer) && !isOpened(active.peer)) active.controller.abort()
+    if (!active || isOpened(active.peer)) return
+    if (!wanted.includes(active.peer) || (active.phase === 'prepared' && wanted.some(peer => !isOpened(peer) && !entries.get(peer)?.done))) active.controller.abort()
   }
   return {
     setVisible (peers) {
@@ -41,7 +47,7 @@ export function createConversationPrefetch ({ load, release, isOpened, isPinned 
       stopUnwanted(); trim(); pump()
     },
     focus () { wanted = []; stopUnwanted(); trim() },
-    reset () { wanted = []; stopUnwanted(); for (const entry of entries.values()) entry.done = false },
+    reset () { wanted = []; stopUnwanted(); for (const entry of entries.values()) { entry.done = false; entry.prepared = false } },
     close () { closed = true; wanted = []; active?.controller.abort(); entries.clear() }
   }
 }

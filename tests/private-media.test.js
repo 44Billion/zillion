@@ -35,3 +35,17 @@ test('a cancelled consumer cannot overwrite a shared transfer with completion or
   await assert.rejects(request, { name: 'AbortError' })
   assert.equal(mediaState(file).status, 'downloading')
 })
+
+test('speculative availability checks use only local storage without transfer states', async t => {
+  const { checkLocalPrivateMedia } = await import('#services/private-media.js')
+  const states = []
+  let available = false
+  t.after(attachPrivateMediaTransport({ checkLocal: async () => available, download: () => assert.fail('local preparation must not download') }))
+  t.after(observePrivateMedia(state => states.push(state)))
+  assert.equal(await checkLocalPrivateMedia(file), false)
+  available = true
+  assert.equal(await checkLocalPrivateMedia(file), true)
+  assert.deepEqual(states, [])
+  const controller = new AbortController(); controller.abort()
+  await assert.rejects(checkLocalPrivateMedia(file, { signal: controller.signal }), { name: 'AbortError' })
+})

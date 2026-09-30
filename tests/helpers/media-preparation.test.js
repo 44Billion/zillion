@@ -177,3 +177,48 @@ test('cold preview work is shared and only canceled after the last interested co
   third.abort()
   await assert.rejects(retry, { name: 'AbortError' })
 })
+
+test('local-only previews ignore absent originals and never join a remote preparation', async t => {
+  const { attachPrivateMediaTransport } = await import('#services/private-media.js')
+  const { nfileEncode } = await import('libp2r2p/nip19')
+  const { localAttachmentUrl } = await import('#services/attachment-previews.js')
+  const file = { root: 'd'.repeat(64), mime: 'image/png', peer: 'e'.repeat(64) }
+  file.url = `https://nostr.alt/${nfileEncode(file)}?localOnly=0`
+  assert.equal(new URL(localAttachmentUrl(file)).search, '?localOnly=1')
+  const entered = Promise.withResolvers(); const held = Promise.withResolvers()
+  t.after(attachPrivateMediaTransport({
+    checkLocal: async () => false,
+    download: async () => { entered.resolve(); await held.promise; throw new Error('REMOTE_REQUEST') }
+  }))
+  const foreground = acquireAttachmentPreview(file)
+  const rejected = assert.rejects(foreground, /REMOTE_REQUEST/)
+  await entered.promise
+  assert.equal(await acquireAttachmentPreview(file, { localOnly: true }), null)
+  held.resolve(); await rejected
+})
+
+test('prepared dimensions are synchronously readable without an object URL', async () => {
+  const { attachmentPreviewDimensions } = await import('#services/attachment-previews.js')
+  const file = { root: 'dimension-cache', mime: 'image/png' }
+  rememberAttachmentPreview(file, { blob: new Blob(['thumb']), width: 800, height: 600 })
+  assert.deepEqual(attachmentPreviewDimensions(file), { width: 800, height: 600 })
+})
+
+test('a foreground request shares a local attempt then applies its normal policy after a miss', async t => {
+  const { attachPrivateMediaTransport } = await import('#services/private-media.js')
+  const { nfileEncode } = await import('libp2r2p/nip19')
+  const file = { root: 'b'.repeat(64), mime: 'image/png', peer: 'e'.repeat(64) }
+  file.url = `https://nostr.alt/${nfileEncode(file)}`
+  const held = Promise.withResolvers(); let checks = 0; let downloads = 0
+  t.after(attachPrivateMediaTransport({
+    checkLocal: () => { checks++; return held.promise },
+    download: async () => { downloads++; throw new Error('NORMAL_DOWNLOAD_POLICY') }
+  }))
+  const background = acquireAttachmentPreview(file, { localOnly: true })
+  const foreground = assert.rejects(acquireAttachmentPreview(file), /NORMAL_DOWNLOAD_POLICY/)
+  held.resolve(false)
+  assert.equal(await background, null)
+  await foreground
+  assert.equal(checks, 1)
+  assert.equal(downloads, 1)
+})

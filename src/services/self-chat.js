@@ -1,3 +1,4 @@
+import { prefetchChatMedia } from './chat-media-prefetch.js'
 import { chatMessageReferences } from '#helpers/chat-timeline.js'
 import { compareChatMessages as compareMessages } from '#helpers/conversation-preview.js'
 import { createChatHistory, createChatWorkers } from './chat-history.js'
@@ -475,6 +476,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     },
     pause,
     prefetchReferences,
+    prefetchMedia: signal => prefetchChatMedia([...messages.values()], reference => references.peek(reference.id), { signal: AbortSignal.any([controller.signal, signal]) }),
     loadOlder: () => history?.loadOlder() ?? Promise.resolve(false),
     send,
     deleteMessage,

@@ -87,8 +87,14 @@ contacts. After those previews establish the ordering, home waits for 250 ms
 without scrolling and preloads the first 25 messages and local reference metadata
 for visible chats, one chat at a time. Offscreen chats remain lazy. Opening a chat
 reuses completed or in-flight work; it takes priority in the shared four-worker
-queue. Prefetch never downloads media bytes. Earlier pages still load on demand;
-the loading indicator remains until the first page is ready. Unvisited prefetched
+queue. After visible histories are ready, prefetch prepares up to five recent
+image/video previews per chat using local data only. Thumbhashes need no file
+reads; stored thumbnails take precedence over originals. Without either preview,
+a complete local original can supply a reduced preview. Missing/incomplete files,
+audio and documents do not trigger downloads. Cached dimensions reserve bubble
+geometry immediately; hashes provide an approximate ratio when dimensions are
+absent. Earlier pages still load on demand; the loading indicator remains until
+the first page is ready. Unvisited prefetched
 contact histories have a 12-entry LRU budget, excluding currently visible chats;
 self-chat and visited histories remain in the account state.
 

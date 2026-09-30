@@ -189,6 +189,7 @@ function useInitConversationPrefetch (account, queue, self) {
     const prefetch = createConversationPrefetch({
       isOpened: peer => queue.opened.has(peer), isPinned: peer => peer === owner,
       release: peer => account.releaseConversation(peer),
+      prepare: (peer, signal) => (peer === owner ? self.chat : account.chatFor(peer))?.prefetchMedia(signal),
       async load (peer, signal) {
         if (signal.aborted) return false
         const chat = peer === owner ? self.chat : account.ensureConversation(peer)
