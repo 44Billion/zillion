@@ -6,6 +6,7 @@ import '#f/components/f-to-signals.js'
 import data from './fixtures/home.json'
 import { demoEnabled } from '#services/demo.js'
 import { useAccount } from '#hooks/use-account.js'
+import { useConversationPrefetch } from './hooks/use-conversation-prefetch.js'
 import { useHeaderCollapse } from './hooks/use-header-collapse.js'
 import './header.js'
 import './contacts.js'
@@ -46,6 +47,7 @@ f('z-home', ({ h }) => {
     }
   }))
   useHeaderCollapse(view)
+  useConversationPrefetch(account, view)
   return h`
     <main class="home" ref=${view.homeRef$}>
       <style>${`

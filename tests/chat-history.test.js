@@ -154,3 +154,20 @@ test('older pages also publish partial results and preserve their cursor when a 
   assert.equal(f.accepted.length, 50)
   assert.equal(new Set(f.accepted).size, 50)
 })
+
+test('shared workers promote queued foreground work without increasing concurrency', async () => {
+  const { createChatWorkers } = await import('../src/services/chat-history.js')
+  const workers = createChatWorkers(2)
+  const gate = Promise.withResolvers()
+  const calls = []
+  const first = workers(() => gate.promise)
+  const second = workers(() => gate.promise)
+  let foreground = 'a'
+  const background = workers(() => calls.push('b'), () => foreground === 'b' ? 1 : 0)
+  const promoted = workers(() => calls.push('c'), () => foreground === 'c' ? 1 : 0)
+  foreground = 'c'
+  assert.deepEqual(calls, [])
+  gate.resolve()
+  await Promise.all([first, second, background, promoted])
+  assert.deepEqual(calls, ['c', 'b'])
+})

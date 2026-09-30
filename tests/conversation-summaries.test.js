@@ -272,3 +272,61 @@ test('a cached bubble can be deleted while the first history read is still waiti
   assert.deepEqual(messages, [])
   assert.deepEqual(f.errors, [])
 })
+
+for (const contact of [owner, peer]) {
+  test(`prefetched ${contact === owner ? 'self' : 'peer'} history and references survive foreground reuse`, async t => {
+    const attachment = file(contact, 'Earlier attachment')
+    const latest = inner('Latest text', 100, contact)
+    const older = inner(chatReferenceUri(identified(attachment)), 50, contact)
+    const f = fixture(t, [copy(attachment, contact), copy(latest, contact), copy(older, contact)])
+    await f.summaries.setPeers([contact])
+    let messages = []
+    const references = {}
+    const chat = createChat({
+      pubkey: owner, peer: contact, eventStore: f.eventStore, signer: f.signer,
+      onMessages: value => { messages = value }, onReference: (id, event) => { references[id] = event }, onError: error => f.errors.push(error)
+    })
+    t.after(() => chat.close())
+    const snapshot = f.records.get(contact)
+    const first = chat.ensureStarted(snapshot)
+    assert.equal(chat.ensureStarted(snapshot), first, 'foreground shares a pending start')
+    await first
+    await chat.prefetchReferences(new AbortController().signal)
+    assert.equal(references[getEventHash(attachment)].content, attachment.content)
+    const count = f.subscriptions.length
+    const decryptions = f.decrypted.length
+    chat.pause()
+    assert.equal(await chat.ensureStarted(snapshot), true)
+    assert.equal(f.subscriptions.length, count, 'completed prefetch keeps its live subscription')
+    assert.equal(f.decrypted.length, decryptions)
+    assert.equal(messages.length, 2)
+    assert.ok(f.queries.every(filter => !filter.kinds?.includes(34601)), 'references do not read attachment bytes')
+    chat.pause(true)
+    await chat.ensureStarted(snapshot)
+    assert.ok(f.subscriptions.length > count, 'explicit recovery reopens the local snapshot')
+    assert.equal(f.decrypted.length, decryptions, 'recovery revalidates retained copies without decrypting again')
+    assert.deepEqual(f.errors, [])
+  })
+}
+
+test('cancelled setup cannot leak a subscription or clear the resumed start', async t => {
+  const f = fixture(t, [copy(inner('Hello', 100))])
+  const held = Promise.withResolvers()
+  const reached = Promise.withResolvers()
+  let calls = 0
+  const chat = createChat({
+    pubkey: owner, eventStore: f.eventStore,
+    signer: { ...f.signer, async obfuscate (value) { if (++calls === 2) { reached.resolve(); await held.promise }; return value } },
+    onMessages () {}, onError: error => f.errors.push(error)
+  })
+  t.after(() => { held.resolve(); chat.close() })
+  const first = chat.ensureStarted()
+  await reached.promise
+  chat.pause()
+  const resumed = chat.ensureStarted()
+  held.resolve()
+  assert.equal(await first, false)
+  assert.equal(await resumed, true)
+  assert.equal(f.subscriptions.length, 2, 'only resumed deletion/history subscriptions exist')
+  assert.deepEqual(f.errors, [])
+})

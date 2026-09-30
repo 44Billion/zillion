@@ -1,3 +1,4 @@
+import { chatMessageReferences } from '#helpers/chat-timeline.js'
 import { compareChatMessages as compareMessages } from '#helpers/conversation-preview.js'
 import { createChatHistory, createChatWorkers } from './chat-history.js'
 import { createConversationMediaReader } from './conversation-media.js'
@@ -11,7 +12,7 @@ import { createFileMetadata } from 'libp2r2p/nip94'
 import { verifyLocalFile } from './chat-attachments.js'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { compactWhitespace } from 'libp2r2p/nip27'
-import { chatReferenceUri, createChatReferences, decryptPersonalCopy, CHAT_FILE_KIND, CHAT_TEXT_KIND } from './chat-references.js'
+import { chatReferenceUri, createChatReferences, decryptPersonalCopy, isResolvableChatReference, CHAT_FILE_KIND, CHAT_TEXT_KIND } from './chat-references.js'
 
 export const SELF_CHAT_KIND = 9
 export const DELETION_KIND = 5
@@ -23,9 +24,9 @@ const SALT_SEARCH_MS = 4
 // interprets its personal-copy contract for the primary user's own chat.
 export function createSelfChat (options) { return createChat(options) }
 
-export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile }) {
+export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile, workers = createChatWorkers() }) {
   const context = `dm:${peer}`
-  const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference })
+  const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference, workers })
   const catalog = createChatReferences({ pubkey, eventStore, signer, context: '' })
   const catalogWrites = new Map()
   const messages = new Map()
@@ -35,12 +36,12 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   const controller = new AbortController()
   let closed = false
   const retained = new Map()
-  const workers = createChatWorkers()
   let history
   let deletionSubscription
   let generation = 0
   let loading
   let started = false
+  let historyReady = false
   // Include pending/failed sends and observed history. Deletion must not move
   // this cursor backwards while the account service remains alive.
   let latest
@@ -133,6 +134,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
         if (!messages.has(event.id)) confirm(event.id, event)
       }
     }
+    historyReady = false
     const version = ++generation
     const current = () => !closed && generation === version
     history?.close()
@@ -144,12 +146,13 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     const fail = error => {
       if (!current()) return
       generation++
+      historyReady = false
       history?.close()
       deletionSubscription?.return().catch(() => {})
       onHistoryState('unavailable')
       onError(error)
     }
-    loading = (async () => {
+    const work = (async () => {
       try {
         const encodedContext = await signer.obfuscate(context, String(PERSONAL_COPY), '')
         if (!current()) return false
@@ -176,6 +179,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
         } catch {
           // Keep deletion tracking even without the optional kind mirrors.
         }
+        if (!current()) return false
         const deletions = eventStore.subscribe(deletionFilter)
         deletionSubscription = deletions
         const deletionLive = (async () => {
@@ -196,12 +200,41 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
         const loaded = await history.start()
         if (!current() || !loaded) return false
         references.retryMisses()
+        historyReady = true
         onInitialLoad()
         onHistoryState('loaded')
         return true
       } catch (error) { fail(error); return false }
-    })().finally(() => { loading = null })
-    return loading
+    })().finally(() => { if (loading === work) loading = null })
+    loading = work
+    return work
+  }
+  function pause (force = false) {
+    if (closed || (historyReady && !force)) return
+    generation++
+    historyReady = false
+    history?.close(); history = null
+    deletionSubscription?.return().catch(() => {}); deletionSubscription = null
+    loading = null
+  }
+  async function prefetchReferences (signal) {
+    const seen = new Set()
+    const prepare = async reference => {
+      if (closed || signal.aborted || seen.has(reference.id) || !isResolvableChatReference(reference)) return null
+      seen.add(reference.id)
+      return references.prepare(reference)
+    }
+    for (const message of [...messages.values()]) {
+      if (closed || signal.aborted) return
+      for (const reference of chatMessageReferences(message).references) {
+        const event = await prepare(reference)
+        // Match visible quotes: resolve direct attachment pointers, not nested
+        // quote histories or external previews. This never reads media bytes.
+        if (event?.kind === CHAT_TEXT_KIND) {
+          for (const child of chatMessageReferences(event).references) if (child.kind == null || child.kind === CHAT_FILE_KIND) await prepare(child)
+        }
+      }
+    }
   }
   async function prepareEntry (entry, signal = controller.signal) {
     signal.throwIfAborted()
@@ -435,6 +468,13 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   }
   return {
     start,
+    ensureStarted (snapshot) {
+      if (closed) return Promise.resolve(false)
+      if (historyReady) { references.retryMisses(); return Promise.resolve(true) }
+      return start(snapshot)
+    },
+    pause,
+    prefetchReferences,
     loadOlder: () => history?.loadOlder() ?? Promise.resolve(false),
     send,
     deleteMessage,

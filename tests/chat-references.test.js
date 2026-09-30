@@ -207,3 +207,23 @@ test('summary metadata wins over an older pending miss and respects deletions', 
   assert.deepEqual(notifications, [file, null])
   references.clear()
 })
+
+test('clearing references fences late reads from an evicted chat', async () => {
+  const event = innerEvent({ kind: 1063, content: 'attachment' })
+  const gate = Promise.withResolvers()
+  const resolved = []
+  const called = Promise.withResolvers()
+  const references = createChatReferences({
+    pubkey, signer, context,
+    eventStore: { async query () { called.resolve(); await gate.promise; return { results: [wrapper(event)] } } },
+    onResolved: (...args) => resolved.push(args)
+  })
+  const reading = references.prepare(event)
+  await called.promise
+  references.clear()
+  gate.resolve()
+  assert.equal(await reading, null)
+  assert.deepEqual(resolved, [])
+  assert.equal((await references.prepare(event)).id, event.id)
+  assert.equal(resolved.length, 1)
+})

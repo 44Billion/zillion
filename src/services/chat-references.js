@@ -60,7 +60,8 @@ export function createChatReferences ({
   signer,
   context = `dm:${pubkey}`,
   limit = 100,
-  onResolved = () => {}
+  onResolved = () => {},
+  workers = work => work()
 }) {
   const cache = new Map()
   const pending = new Map()
@@ -69,6 +70,7 @@ export function createChatReferences ({
   const misses = new Set()
   const locals = new Map()
   const removed = new Set()
+  let generation = 0
   let encodedContextPromise
   const encodedContext = () => (encodedContextPromise ??= signer.obfuscate(context, String(PERSONAL_COPY), '').catch(error => {
     encodedContextPromise = undefined
@@ -123,6 +125,7 @@ export function createChatReferences ({
       }
     },
     clear () {
+      generation++
       cache.clear()
       pending.clear()
       misses.clear()
@@ -159,9 +162,10 @@ export function createChatReferences ({
       }
       if (cache.has(id)) return cache.get(id)
       if (!pending.has(id)) {
-        pending.set(id, load(id)
+        const version = generation
+        pending.set(id, workers(async () => version === generation ? load(id) : null)
           .then(event => {
-            if (removed.has(id)) return null
+            if (version !== generation || removed.has(id)) return null
             // A summary can fill the cache while this older read is pending.
             if (cache.get(id)) return cache.get(id)
             cache.set(id, event)
@@ -170,10 +174,10 @@ export function createChatReferences ({
             return event
           })
           .catch(error => {
-            if (!/DENIED|PERMISSION|REVOKED|INVALID|NOT_IN_PERSONA/i.test(`${error?.code || ''} ${error?.message || ''}`)) misses.add(id)
+            if (version === generation && !/DENIED|PERMISSION|REVOKED|INVALID|NOT_IN_PERSONA/i.test(`${error?.code || ''} ${error?.message || ''}`)) misses.add(id)
             return null
           })
-          .finally(() => pending.delete(id)))
+          .finally(() => { if (version === generation) pending.delete(id) }))
       }
       return null
     },

@@ -18,8 +18,8 @@ import { viewerStyles } from './styles.js'
 
 f('z-media-viewer-route', ({ h, props }) => {
   const identity = useAccount()
-  const account = useConversation(() => props.route$().params.contactId, { open: true })
   const page = useRoutePage()
+  const account = useConversation(() => props.route$().params.contactId, { open: true, active$: page.isActive$ })
   const location = useLocation()
   const runtime = useMemo(() => ({ pointer: null, animation: null, direction: null, reader: null, request: 0, selected: null, pendingFile: null, sessionKey: null, error: null }))
   const photo = props.route$().url.pathname.endsWith('/photo')

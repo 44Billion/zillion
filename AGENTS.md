@@ -571,24 +571,47 @@ needed; empty folders mark the initial structure.
   Existing/pending visible chat messages can supplement a newer local preview.
   Nonself empty contacts remain in the strip/directory, not the active-chat list;
   self keeps the Notes shortcut but is sorted by its actual last-message time.
-- Opening a self/peer chat passes its account-store summary into the service's
+- Starting a self/peer history passes its account-store summary into the service's
   first `start(snapshot)`. Reuse the admitted inner event and reference metadata
   synchronously; keep all matching wrapper IDs/timestamps so the normal history
   revalidation can remove deleted copies and skip repeat decryption. Do not
   overwrite pending/failed outbox state, duplicate bubbles, or mark history ready.
   Later starts/recovery never reapply a stale summary. Reference-cache seeding
   respects deletions and cannot be overwritten by an older pending lookup.
+- `use-conversation-prefetch.js` waits for contacts and all last-message snapshots
+  to settle, then measures visible home rows after 250 ms without scrolling.
+  Intersect the route scroller/window with the actual sticky header/divider;
+  partly visible rows qualify, covered rows do not. Remeasure on ordered peer
+  changes, resize and visibility return. Inactive retained routes and hidden tabs
+  must stop speculative work. An unchanged order must not restart on each batch.
+- `conversation-prefetch.js` runs one background chat at a time, using the root's
+  existing self/peer services and stores. Read only the first 25 wrappers and local
+  quote/file metadata (one quoted level plus its direct files); never media bytes
+  or external previews. Seed the latest summary and skip retained/live copies.
+  `ensureStarted()` shares pending work and reuses a completed live history;
+  explicit recovery still uses `start()` for revalidation.
+- One four-worker queue covers account history and reference reads. Dispatch
+  checks foreground priority dynamically. Home row navigation promotes its chat
+  before route cleanup. Abort unneeded incomplete prefetch, keeping admitted
+  messages; generation guards suppress late completions and subscriptions.
+  Completed background histories keep live subscriptions. Evict unvisited
+  contact histories with a 12-entry LRU, protecting visible entries and self-chat;
+  visited histories retain their existing lifetime. Clear reference generations
+  on service eviction. Signer recovery pauses/resets unvisited prefetch and only
+  eagerly restarts visited histories.
 - Guarded `tests/browser/home-summaries.browser.js` checks a cold home with held
-  transport, captions/filenames, no media-byte reads, ordering, live updates,
-  deletions and lazy self/peer histories. Hold real history delivery to verify
-  the latest bubble/metadata appears during loading and keeps its DOM node when
-  earlier messages arrive. Visiting a chat must not repair its row.
+  transport, captions/filenames, ordering, visible-only first-page prefetch,
+  metadata without media bytes, scroll debounce, live updates and deletions.
+  Opening completed prefetch must not restart history; opening held prefetch
+  shares its subscription and keeps the latest bubble's DOM node as the earlier
+  messages arrive before EOSE. Visiting a chat must not repair its row.
 
 ## Real self chat
 
 - `useInitAccount` runs once in `z-app`, calls `peekPublicKey` early and owns
   profile and conversation-summary subscriptions. Histories, including self-chat,
-  start only when a chat/viewer route opens; readers do not start subscriptions.
+  start when a chat/viewer opens or a settled visible home row requests prefetch;
+  ordinary store consumers do not start subscriptions.
   Its internal `recover()` coalesces identity/history recovery across the clip,
   gallery Retry and conversation Retry. Never recreate a same-account service
   just to retry reads: that would discard its outbox and prepared attachments.
@@ -1225,7 +1248,9 @@ queries and reconciles the recent snapshot; kind-5 live registration comes first
 The active chat requests another page near the top, preserving its visible
 anchor through the existing viewport controller. Visited pages remain in memory:
 this is pagination, not virtualization. Timeline reference/media preparation starts near
-visibility; the list resolves only its latest message metadata independently; the media viewer still pages 1063 independently and snapshots URL
+visibility; home sorts from independent latest-message summaries and can prefetch
+visible chats' first pages/reference metadata; the media viewer still pages 1063
+independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
 
 ## Private media transport

@@ -83,8 +83,14 @@ date and update on new messages and deletions, before any chat is visited.
 Contacts without messages stay in the contacts strip/directory; self-chat keeps
 its empty Notes shortcut. Opening a chat immediately reuses that loaded message
 and its attachment metadata while the earlier messages load, for both self and
-contacts. Full history stays lazy; the loading indicator remains until its first
-page is ready.
+contacts. After those previews establish the ordering, home waits for 250 ms
+without scrolling and preloads the first 25 messages and local reference metadata
+for visible chats, one chat at a time. Offscreen chats remain lazy. Opening a chat
+reuses completed or in-flight work; it takes priority in the shared four-worker
+queue. Prefetch never downloads media bytes. Earlier pages still load on demand;
+the loading indicator remains until the first page is ready. Unvisited prefetched
+contact histories have a 12-entry LRU budget, excluding currently visible chats;
+self-chat and visited histories remain in the account state.
 
 The shared [toast](src/components/shared/toast.md) supports success, error,
 warning and info, expandable details and navigation through unique notices. It
@@ -664,8 +670,8 @@ queries and reconciles the recent snapshot; kind-5 live registration comes first
 
 The active chat requests another page near the top, preserving its visible
 anchor through the existing viewport controller. Visited pages remain in memory:
-this is pagination, not virtualization. Reference/media preparation starts near
-visibility; the media viewer still pages 1063 independently and snapshots URL
+this is pagination, not virtualization. Visible home rows can prefetch the first
+page and its reference metadata; chat media preparation starts near visibility; the media viewer still pages 1063 independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
 
 See [history regression and real-vault measurements](tests/browser/HISTORY.md).

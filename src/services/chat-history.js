@@ -5,12 +5,16 @@ export function createChatWorkers (concurrency = 4) {
   const queue = []
   function drain () {
     while (running < concurrency && queue.length) {
-      const { work, resolve, reject } = queue.shift()
+      // Priority is read at dispatch, so opening a prefetched chat promotes
+      // its already queued work without exceeding the shared concurrency cap.
+      let next = 0
+      for (let index = 1; index < queue.length; index++) if (queue[index].priority() > queue[next].priority()) next = index
+      const { work, resolve, reject } = queue.splice(next, 1)[0]
       running++
       Promise.resolve().then(work).then(resolve, reject).finally(() => { running--; drain() })
     }
   }
-  return work => new Promise((resolve, reject) => { queue.push({ work, resolve, reject }); drain() })
+  return (work, priority = () => 0) => new Promise((resolve, reject) => { queue.push({ work, priority, resolve, reject }); drain() })
 }
 
 export function createChatHistory ({ eventStore, filter, accept, retained = new Map(), workers = createChatWorkers(), onMissing, onBatch, onState, onError }) {

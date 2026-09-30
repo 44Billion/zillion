@@ -38,7 +38,7 @@ f('z-chat-route', ({ h, props }) => {
 f('z-chat', ({ h, props }) => {
   const page = useRoutePage()
   const identity = useAccount()
-  const account = useConversation(() => props.person$().id, { open: true })
+  const account = useConversation(() => props.person$().id, { open: true, active$: page.isActive$ })
   const view = useStore(() => ({
     timelineRef$: null,
     screenRef$: null,

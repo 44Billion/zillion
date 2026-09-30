@@ -10,7 +10,7 @@ import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
 import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 
-test('cold home previews and ordering load independently of self and contact histories', { timeout: 120000 }, async () => {
+test('cold summaries order chats before visible histories prefetch and survive foreground handoff', { timeout: 120000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
@@ -79,14 +79,19 @@ test('cold home previews and ordering load independently of self and contact his
     const peer = getPublicKey(generateSecretKey())
     const other = getPublicKey(generateSecretKey())
     const empty = getPublicKey(generateSecretKey())
+    console.log('Seeding local contacts and history')
     for (const contact of [peer, other, empty]) await evaluate(`contactBoot.account.setContact('${contact}', true)`)
     const base = Math.floor(Date.now() / 1000) - 1000
     for (const contact of [pubkey, peer, other]) {
-      await evaluate(`(async () => { for (let index = 0; index < 12; index++) await contactBoot.seedMessage({ peer: '${contact}', at: ${base} + index, text: 'Older message ' + index }) })()`)
+      for (let index = 0; index < (contact === peer ? 26 : 5); index++) await evaluate(`contactBoot.seedMessage({ peer: '${contact}', at: ${base + index}, text: 'Older message ${index}' })`)
     }
+    console.log('Seeding reference metadata')
+    const olderFile = await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 70}, filename: 'older-attachment.pdf' })`)
     const selfLatest = await evaluate(`contactBoot.seedMessage({ peer: '${pubkey}', at: ${base + 100}, filename: 'self-notes.pdf' })`)
-    const peerLatest = await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 200}, text: 'Latest contact text' })`)
+    await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 200}, text: 'Latest contact text' })`)
     const newest = await evaluate(`contactBoot.seedMessage({ peer: '${other}', at: ${base + 300}, filename: 'trip.pdf', caption: 'Trip caption' })`)
+    console.log('Reloading cold home')
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 320, deviceScaleFactor: 1, mobile: true }, session)
     await browser.evaluate(`(() => {
       const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
       const url = new URL(frame.src); url.pathname = '/'; url.search = '?holdOutbox=1'; frame.src = url.href;
@@ -101,45 +106,72 @@ test('cold home previews and ordering load independently of self and contact his
     await browser.until(async () => JSON.stringify(await rows()) === JSON.stringify(expectedRows), 'summary state is rendered in all home rows')
     assert.deepEqual(await rows(), expectedRows)
     assert.equal(await evaluate('contactBoot.queueFinished'), false)
-    assert.equal(await evaluate('contactBoot.account.historyLoaded$()'), false, 'self history stays lazy')
+    const histories = () => evaluate("contactBoot.reads.filter(read => read.method === 'subscribe' && read.options?.initial && read.filter.limit === 25 && read.filter['#k']?.includes('9'))")
+    console.log('Checking visible prefetch')
+    const visible = await evaluate(`(() => {
+      const home = document.querySelector('.route-page[data-active=true] .home');
+      const top = home.querySelector('.contacts-divider').getBoundingClientRect().bottom;
+      return [...home.querySelectorAll('[data-prefetch-peer]')].filter(row => {
+        const rect = row.getBoundingClientRect(); return rect.bottom > top && rect.top < innerHeight;
+      }).map(row => row.dataset.prefetchPeer);
+    })()`)
+    assert.ok(visible.includes(other))
+    assert.ok(visible.includes(peer), 'two contact chats are visible')
+    assert.ok(!visible.includes(pubkey), 'self chat starts below the viewport')
+    await browser.until(() => evaluate(`${JSON.stringify(visible)}.every(peer => contactBoot.account.conversations$()[peer]?.historyLoaded)`), 'visible first pages finish without entering a chat')
+    assert.equal(await evaluate('contactBoot.account.historyLoaded$()'), false, 'offscreen self history stays lazy')
     assert.equal(await evaluate('contactBoot.account.messages$().length'), 0)
-    assert.deepEqual(await evaluate('Object.keys(contactBoot.account.conversations$())'), [])
     const reads = await evaluate('contactBoot.reads')
-    const snapshots = reads.filter(read => read.method === 'subscribe' && read.options?.initial && read.filter['#k']?.includes('9'))
-    assert.equal(snapshots.length, 4)
-    assert.ok(snapshots.every(read => read.filter.limit === 1), 'home must not open 25-message histories')
-    assert.ok(!reads.some(read => read.filter.kinds?.includes(34601)), 'file previews only read metadata')
+    assert.equal(reads.filter(read => read.method === 'subscribe' && read.options?.initial && read.filter.limit === 1 && read.filter['#k']?.includes('9')).length, 4)
+    assert.equal((await histories()).length, visible.length, 'only visible chats open a first page')
+    assert.ok(!reads.some(read => read.filter.kinds?.includes(34601)), 'prefetch only reads metadata')
     assert.deepEqual(await evaluate('contactBoot.mediaStates'), [], 'home never starts thumbnail/original transfers')
+    if (visible.includes(peer)) {
+      await browser.until(() => evaluate(`contactBoot.account.conversations$()['${peer}'].references?.[contactBoot.account.conversations$()['${peer}'].messages.find(event => event.id === '${olderFile}')?.tags.find(tag => tag[0] === 'q')?.[1]]?.kind === 1063`), 'first-page attachment metadata is resolved before visiting')
+      assert.equal(await evaluate(`contactBoot.account.conversations$()['${peer}'].messages.length`), 25, 'prefetch stops at the first page')
+      assert.equal(await evaluate(`contactBoot.account.conversations$()['${peer}'].messages.some(event => event.id === '${olderFile}')`), true)
+    }
+    const beforeOpen = (await histories()).length
+    await evaluate(`document.querySelector('.conversation button[data-contact-id="${other}"]').click()`)
+    await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 6'), 'prefetched bubbles appear on entry')
+    assert.equal((await histories()).length, beforeOpen, 'opening completed prefetch does not restart history')
+    assert.equal(await evaluate('!!document.querySelector(\'.route-page[data-active=true] .chat-date[role=status]:not([hidden])\')'), false)
+    await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .conversations")'), 'return to home')
+
+    await evaluate('contactBoot.holdHistory()')
+    await evaluate(`(async () => {
+      const scroll = document.querySelector('.route-page[data-active=true] .route-scroll');
+      for (let n = 0; n < 6; n++) {
+        scroll.scrollTop = scroll.scrollHeight - scroll.clientHeight - (n % 2 ? 0 : 10);
+        scroll.dispatchEvent(new Event('scroll'));
+        await new Promise(resolve => setTimeout(resolve, 70));
+      }
+    })()`)
+    assert.equal(await evaluate('contactBoot.account.messages$().length'), 0, 'continuous scrolling does not start offscreen history')
+    await browser.until(() => evaluate(`contactBoot.account.messages$().some(event => event.id === '${selfLatest}')`), 'self chat prefetch starts after scrolling settles')
+    const inFlight = (await histories()).length
+    await evaluate('document.querySelector(\'.route-page[data-active=true] .conversation button[data-contact-id="user"]\').click()')
+    await browser.until(() => evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${selfLatest}"] .chat-bubble')?.textContent.includes('self-notes')`), 'opening in-flight prefetch reuses its cached latest bubble')
+    assert.equal(await evaluate('contactBoot.account.historyLoaded$()'), false)
+    await evaluate(`contactBoot.lastBubble = document.querySelector('.route-page[data-active=true] [data-message-id="${selfLatest}"] .chat-bubble')`)
+    await evaluate('contactBoot.releaseHistory()')
+    await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 6'), 'earlier messages appear before EOSE')
+    assert.equal(await evaluate('contactBoot.account.historyLoaded$()'), false)
+    await evaluate('contactBoot.releaseEose()')
+    await browser.until(() => evaluate('contactBoot.account.historyLoaded$()'), 'promoted history completes')
+    assert.equal((await histories()).length, inFlight, 'foreground promotion shares the in-flight subscription')
+    assert.equal(await evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${selfLatest}"] .chat-bubble') === contactBoot.lastBubble`), true)
+    await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .conversations")'), 'return from self chat')
     const incoming = await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 400}, filename: 'fresh.pdf' })`)
     await browser.until(async () => (await rows())[0]?.preview === 'fresh.pdf', 'new local message reorders unopened contact')
     await evaluate(`napp.eventStore.addPersonalCopy({kind:5,created_at:Math.floor(Date.now()/1000),tags:[['e','${incoming}'],['k','9']],content:''},{context:'dm:${peer}'})`)
     await browser.until(async () => { const list = await rows(); return list[0]?.id === other && list[1]?.preview === 'Latest contact text' }, 'deleting latest message restores ordering and preview without opening chat')
     assert.equal((await rows())[1].preview, 'Latest contact text')
     await evaluate(`napp.eventStore.addPersonalCopy({kind:5,created_at:Math.floor(Date.now()/1000),tags:[['e','${newest}'],['k','9']],content:''},{context:'dm:${other}'})`)
-    await browser.until(async () => { const list = await rows(); return list[0]?.id === peer && list[2]?.preview === 'Older message 11' }, 'another deletion falls back to older local history')
-    const beforeVisit = await rows()
-    for (const [contact, key, id, text] of [['user', pubkey, selfLatest, 'self-notes'], [peer, peer, peerLatest, 'Latest contact text']]) {
-      await evaluate('contactBoot.holdHistory()')
-      await evaluate(`document.querySelector('.route-page[data-active=true] .conversation button[data-contact-id="${contact}"]').click()`)
-      const loaded = contact === 'user' ? 'contactBoot.account.historyLoaded$()' : `!!contactBoot.account.conversations$()['${key}']?.historyLoaded`
-      await browser.until(() => evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${id}"] .chat-bubble')?.textContent.includes('${text}')`), 'latest bubble and its content are immediately available while history delivery is held')
-      assert.equal(await evaluate(loaded), false)
-      assert.equal(await evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length'), 1)
-      assert.ok(await evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${id}"]').textContent.includes('${text}')`), 'text or filename is already expanded')
-      assert.ok(await evaluate('document.querySelector(\'.route-page[data-active=true] .chat-date[role=status]\').textContent.includes(\'Loading conversation\')'))
-      await evaluate(`contactBoot.lastBubble = document.querySelector('.route-page[data-active=true] [data-message-id="${id}"] .chat-bubble')`)
-      await evaluate('contactBoot.releaseHistory()')
-      await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 13'), 'earlier messages join the cached bubble before EOSE')
-      assert.equal(await evaluate(loaded), false, 'progressive bubbles do not prematurely mark history complete')
-      await evaluate('contactBoot.releaseEose()')
-      await browser.until(() => evaluate(loaded), 'history completes after EOSE and decryption')
-      assert.equal(await evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${id}"] .chat-bubble') === contactBoot.lastBubble`), true, 'the latest bubble keeps its DOM node through history loading')
-      assert.equal(await evaluate(`document.querySelectorAll('.route-page[data-active=true] [data-message-id="${id}"]').length`), 1)
-      await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
-      await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .conversations")'), 'return to chat list')
-      assert.deepEqual(await rows(), beforeVisit, 'visiting a conversation does not repair or change its preview/order')
-    }
-    console.log('Cold previews, metadata-only reads, ordering, live updates, deletions, immediate cached bubbles and lazy histories verified')
+    await browser.until(async () => { const list = await rows(); return list[0]?.id === peer && list[2]?.preview === 'Older message 4' }, 'another deletion falls back to older local history')
+    console.log('Cold ordering, visible-only prefetch, first-page limit, metadata, scroll debounce, completed/in-flight handoff and live updates verified')
     await evaluate('contactBoot.releaseQueue()')
   } catch (error) {
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/home-summaries'))

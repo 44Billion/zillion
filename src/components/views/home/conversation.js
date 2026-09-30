@@ -1,10 +1,12 @@
 import { t } from '#i18n/messages.js'
 import { f, useLocation, useStore } from '#f'
+import { useAccount } from '#hooks/use-account.js'
 import './avatar.js'
 import '#shared/unread-badge.js'
 
 f('z-home-conversation', ({ h, props }) => {
   const location = useLocation()
+  const account = useAccount()
   const view = useStore({
     person$ () { return props.conversation$().contact },
     unread$ () { return props.conversation$().unread }
@@ -34,8 +36,11 @@ f('z-home-conversation', ({ h, props }) => {
           .unread time { color: var(--z-accent-text); }
         }
       `}</style>
-      <button type="button" class=${conversation.unread ? 'unread' : ''} data-contact-id=${conversation.contact.id}
-        onclick=${() => location.pushState({ fromHome: true }, '', `/chat/${encodeURIComponent(conversation.contact.id)}`)}>
+      <button type="button" class=${conversation.unread ? 'unread' : ''} data-contact-id=${conversation.contact.id} data-prefetch-peer=${conversation.real && conversation.lastMessageAt ? conversation.contact.pubkey : null}
+        onclick=${() => {
+          if (conversation.real) account.focusConversation(conversation.contact.pubkey)
+          location.pushState({ fromHome: true }, '', `/chat/${encodeURIComponent(conversation.contact.id)}`)
+        }}>
         <span class="avatar" aria-hidden="true"><z-home-avatar props=${{ person$: view.person$ }} /></span>
         <span class="summary">
           <span class="name">${conversation.contact.self ? t('You') : conversation.contact.name}</span>

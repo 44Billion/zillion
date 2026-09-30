@@ -1,3 +1,5 @@
+import { createConversationPrefetch } from '#services/conversation-prefetch.js'
+import { createChatWorkers } from '#services/chat-history.js'
 import { createConversationSummaries } from '#services/conversation-summaries.js'
 import { createContacts } from '#services/contacts.js'
 import { createPrivateChats } from '#services/private-chats.js'
@@ -39,10 +41,16 @@ export function useAccount () {
 // Mounted once at the app root; retained routes only read these signals.
 export function useInitAccount () {
   const account = useAccount()
-  useInitPrivateChats(account)
+  const queue = useMemo(() => ({ run: createChatWorkers(), foreground: null, opened: new Set() }))
+  useInitPrivateChats(account, queue)
   useInitConversationSummaries(account)
   const runtime = useMemo(() => ({ chat: null, opened: false }))
-  account.openSelfConversation = () => { runtime.opened = true; return runtime.chat ? runtime.chat.start(account.summaries$()[account.pubkey$()]) : account.recover() }
+  useInitConversationPrefetch(account, queue, runtime)
+  account.openSelfConversation = () => {
+    runtime.opened = true
+    account.focusConversation(account.pubkey$())
+    return runtime.chat ? runtime.chat.ensureStarted(account.summaries$()[account.pubkey$()]) : account.recover()
+  }
   account.send = (content, replyTo, attachment) => {
     if (!runtime.chat) throw new Error('Account unavailable')
     return runtime.chat.send(content, replyTo, attachment)
@@ -98,7 +106,7 @@ export function useInitAccount () {
           if (closed) return false
           if (!runtime.chat) {
             runtime.chat = createSelfChat({
-              pubkey, eventStore, signer: window.nostr, transport: demoEnabled ? undefined : { enqueue: options => account.delivery().enqueue(options), cancel: id => account.delivery().cancel(id), retry: id => account.delivery().retry(id) }, onMessages: account.messages$, onError: report,
+              pubkey, eventStore, signer: window.nostr, workers: work => queue.run(work, () => queue.foreground === pubkey ? 1 : 0), transport: demoEnabled ? undefined : { enqueue: options => account.delivery().enqueue(options), cancel: id => account.delivery().cancel(id), retry: id => account.delivery().retry(id) }, onMessages: account.messages$, onError: report,
               onReference: (id, event) => { if (!closed) account.references$({ ...account.references$(), [id]: event }) },
               onDelete: ids => {
                 if (closed) return
@@ -163,17 +171,54 @@ function useInitConversationSummaries (account) {
   })
 }
 
-function useInitPrivateChats (account) {
+function useInitConversationPrefetch (account, queue, self) {
+  const runtime = useMemo(() => ({ prefetch: null }))
+  account.focusConversation = peer => { queue.foreground = peer; queue.opened.add(peer); runtime.prefetch?.focus() }
+  account.prefetchConversations = peers => {
+    if (peers.length) queue.foreground = null
+    runtime.prefetch?.setVisible(peers)
+  }
+  account.resetConversationPrefetch = () => {
+    runtime.prefetch?.reset()
+    if (!self.opened) self.chat?.pause(true)
+    for (const peer of Object.keys(account.conversations$())) if (!queue.opened.has(peer)) account.chatFor(peer)?.pause(true)
+  }
+  useTask(({ track, cleanup }) => {
+    const owner = track(() => account.pubkey$())
+    if (!owner || demoEnabled) return
+    const prefetch = createConversationPrefetch({
+      isOpened: peer => queue.opened.has(peer), isPinned: peer => peer === owner,
+      release: peer => account.releaseConversation(peer),
+      async load (peer, signal) {
+        if (signal.aborted) return false
+        const chat = peer === owner ? self.chat : account.ensureConversation(peer)
+        if (!chat) return false
+        const stop = () => { if (!queue.opened.has(peer)) chat.pause() }
+        signal.addEventListener('abort', stop, { once: true })
+        try {
+          const loaded = await chat.ensureStarted(account.summaries$()[peer])
+          if (loaded && !signal.aborted) await chat.prefetchReferences(signal)
+          return loaded
+        } finally { signal.removeEventListener('abort', stop) }
+      }
+    })
+    runtime.prefetch = prefetch
+    cleanup(() => { prefetch.close(); runtime.prefetch = null; queue.opened.clear(); queue.foreground = null })
+  })
+}
+
+function useInitPrivateChats (account, queue) {
   const runtime = useMemo(() => ({ chats: new Map(), transport: null, contacts: null, outbox: [], profiles: new Map(), profileActive: 0, profileQueue: [], version: 0 }))
   const patch = (peer, values) => account.conversations$(previous => ({ ...previous, [peer]: { ...previous[peer], ...values } }))
   account.delivery = () => { if (!runtime.transport) throw new Error('Account unavailable'); return runtime.transport }
-  account.openConversation = async peer => {
+  account.ensureConversation = peer => {
     const owner = account.pubkey$()
     if (!owner || !/^[0-9a-f]{64}$/.test(peer || '') || peer === owner) return
     account.loadPerson(peer)
     if (!runtime.chats.has(peer)) {
       const chat = createChat({
         pubkey: owner, peer, eventStore: window.napp.eventStore, signer: window.nostr, transport: runtime.transport,
+        workers: work => queue.run(work, () => queue.foreground === peer ? 1 : 0),
         onMessages: messages => patch(peer, { messages }),
         onError: error => patch(peer, { error: error.message }),
         onReference: (id, event) => patch(peer, { references: { ...account.conversations$()[peer]?.references, [id]: event } }),
@@ -184,8 +229,19 @@ function useInitPrivateChats (account) {
       runtime.chats.set(peer, chat)
       chat.applyOutbox(runtime.outbox)
     }
+    return runtime.chats.get(peer)
+  }
+  account.openConversation = peer => {
+    const chat = account.ensureConversation(peer)
+    if (!chat) return Promise.resolve(false)
+    account.focusConversation(peer)
     patch(peer, { error: null })
-    await runtime.chats.get(peer).start(account.summaries$()[peer])
+    return chat.ensureStarted(account.summaries$()[peer])
+  }
+  account.releaseConversation = peer => {
+    if (queue.opened.has(peer)) return
+    runtime.chats.get(peer)?.close(); runtime.chats.delete(peer)
+    account.conversations$(previous => { const next = { ...previous }; delete next[peer]; return next })
   }
   account.chatFor = peer => runtime.chats.get(peer)
   account.recoverContacts = () => runtime.contacts?.start() ?? Promise.resolve(false)
@@ -253,13 +309,15 @@ function useInitPrivateChats (account) {
       // Begin transport recovery and local reads independently. setState can
       // wait for encrypted queues, channels and remote recovery work.
       const delivery = runtime.transport.setState(state).catch(error => { if (!closed) console.warn('Could not resume message delivery', error) })
-      if (!available || !changed) return delivery
+      if (!available) { account.resetConversationPrefetch?.(); return delivery }
+      if (!changed) return delivery
+      account.resetConversationPrefetch?.()
       const reads = [runtime.contacts.start()]
       account.recovery$(value => value + 1)
       // Routes start history lazily. Recovery reopens only visited histories,
       // independently of the lightweight summaries maintained for the list.
       if (wasAvailable || account.historyState$() === 'unavailable') reads.push(account.recover?.())
-      if (wasAvailable) for (const chat of runtime.chats.values()) reads.push(chat.start())
+      if (wasAvailable) for (const [peer, chat] of runtime.chats) if (queue.opened.has(peer)) reads.push(chat.start())
       wasAvailable = true
       await Promise.all([delivery, ...reads])
     }
@@ -276,12 +334,12 @@ function useInitPrivateChats (account) {
       for (const chat of runtime.chats.values()) chat.close()
       runtime.version++
       runtime.chats.clear(); runtime.profiles.clear(); runtime.outbox = []
-      account.contacts$([]); account.contactsState$('loading')
+      account.contacts$([]); account.contactsState$('loading'); account.conversations$({})
     })
   })
 }
 
-export function useConversation (id$, { open = false } = {}) {
+export function useConversation (id$, { open = false, active$ = () => true } = {}) {
   const account = useAccount()
   const view = useStore(() => ({
     pubkey$: account.pubkey$,
@@ -310,8 +368,8 @@ export function useConversation (id$, { open = false } = {}) {
     retry$ () { this.recover() }
   }))
   useTask(({ track }) => {
-    const [peer, owner, ready, initialized] = track(() => [view.peer$(), account.pubkey$(), account.signerState$(), account.ready$()])
-    if (open && peer && owner && initialized && ((ready?.connection === 'connected' && !ready.isLocked) || demoEnabled) && !demoPeople.some(person => person.id === peer)) {
+    const [peer, owner, ready, initialized, active] = track(() => [view.peer$(), account.pubkey$(), account.signerState$(), account.ready$(), active$()])
+    if (open && active && peer && owner && initialized && ((ready?.connection === 'connected' && !ready.isLocked) || demoEnabled) && !demoPeople.some(person => person.id === peer)) {
       const work = peer === owner ? account.openSelfConversation() : account.openConversation(peer)
       work?.catch(() => {})
     }
