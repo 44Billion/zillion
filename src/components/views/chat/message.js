@@ -35,6 +35,13 @@ f('z-chat-message', ({ h, props }) => {
       location.pushState({ fromMediaOrigin: true, mediaId: item.id, mediaTime: time }, '', `/chat/${encodeURIComponent(props.person$().id)}/media#${encodeURIComponent(item.id)}`)
     },
     attachment$ () { return props.message$().attachment },
+    upload$ () {
+      const message = props.message$()
+      if (!message.outgoing || !message.attachment || !['pending', 'error'].includes(message.status)) return null
+      return { ...message.uploadProgress, status: message.status, root: message.attachment.root, url: message.attachment.url }
+    },
+    cancelUpload () { return props.onDelete(props.message$().id) },
+    retryUpload () { return props.onRetry(props.message$().id) },
     source$ () { return props.message$().localSource },
     quoteAttachment$ () { return this.quoted$()?.attachment },
     referencesPrepared$: true,
@@ -165,9 +172,9 @@ f('z-chat-message', ({ h, props }) => {
         oncontextmenu=${press.context} onkeydown=${press.key} onclick=${press.click}>
         <div class="message-growth" ref=${growth.outerRef$}><div class="message-growth-inner" ref=${growth.innerRef$}>
         ${!message.real && quoted ? h`<z-chat-quote props=${{ message$: () => ({ text: view.quoteContent$(), content: view.quoteMedia$(), attachment: view.quoteAttachment$() }), author$: view.quoteAuthor$ }} />` : null}
-        ${!message.real && message.attachment ? h`<z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, openMedia: view.openMedia }} />` : null}
+        ${!message.real && message.attachment ? h`<z-chat-attachment props=${{ attachment$: view.attachment$, source$: view.source$, upload$: view.upload$, cancelUpload: view.cancelUpload, retryUpload: view.retryUpload, openMedia: view.openMedia }} />` : null}
         <div class="message-text">${message.real
-          ? h`<z-chat-content props=${{ text$: view.content$, prepend$: () => props.message$().prepend ?? [], references$: props.references$, resolve$: props.resolve$, source$: view.source$, openMedia: view.openMedia }} />`
+          ? h`<z-chat-content props=${{ text$: view.content$, prepend$: () => props.message$().prepend ?? [], references$: props.references$, resolve$: props.resolve$, source$: view.source$, upload$: view.upload$, cancelUpload: view.cancelUpload, retryUpload: view.retryUpload, openMedia: view.openMedia }} />`
           : t(message.text)}</div>
         ${message.url ? h`<a class="message-link" href=${message.url} title=${message.url} aria-label=${message.url} target="_blank" rel="noopener noreferrer">${shortUrlLabel(message.url)}</a><a class="link-preview" href=${message.url} target="_blank" rel="noopener noreferrer"><small>example.com</small><strong>${t(message.preview)}</strong></a>` : null}
         ${message.reaction ? h`<span class="message-reaction" aria-label=${t('Reaction')}>${message.reaction}</span>` : null}

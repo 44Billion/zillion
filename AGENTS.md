@@ -790,9 +790,11 @@ needed; empty folders mark the initial structure.
   never restore a revoked URL from a cached signal or clear a valid same-media
   preview during unrelated updates. Reuse selected thumbnails in pending/confirmed bubbles, gallery and
   replies; do not reopen the original just to display the composer thumbnail.
-  Preview metadata retains an animation flag: confirmed animated image bubbles
-  play the original local file (GIF/WebP/APNG), while gallery, reply, composer,
-  pending-send and download-only thumbnails stay still. Native image decoding
+  Preview metadata retains an animation flag. Confirmed image bubbles decode
+  and display the original local file (static and animated); private originals
+  require completed transfer state. Keep the preview visible during decoding,
+  and react to completion without requiring a viewer visit. Gallery, reply,
+  composer, pending-send and download-only thumbnails stay still. Native image decoding
   discovers animation; WebP flags, PNG acTL and a conservative GIF fallback also
   work without ImageDecoder. Never persist this derived flag in kind 1063.
   Image source tasks clear even detached template nodes on route deactivation;
@@ -1168,6 +1170,22 @@ visibility; the media viewer still pages 1063 independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
 
 ## Private media transport
+
+- `views/chat/transfer-control.js` shares upload/download actions and progress.
+  Preview media uses a centered translucent circle with a determinate ring or
+  indeterminate spinner; other files use an icon before the linear progress.
+  Initial/`checking` states render no transfer control. `media-transfer-presentation.js`
+  adapts the public coordinator/storage callbacks: verified local reads stay
+  checking until a missing chunk is observed; no duplicate reads, timer heuristic
+  or persisted availability flag. Complete local files never display download
+  progress on reopening. The automatic size gate exposes an idle action only
+  after local checking confirms missing bytes.
+  Busy transfers cancel, errors retry, paused/cancelled downloads can restart,
+  and completion removes the control. Keep keyboard/pointer events inside the
+  action, translated accessible labels, and reduced-motion support. Pending
+  upload cancellation uses the existing message deletion/outbox cancellation.
+  `tests/browser/animated-attachments.browser.js` includes controlled transfer
+  notifications over real local nfiles to verify the original-image upgrade.
 
 - All original and thumbnail chunks use `dm:media:<root>` signers; no file bytes
   on the ordinary dm. Requests use dm, replies the file channel. Publish all bytes

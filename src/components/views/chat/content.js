@@ -33,7 +33,7 @@ f('z-chat-content', ({ h, props }) => {
       }
     `}</style>${items$().map((item, index) => h({ key: index })`<f-to-signals props=${{
       from: { item },
-      render: ({ h, props: data }) => h`<z-chat-content-item props=${{ item$: data.item$, references$: props.references$, resolve$: props.resolve$, source$: props.source$, openMedia: props.openMedia }} />`
+      render: ({ h, props: data }) => h`<z-chat-content-item props=${{ item$: data.item$, references$: props.references$, resolve$: props.resolve$, source$: props.source$, upload$: props.upload$, cancelUpload: props.cancelUpload, retryUpload: props.retryUpload, openMedia: props.openMedia }} />`
     }} />`)}</span>`
 })
 
@@ -57,7 +57,7 @@ f('z-chat-content-item', ({ h, props }) => {
     }
     if (resolved?.kind === CHAT_FILE_KIND) {
       const file = messageAttachment(resolved)
-      if (file) return h`<z-chat-attachment props=${{ attachment$: () => file, caption$: () => file.caption, source$: () => props.source$?.() ?? null, openMedia: props.openMedia }} />`
+      if (file) return h`<z-chat-attachment props=${{ attachment$: () => file, caption$: () => file.caption, source$: () => props.source$?.() ?? null, upload$: () => { const upload = props.upload$?.(); return upload && (upload.root ? upload.root === file.root : upload.url === file.url) ? upload : null }, cancelUpload: props.cancelUpload, retryUpload: props.retryUpload, openMedia: props.openMedia }} />`
     }
     // A `q`-only reference that does not resolve to a chat message adds
     // nothing, exactly like the previous q-tag behavior.

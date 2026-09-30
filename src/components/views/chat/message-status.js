@@ -21,9 +21,7 @@ f('z-chat-message-status', ({ h, props }) => {
       }
     `}</style>
     <span class="status-content" ref=${width.innerRef$}><time datetime=${message.datetime} title=${message.date} aria-hidden=${String(status !== 'saved')}>${message.time}</time>
-    ${status === 'pending' && message.uploadProgress?.total
-? h`<span role="status" aria-label=${t('Uploading file')}>${Math.floor(100 * message.uploadProgress.completed / message.uploadProgress.total)}%</span>`
-: status === 'pending'
+    ${status === 'pending'
       ? h`<span class="status-indicator" role="status" aria-label=${t('Saving message')} title=${t('Saving message')}><icon-clock props=${{ size: '14px', weight: 'regular' }} /></span>`
       : status === 'error'
         ? h`<button class="status-indicator" type="button" aria-label=${`${t('Could not save message')}. ${t('Retry')}`} title=${t('Could not save message')} aria-haspopup="menu" onpointerdown=${event => event.stopPropagation()} onclick=${props.onOpenError}><icon-alert-circle props=${{ size: '14px', weight: 'regular' }} /></button>`

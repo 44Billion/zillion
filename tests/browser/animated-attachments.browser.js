@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { checkTransferControls } from './transfer-controls-scenarios.js'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -77,7 +78,7 @@ test('animated attachments play in bubbles and release sources across viewer nav
     const show = async id => {
       await browser.until(() => evaluate(`!!document.querySelector('.route-page[data-active=true] [data-message-id="${id}"] .chat-attachment')`), 'attachment metadata rendered')
       await evaluate(`document.querySelector('.route-page[data-active=true] .chat-timeline').dispatchEvent(new WheelEvent('wheel', {deltaY:-100,bubbles:true})); document.querySelector('[data-message-id="${id}"]').scrollIntoView({block:'center'})`)
-      await browser.until(() => evaluate(`(() => { const image = document.querySelector(${JSON.stringify(imageSelector(id))}); if (!image?.complete || !image.naturalWidth) return false; const r = image.getBoundingClientRect(); if (r.top < 55 || r.bottom > innerHeight - 65) { image.scrollIntoView({block:'center'}); return false; } return image.checkVisibility({checkVisibilityCSS:true}); })()`), 'visible bubble image')
+      await browser.until(() => evaluate(`(() => { const image = document.querySelector(${JSON.stringify(imageSelector(id))}); if (!image?.complete || !image.naturalWidth || !image.src.startsWith('https://nostr.alt/')) return false; const r = image.getBoundingClientRect(); if (r.top < 55 || r.bottom > innerHeight - 65) { image.scrollIntoView({block:'center'}); return false; } return image.checkVisibility({checkVisibilityCSS:true}); })()`), 'visible bubble image')
     }
     const moving = async selector => {
       const rect = await evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return {x:r.x+r.width/2-8,y:r.y+r.height/2-8}; })()`)
@@ -110,12 +111,13 @@ test('animated attachments play in bubbles and release sources across viewer nav
     await evaluate('window.beforeAnimationReload = true; location.reload()')
     await browser.until(() => evaluate('!window.beforeAnimationReload && window.animationTest?.account.historyState$() === "loaded"'), 'offline reload')
     for (const id of ids) { await show(id); await moving(imageSelector(id)); console.log('Offline animation restored:', id) }
-    // Static images retain the reduced preview path.
+    // Static images also upgrade to the original once the local send is saved.
     const bytes = [...await readFile(path.join(root, 'tests/browser/fixtures/media/webp-False.webp'))]
     const id = await evaluate(`animationTest.send(${JSON.stringify(bytes)}, 'still.webp', 'image/webp')`)
     await browser.until(() => evaluate(`animationTest.account.messages$().find(m => m.id === '${id}')?.status === 'saved'`), 'static attachment saved')
     await show(id)
-    assert.ok(await evaluate(`document.querySelector(${JSON.stringify(imageSelector(id))}).src.startsWith('blob:')`), 'static WebP still uses thumbnail')
+    await browser.until(() => evaluate(`document.querySelector(${JSON.stringify(imageSelector(id))}).src.startsWith('https://nostr.alt/')`), 'static bubble upgrades to original')
+    await checkTransferControls({ browser, evaluate, id })
     assert.equal(browser.logs.filter(entry => entry.method === 'Runtime.exceptionThrown').length, 0, JSON.stringify(browser.logs))
   } catch (error) {
     console.error(error)

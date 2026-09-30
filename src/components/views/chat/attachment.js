@@ -14,13 +14,14 @@ import '#shared/icons/icon-file-download.js'
 import '#shared/icons/icon-file-text-shield.js'
 import '#shared/icons/icon-x.js'
 import './file-name.js'
+import './transfer-control.js'
 import { i18n } from '#i18n/index.js'
 import { attachmentSizeStyle, fileCategory, fileName, fileSize } from '#helpers/attachment-presentation.js'
 
 f('z-chat-attachment', ({ h, props }) => {
   const page = useRoutePage()
   const view = useStore({
-    retry$: 0, retryable: true, loadedFor: null, imageRef$: null, videoRef$: null, captionRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false,
+    retry$: 0, retryable: true, loadedFor: null, imageRef$: null, videoRef$: null, captionRef$: null, ready$: false, loaded$: false, failed$: false, source$: null, dimensions$: null, poster$: false, original$: null,
     // Caption starts clamped to two lines; each click reveals two more.
     captionLines$: 2,
     file$ () { return props.attachment$() || {} },
@@ -31,8 +32,17 @@ f('z-chat-attachment', ({ h, props }) => {
     size$ () { return this.dimensions$() || mediaDimensions(this.file$()) }
   })
   useSignerRecovery(() => { if (view.failed$() && view.retryable) view.retry$(n => n + 1) })
-  const transfer = useMediaTransfer(view.file$, () => !props.preview)
-  const download = useMediaDownload(() => view.file$().url, () => !props.preview, () => fileName(view.file$(), t('unnamed-file')).full, view.file$)
+  const transfer = useMediaTransfer(view.file$, () => !props.preview && !props.upload$?.())
+  const controls = useStore({
+    upload$ () { return props.upload$?.() },
+    state$ () { return this.upload$() || (view.file$().peer ? transfer.state$() : null) },
+    overlay$ () { return !!(view.size$() && /^(image|video)\//.test(view.file$().mime) && (view.placeholder$() || view.original$() || (view.source$() && !view.failed$()))) },
+    start () { return this.upload$() ? props.retryUpload?.() : transfer.start() },
+    cancel () { return this.upload$() ? props.cancelUpload?.() : transfer.cancel() },
+    originalAvailable$ () { return view.file$().url?.startsWith('https://nostr.alt/') && !props.preview && !this.upload$() && !props.source$?.() && (!view.file$().peer || transfer.state$()?.status === 'complete') },
+    source$ () { return view.original$() || view.source$() || (this.originalAvailable$() && view.file$().mime?.startsWith('video/') ? view.file$().url : null) }
+  })
+  const download = useMediaDownload(() => view.file$().url, () => !props.preview && !props.upload$?.(), () => fileName(view.file$(), t('unnamed-file')).full, view.file$)
   useTask(({ track, cleanup }) => {
     track(() => view.retry$())
     const identity = track(() => view.identity$())
@@ -60,10 +70,7 @@ f('z-chat-attachment', ({ h, props }) => {
           if (!controller.signal.aborted && prepared) {
             view.dimensions$({ width: prepared.width, height: prepared.height })
             view.poster$(true)
-            // The thumbnail stays still; only a confirmed image bubble plays
-            // the original. Pending sends still own an unpublished preview.
-            const animate = prepared.animated && !props.preview && file.download !== '1'
-            view.source$(animate ? url : prepared.source)
+            view.source$(prepared.source)
             if (file.mime.startsWith('video/') && !props.preview) view.loaded$(true)
           }
         } else {
@@ -75,9 +82,26 @@ f('z-chat-attachment', ({ h, props }) => {
     }
     resolve()
   }, { when: 'visible', rootMargin: '0px' })
+  // Decode the complete original offscreen while the existing preview remains
+  // visible. Completion is reactive even when no thumbnail could be prepared.
   useTask(({ track, cleanup }) => {
-    const { video, source, active, poster, transferStatus } = track(() => ({ video: view.videoRef$(), source: view.source$(), active: page.isActive$(), poster: view.poster$(), transferStatus: transfer.state$()?.status }))
-    if (!video || !source || !active || (view.file$().peer && transferStatus !== 'complete')) return
+    track(() => view.retry$())
+    const [available, active, url, mime, downloadOnly] = track(() => [controls.originalAvailable$(), page.isActive$(), view.file$().url, view.file$().mime, view.file$().download === '1'])
+    view.original$(null)
+    if (!available || !active || !mime?.startsWith('image/') || downloadOnly || !url?.startsWith('https://nostr.alt/')) return
+    const image = new Image()
+    let cancelled = false
+    cleanup(() => { cancelled = true; image.removeAttribute('src'); view.original$(null) })
+    image.src = url
+    image.decode().then(() => {
+      if (cancelled) return
+      view.dimensions$({ width: image.naturalWidth, height: image.naturalHeight })
+      view.original$(url)
+    }).catch(() => {})
+  }, { when: 'visible', rootMargin: '0px' })
+  useTask(({ track, cleanup }) => {
+    const { video, source, active, poster, transferStatus, uploading } = track(() => ({ video: view.videoRef$(), source: controls.source$(), active: page.isActive$(), poster: view.poster$(), transferStatus: transfer.state$()?.status, uploading: !!props.upload$?.() }))
+    if (!video || !source || !active || uploading || (view.file$().peer && transferStatus !== 'complete')) return
     // The DOM node can survive pending -> confirmed with an unchanged URL.
     // Own src here so cleanup cannot leave uhtml's attribute cache stale.
     video.src = poster ? view.file$().url : source
@@ -86,7 +110,7 @@ f('z-chat-attachment', ({ h, props }) => {
   // The template engine retains detached nodes. Explicitly clear original
   // animated image sources as well as thumbnails when the route is inactive.
   useTask(({ track, cleanup }) => {
-    const [image, source, active, failed] = track(() => [view.imageRef$(), view.source$(), page.isActive$(), view.failed$()])
+    const [image, source, active, failed] = track(() => [view.imageRef$(), controls.source$(), page.isActive$(), view.failed$() && !view.original$()])
     if (!image || !source || !active || failed) return
     const loaded = () => { if (image.complete && image.naturalWidth) view.loaded$(true) }
     const error = () => { if (image.complete && !image.naturalWidth) view.failed$(true) }
@@ -111,14 +135,16 @@ f('z-chat-attachment', ({ h, props }) => {
   const size = fileSize(file.size, i18n.getLocale())
   const forceDownload = file.download === '1' && !props.preview
   const isMedia = /^(image|video)\//.test(file.mime)
-  const visual = h`${view.placeholder$() && !view.loaded$() ? h`<img class="attachment-placeholder" src=${view.placeholder$()} alt="">` : null}${view.source$() && !view.failed$() && isMedia
-    ? file.mime.startsWith('image/') || (view.poster$() && (props.preview || forceDownload || (file.peer && transfer.state$()?.status !== 'complete')))
+  const control = () => h`<z-media-transfer-control props=${{ state$: controls.state$, overlay$: controls.overlay$, upload$: controls.upload$, start: controls.start, cancel: controls.cancel }} />`
+  const visual = h`${view.placeholder$() && !view.loaded$() ? h`<img class="attachment-placeholder" src=${view.placeholder$()} alt="">` : null}${controls.source$() && (!view.failed$() || view.original$() || (controls.originalAvailable$() && file.mime.startsWith('video/'))) && isMedia
+    ? file.mime.startsWith('image/') || (view.poster$() && (props.preview || forceDownload || props.upload$?.() || (file.peer && transfer.state$()?.status !== 'complete')))
       ? h`<img ref=${view.imageRef$} alt=${file.alt || name.full}>`
       : h`<video ref=${view.videoRef$} poster=${view.poster$() ? view.source$() : null} ?controls=${!forceDownload && !props.preview} ?muted=${forceDownload || props.preview} playsinline preload=${view.poster$() ? 'none' : 'metadata'} onplay=${event => { if (forceDownload || props.preview) event.target.pause() }} onloadeddata=${() => view.loaded$(true)} onerror=${() => view.failed$(true)}></video>`
     : null}`
   return h`<div class=${`chat-attachment ${props.preview ? 'attachment-preview' : ''}`} style=${props.preview ? null : attachmentSizeStyle(view.size$())} data-category=${fileCategory(file.mime)} data-chat-prepared=${String(view.ready$())}><style>${`
     z-chat-attachment .chat-attachment {
       display: block; min-width: 0; max-width: 100%; margin-block: 4px; white-space: normal; container-type: inline-size;
+      .attachment-visual { position: relative; display: block; }
       .attachment-frame { display: block; position: relative; width: 100%; height: min(360px, calc(100cqi / var(--attachment-ratio))); overflow: hidden; border-radius: 8px; background: var(--z-control); }
       .attachment-frame img, .attachment-frame video { display: block; width: 100%; height: 100%; object-fit: contain; }
       .attachment-frame[role=button] { cursor: zoom-in; }
@@ -133,9 +159,6 @@ f('z-chat-attachment', ({ h, props }) => {
       .attachment-download > icon-file-download { display: block !important; flex: none; }
       .attachment-name { flex: 1; min-width: 0; overflow: hidden; font-size: 14rem; }
       .attachment-size { display: block; color: var(--z-muted); font-size: 11rem; }
-      .transfer-control { display: flex; gap: 8px; align-items: center; font-size: 13rem; }
-      .transfer-control progress { flex: 1; min-width: 0; }
-      .transfer-control button { border: 0; padding: 6px; background: var(--z-control); color: var(--z-accent-text); border-radius: 6px; cursor: pointer; }
       .attachment-caption {
         display: -webkit-box; -webkit-box-orient: vertical; overflow: hidden;
         width: 100%; margin: 0; padding: 0; border: 0; background: transparent;
@@ -163,10 +186,11 @@ f('z-chat-attachment', ({ h, props }) => {
   `}</style>${props.preview
 ? h`<span class="attachment-frame">${!isMedia || view.failed$() || (!view.source$() && !view.placeholder$()) ? h`<span class="attachment-fallback" aria-hidden="true"><icon-file-text-shield props=${{ size: '32px', weight: 'light' }} /></span>` : null}${visual}</span>${size ? h`<span class="attachment-size">${size}</span>` : null}<span class="attachment-label"><z-file-name props=${{ file$: view.file$ }} /></span><button type="button" class="attachment-remove" aria-label=${t('Remove attachment')} onclick=${props.remove}><span><icon-x props=${{ size: '16px', weight: 'regular' }} /></span></button>`
 : h`${view.size$() && isMedia
-  ? forceDownload
+  ? h`<span class="attachment-visual">${forceDownload
     ? h`<a class="attachment-frame download-media" href=${download.href$()} target=${download.target} download=${download.attribute$()} aria-label=${t('Download file')} aria-disabled=${String(!download.href$())} onclick=${download.click}>${visual}</a>`
     : h`<span class="attachment-frame" role=${props.openMedia && file.mime.startsWith('image/') ? 'button' : null} tabindex=${props.openMedia && file.mime.startsWith('image/') ? '0' : null} aria-label=${props.openMedia ? t('View media') : null} onpointerdown=${open.down} onclick=${open.click} onkeydown=${open.key}>${visual}${props.openMedia && file.mime.startsWith('video/') ? h`<button class="media-expand" type="button" aria-label=${t('View media')} onclick=${open.expand}><icon-arrows-diagonal props=${{ size: '15px', weight: 'regular' }} /></button>` : null}</span>`
-        : null}<a class="attachment-download" href=${download.href$() || null} target=${download.target} download=${download.attribute$()} aria-disabled=${String(!download.href$())} title=${t('Download file')} onclick=${download.click}><icon-file-download props=${{ size: '24px', weight: 'regular' }} /><span class="attachment-name"><z-file-name props=${{ file$: view.file$ }} />${size ? h`<span class="attachment-size">${size}</span>` : null}</span></a>${file.peer && transfer.state$()?.status !== 'complete' ? h`<div class="transfer-control">${transfer.busy$() ? h`<progress max="100" value=${transfer.percent$()} aria-label=${t('Downloading file')}></progress><span>${transfer.percent$()}%</span><button type="button" onclick=${transfer.cancel}>${t('Cancel')}</button>` : h`<button type="button" onclick=${transfer.start}>${transfer.state$()?.status === 'error' ? t('Retry') : t('Download file')}</button>`}</div>` : null}${!props.preview && props.caption$?.() ? h`<button type="button" class="attachment-caption" aria-expanded=${String(view.captionLines$() > 2)} onpointerdown=${event => event.stopPropagation()} onclick=${event => { event.stopPropagation(); view.captionLines$(value => value + 2) }} ref=${view.captionRef$}>${props.caption$()}</button>` : null}`}
+}${controls.overlay$() ? control() : null}</span>`
+        : null}<a class="attachment-download" href=${download.href$() || null} target=${download.target} download=${download.attribute$()} aria-disabled=${String(!download.href$())} title=${t('Download file')} onclick=${download.click}><icon-file-download props=${{ size: '24px', weight: 'regular' }} /><span class="attachment-name"><z-file-name props=${{ file$: view.file$ }} />${size ? h`<span class="attachment-size">${size}</span>` : null}</span></a>${!controls.overlay$() ? control() : null}${!props.preview && props.caption$?.() ? h`<button type="button" class="attachment-caption" aria-expanded=${String(view.captionLines$() > 2)} onpointerdown=${event => event.stopPropagation()} onclick=${event => { event.stopPropagation(); view.captionLines$(value => value + 2) }} ref=${view.captionRef$}>${props.caption$()}</button>` : null}`}
   </div>`
 })
 

@@ -541,8 +541,11 @@ and durable; their attachment bytes have already been committed to launcher stor
 Confirmed attachments survive according to launcher storage retention.
 
 Local attachments read original bytes from nostr.alt outside the HTTP image cache
-and connectivity probes. Composer, bubbles, gallery and replies reuse reduced
-previews (at most 320px) instead of decoding the original again. The 8 MiB / 128-entry
+and connectivity probes. Composer, gallery and replies reuse reduced previews
+(at most 320px). Bubbles keep those previews while transferring, then decode and
+show the complete original
+image without opening the viewer. Pending sends and download-only attachments
+keep their still previews. The 8 MiB / 128-entry
 FIFO supplies cached gallery previews synchronously with a stable shared URL;
 eviction/replacement revokes it only after every consumer releases it. Reopening
 a cached tile therefore needs neither a placeholder transition nor another read
@@ -649,8 +652,12 @@ See [history regression and real-vault measurements](tests/browser/HISTORY.md).
 Originals and bounded thumbnails now use a separate encrypted channel per peer
 pair and MMR root. Metadata/messages follow confirmed upload. Small originals
 (up to 1 MiB) download automatically; larger files wait for action. Bubbles show
-ThumbHash/thumbnail previews and upload/download progress with cancellation and
-retry. Manual download intent survives reload encrypted; partial bytes are reused.
+ThumbHash/thumbnail previews and shared upload/download controls: a centered
+translucent action with a progress ring over previews, or an action before a
+progress bar for other files. Cancel and retry use icons with accessible labels.
+Reopening downloaded media checks local availability without flashing download
+controls; progress appears only when bytes are missing.
+Manual download intent survives reload encrypted; partial bytes are reused.
 All media entry points share the library coordinator. See
 [private media transport](docs/private-chats.md#per-file-data-channels-libp2r2p-011).
 
