@@ -4,10 +4,11 @@ import { createChatOutbox } from '#services/chat-outbox.js'
 
 const parameters = new URL(location.href).searchParams
 const queueGate = Promise.withResolvers()
-const boot = window.contactBoot = { started: performance.now(), negativeFrames: 0, contactReads: 0, queueStarted: false, queueFinished: false }
+const boot = window.contactBoot = { started: performance.now(), negativeFrames: 0, transferFrames: 0, contactReads: 0, queueStarted: false, queueFinished: false }
 boot.releaseQueue = queueGate.resolve
 // Observe every intermediate DOM state, including a one-frame false invitation.
 new MutationObserver(() => {
+  if (document.querySelector('.media-transfer')) boot.transferFrames++
   if (document.querySelector('.route-page[data-active=true] .contact-invitation, .route-page[data-active=true] .contact-profile')) boot.negativeFrames++
 }).observe(document.documentElement, { childList: true, subtree: true })
 

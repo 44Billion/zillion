@@ -21,6 +21,8 @@ test('animated attachments play in bubbles and release sources across viewer nav
     options.sourcemap = false
     options.plugins.push({
       name: 'animated-attachments-test', setup (build) {
+        const mediaFixture = path.join(root, 'tests/browser/fixtures/transfer-media.js')
+        build.onResolve({ filter: /private-media\.js$/ }, args => args.importer === mediaFixture ? null : { path: mediaFixture })
         build.onLoad({ filter: /src\/components\/views\/chat\/composer\.js$/ }, async args => ({
           contents: (await readFile(args.path, 'utf8')).replace("from '#services/chat-attachments.js'", "from '../../../../tests/browser/fixtures/staged-attachment.js'"),
           loader: 'js', resolveDir: path.dirname(args.path)

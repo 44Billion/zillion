@@ -1197,10 +1197,21 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   indeterminate spinner; other files use an icon before the linear progress.
   Initial/`checking` states render no transfer control. `media-transfer-presentation.js`
   adapts the public coordinator/storage callbacks: verified local reads stay
-  checking until a missing chunk is observed; no duplicate reads, timer heuristic
-  or persisted availability flag. Complete local files never display download
+  checking until a missing chunk is observed; no timer heuristic or persisted
+  availability flag. Complete local files never display download
   progress on reopening. The automatic size gate exposes an idle action only
-  after local checking confirms missing bytes.
+  after local checking confirms missing bytes. `private-chats.js` checks local
+  originals before waiting for contact membership or session configuration.
+  `local-media.js` consumes the public event-store chunk adapter's verified stream
+  with two concurrent readers and shares in-flight checks across consumers. Keep
+  only 128 verified descriptors in session memory, never file bytes or a persisted
+  availability flag. Only missing bytes wait for remote authorization/readiness.
+  Storage/proof errors remain errors; cancelled consumers cannot release another
+  reader's work. The guarded contact-readiness test must render cached photo/video
+  originals, open both viewers and download a PDF while transport stays blocked.
+  `private-media.js` reports completion even when a cached-file read emits no
+  transfer notification, and exposes failures before coordinator startup to Retry.
+  Preserve coordinator validation and never infer availability from metadata.
   Busy transfers cancel, errors retry, paused/cancelled downloads can restart,
   and completion removes the control. Keep keyboard/pointer events inside the
   action, translated accessible labels, and reduced-motion support. Pending

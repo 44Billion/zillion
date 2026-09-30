@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import os from 'node:os'
 import path from 'node:path'
 import esbuild from 'esbuild'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
@@ -11,6 +12,7 @@ import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 
 test('direct peer routes wait for local contact membership without waiting for transport recovery', { timeout: 120000 }, async () => {
+  const downloads = await mkdtemp(path.join(os.tmpdir(), 'zillion-cached-downloads-'))
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
@@ -79,6 +81,12 @@ test('direct peer routes wait for local contact membership without waiting for t
     await evaluate(`contactBoot.account.setContact('${peer}', true)`)
     await browser.until(() => evaluate(`contactBoot.account.personFor('${peer}').saved === true`), 'contact persisted')
     await evaluate(`napp.eventStore.addPersonalCopy({kind:9,created_at:Math.floor(Date.now()/1000),tags:[],content:'Local peer history'}, {context:'dm:${peer}'})`)
+    const mediaRoot = await evaluate(`contactBoot.seedCachedMedia('${peer}')`)
+    const video = { bytes: [...await readFile(path.join(root, 'tests/browser/fixtures/media/vp9.webm'))], name: 'cached-video.webm', type: 'video/webm' }
+    await evaluate(`contactBoot.seedCachedMedia('${peer}', ${JSON.stringify(video)})`)
+    const pdf = Buffer.from('%PDF-1.4\n1 0 obj <</Type /Catalog>> endobj\n%%EOF\n')
+    await evaluate(`contactBoot.seedCachedMedia('${peer}', ${JSON.stringify({ bytes: [...pdf], name: 'cached-document.pdf', type: 'application/pdf', unknownSize: true })})`)
+    await browser.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: downloads, eventsEnabled: true })
     const reload = async () => {
       await browser.evaluate(`(() => {
         const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
@@ -98,6 +106,8 @@ test('direct peer routes wait for local contact membership without waiting for t
     assert.equal(await evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled")'), 'true')
     await browser.until(() => evaluate(`contactBoot.account.conversations$()['${peer}']?.historyLoaded`), 'local peer history independent of transport')
     assert.equal(await evaluate(`contactBoot.account.conversations$()['${peer}'].messages.some(m => m.content === 'Waiting draft')`), false)
+    await browser.until(() => evaluate('!!document.querySelector(".chat-attachment") && contactBoot.mediaStates.length > 0'), 'cached peer attachment mounted during initialization')
+    assert.equal(await evaluate('contactBoot.transferFrames'), 0, 'startup must not present a download or retry action')
     await evaluate('contactBoot.failContacts()')
     await browser.until(() => evaluate('document.querySelector(".chat-date").textContent.includes("Could not load conversation") && !!document.querySelector(".chat-date .retry-btn")'), 'unavailable membership offers retry')
     assert.equal(await evaluate('contactBoot.negativeFrames'), 0)
@@ -110,8 +120,32 @@ test('direct peer routes wait for local contact membership without waiting for t
     assert.equal(await evaluate('contactBoot.negativeFrames'), 0)
     assert.equal(await evaluate('contactBoot.queueFinished'), false, 'contact decision does not await the outbox')
     console.log('Local contact decision while transport is held:', await evaluate('contactBoot.contactsMs'), 'ms')
+    await browser.until(() => evaluate(`contactBoot.mediaStates.some(state => state.root === '${mediaRoot}' && state.status === 'complete')`), 'cached original completes while transport remains blocked', 5000)
+    const attachment = name => `[...document.querySelectorAll('.route-page[data-active=true] .chat-attachment')].find(node => node.textContent.includes('${name}'))`
+    const photo = attachment('cached-photo.png')
+    const movie = attachment('cached-video.webm')
+    await evaluate(`${photo}.scrollIntoView({block:'center'})`)
+    await browser.until(() => evaluate(`${photo}?.querySelector('img:not(.attachment-placeholder)')?.src.startsWith('https://nostr.alt/') && ${photo}.querySelector('img:not(.attachment-placeholder)').naturalWidth === 320`), 'cached photo original renders while transport is blocked')
+    await evaluate(`${photo}.querySelector('.attachment-frame').click()`)
+    await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .viewer-asset[data-current=true] img")?.naturalWidth'), 'photo click opens a loaded media viewer without transport')
+    await evaluate('document.querySelector(".route-page[data-active=true] .viewer-close").click()')
+    await browser.until(() => evaluate(`!!${movie}`), 'return to cached video bubble')
+    await evaluate(`${movie}.scrollIntoView({block:'center'})`)
+    await browser.until(() => evaluate(`${movie}?.querySelector('video')?.src.startsWith('https://nostr.alt/')`), 'cached original video is available without transport')
+    await evaluate(`(() => { const video = ${movie}.querySelector('video'); video.muted = true; return video.play(); })()`)
+    await browser.until(() => evaluate(`${movie}.querySelector('video').currentTime > 0`), 'cached video playback advances without transport')
+    await evaluate(`${movie}.querySelector('.media-expand').click()`)
+    await browser.until(() => evaluate('document.querySelector(".route-page[data-active=true] .viewer-asset[data-current=true] video")?.readyState >= 2'), 'video expands into loaded media viewer without transport')
+    await evaluate('document.querySelector(".route-page[data-active=true] .viewer-close").click()')
+    const document = attachment('cached-document.pdf')
+    await browser.until(() => evaluate(`!!${document}?.querySelector('.attachment-download')?.getAttribute('href')`), 'cached PDF has a native download link without transport')
+    await evaluate(`${document}.querySelector('.attachment-download').click()`)
+    await browser.until(async () => { try { return (await readFile(path.join(downloads, 'cached-document.pdf'))).equals(pdf) } catch { return false } }, 'native browser download writes exact cached PDF bytes', 10000)
+    assert.equal(await evaluate('contactBoot.queueFinished'), false, 'originals, viewer and native downloads all work before transport initialization finishes')
+    console.log('Cached photo/video originals, both viewer clicks and native PDF download verified with transport held')
     await evaluate('contactBoot.releaseQueue()')
     await browser.until(() => evaluate('contactBoot.queueFinished'), 'transport released')
+    assert.equal(await evaluate('contactBoot.transferFrames'), 0, 'local cache hits never flash transfer actions or progress')
     await evaluate(`contactBoot.account.setContact('${peer}', false)`)
     await browser.until(() => evaluate('!!document.querySelector(".contact-invitation") && !document.querySelector(".chat-composer")'), 'confirmed removal blocks sending')
     await reload()
@@ -123,7 +157,7 @@ test('direct peer routes wait for local contact membership without waiting for t
   } catch (error) {
     for (const context of browser?.contexts.values() || []) {
       if (!/^http:\/\/[0-9]+\.localhost/.test(context.origin) || !context.auxData?.isDefault) continue
-      console.log('Contact readiness diagnostic:', await browser.evaluate('({ state: contactBoot.account?.contactsState$(), ready: contactBoot.account?.ready$(), signer: contactBoot.account?.signerState$(), contacts: contactBoot.account?.contacts$().length, negativeFrames: contactBoot.negativeFrames, text: document.querySelector(".chat-composer textarea")?.value })', context.origin).catch(() => null))
+      console.log('Contact readiness diagnostic:', await browser.evaluate('({ state: contactBoot.account?.contactsState$(), ready: contactBoot.account?.ready$(), signer: contactBoot.account?.signerState$(), contacts: contactBoot.account?.contacts$().length, negativeFrames: contactBoot.negativeFrames, media: contactBoot.mediaStates, text: document.querySelector(".chat-composer textarea")?.value })', context.origin).catch(() => null))
       break
     }
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/contact-readiness'))
@@ -132,5 +166,6 @@ test('direct peer routes wait for local contact membership without waiting for t
     clearInterval(permissions)
     await browser?.close()
     await runtime.close()
+    await rm(downloads, { recursive: true, force: true })
   }
 })

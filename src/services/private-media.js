@@ -21,6 +21,20 @@ export function attachPrivateMediaTransport (value) {
 export async function ensurePrivateMedia (file, options = {}) {
   if (!file?.peer || !file.root) return
   if (!transport) throw new Error('CHAT_UNAVAILABLE')
-  return transport.download(file, options)
+  options.signal?.throwIfAborted()
+  if (!mediaState(file) || ['idle', 'error', 'cancelled', 'paused'].includes(mediaState(file).status)) reportPrivateMedia({ ...file, status: 'checking' })
+  const before = mediaState(file)
+  try {
+    const result = await transport.download(file, options)
+    options.signal?.throwIfAborted()
+    // Cached files and self-chat can complete without coordinator notifications.
+    if (mediaState(file)?.status !== 'complete') reportPrivateMedia({ ...file, status: 'complete' })
+    return result
+  } catch (error) {
+    if (!options.signal?.aborted && error.name !== 'AbortError' && mediaState(file) === before) {
+      reportPrivateMedia({ ...file, status: error.message === 'FILE_DOWNLOAD_REQUIRES_ACTION' ? 'idle' : 'error' })
+    }
+    throw error
+  }
 }
 export const cancelPrivateMedia = file => transport?.cancelDownload(file)

@@ -665,7 +665,11 @@ ThumbHash/thumbnail previews and shared upload/download controls: a centered
 translucent action with a progress ring over previews, or an action before a
 progress bar for other files. Cancel and retry use icons with accessible labels.
 Reopening downloaded media checks local availability without flashing download
-controls; progress appears only when bytes are missing.
+controls; progress appears only when bytes are missing. Verified local originals
+are available to bubbles, the viewer and native downloads even while contact
+discovery or transport recovery is pending. Only missing bytes wait for contact
+authorization and transport readiness. Cached completion also clears Retry
+when no transfer notification is needed.
 Manual download intent survives reload encrypted; partial bytes are reused.
 All media entry points share the library coordinator. See
 [private media transport](docs/private-chats.md#per-file-data-channels-libp2r2p-011).

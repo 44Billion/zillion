@@ -2,8 +2,10 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { IDBFactory } from 'fake-indexeddb'
 import { getEventHash } from 'libp2r2p/event'
+import { prepareIrfsFile } from 'libp2r2p/irfs'
 import { createPrivateChats } from '#services/private-chats.js'
 import { createChatOutbox } from '#services/chat-outbox.js'
+import { ensurePrivateMedia } from '#services/private-media.js'
 import { contactMembership } from '#services/contacts.js'
 
 const owner = 'a'.repeat(64)
@@ -13,7 +15,7 @@ const active = { access: 'allowed', connection: 'connected', isLocked: false, is
 const event = { kind: 9, created_at: 100, tags: [['salt', 'stable']], content: 'hello', pubkey: owner }
 const until = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)) }; assert.fail('condition not reached') }
 
-function fixture ({ fileAuthorize = async () => {}, fileDownload = async () => {}, downloadPut = async () => {}, downloadRemove = async () => {}, primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
+function fixture ({ beforeOpen = async () => {}, fileAuthorize = async () => {}, fileDownload = async () => {}, downloadPut = async () => {}, downloadRemove = async () => {}, primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
   const grants = []; const errors = []; const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
   const signer = { getPublicKey: async () => primary, withSharedKey: (pubkey, info) => { assert.equal(info, 'dm'); return { getPublicKey: async () => `channel:${pubkey}` } } }
   const messenger = {
@@ -38,7 +40,7 @@ function fixture ({ fileAuthorize = async () => {}, fileDownload = async () => {
     openDownloads: async () => ({ list: async () => [], put: downloadPut, remove: downloadRemove, close: async () => {} }),
     owner: primary, signer, eventStore: { query, addPersonalCopy: async (...args) => { writes.push(args); return save(...args) } },
     Messenger: async options => { callbacks = options; return messenger },
-    openOutbox: async () => ({ list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} }),
+    openOutbox: async () => { await beforeOpen(); return { list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} } },
     onOutbox: list => states.push(structuredClone(list)), onError: error => errors.push(error)
   })
   return { transport, grants, errors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
@@ -332,4 +334,88 @@ test('authorization failure blocks publication and retry preserves sharing time;
     assert.deepEqual(f.grants.map(grant => grant.sharedAt), [100, 100, 200])
     assert.ok(f.grants.every(grant => grant.file.root === prepared.root))
   } finally { await f.transport.close(); prepared.close() }
+})
+
+test('media opened with local history waits for both contact discovery and transport recovery', async t => {
+  const held = Promise.withResolvers()
+  let downloads = 0
+  const f = fixture({ beforeOpen: () => held.promise, fileDownload: async file => { downloads++; return file } })
+  t.after(() => { held.resolve(); return f.transport.close() })
+  const state = f.transport.setState(active)
+  const file = { peer, root: 'd'.repeat(64), size: 100 }
+  let finished = false
+  const media = ensurePrivateMedia(file).finally(() => { finished = true })
+  // Attach a rejection handler immediately so the pre-fix failure is inspectable.
+  media.catch(() => {})
+  await new Promise(resolve => setTimeout(resolve, 10))
+  assert.equal(finished, false, 'startup is a wait, not a download failure')
+  held.resolve()
+  await state
+  assert.equal(downloads, 0, 'contact membership must also be known')
+  await f.transport.setPeers([peer])
+  await media
+  assert.equal(downloads, 1)
+})
+
+test('aborting one startup consumer preserves another; cancel and close stop waiting downloads', async t => {
+  const held = Promise.withResolvers()
+  let downloads = 0
+  const f = fixture({ beforeOpen: () => held.promise, fileDownload: async () => { downloads++ } })
+  t.after(() => { held.resolve(); return f.transport.close() })
+  const state = f.transport.setState(active)
+  const peers = f.transport.setPeers([peer])
+  const file = { peer, root: 'd'.repeat(64), size: 100 }
+  const controller = new AbortController()
+  const first = f.transport.download(file, { signal: controller.signal })
+  const second = f.transport.download(file)
+  controller.abort()
+  await assert.rejects(first, { name: 'AbortError' })
+  await f.transport.cancelDownload(file)
+  await assert.rejects(second, { name: 'AbortError' })
+  const third = f.transport.download(file)
+  held.resolve()
+  await Promise.all([state, peers, third])
+  assert.equal(downloads, 1, 'cancelled startup work never reaches the coordinator')
+  await f.transport.close()
+  await assert.rejects(f.transport.download(file), { name: 'AbortError' })
+})
+
+test('startup failures remain errors and a resumed session lets media retry', async t => {
+  let fail = true
+  const f = fixture({ beforeOpen: async () => { if (fail) throw new Error('STORAGE_UNAVAILABLE') } })
+  t.after(() => f.transport.close())
+  await f.transport.setPeers([peer])
+  await assert.rejects(f.transport.setState(active), /STORAGE_UNAVAILABLE/)
+  const file = { peer, root: 'd'.repeat(64), size: 100 }
+  await assert.rejects(ensurePrivateMedia(file), /STORAGE_UNAVAILABLE/)
+  fail = false
+  await f.transport.setState(active)
+  await ensurePrivateMedia(file, { manual: true })
+  await f.transport.setPeers([])
+  await ensurePrivateMedia(file)
+  await assert.rejects(ensurePrivateMedia({ ...file, root: 'e'.repeat(64) }), /CHAT_UNAVAILABLE/, 'local reads never authorize remote downloads from a removed contact')
+  await f.transport.setState({ ...active, isLocked: true })
+  await assert.rejects(ensurePrivateMedia(file), /CHAT_UNAVAILABLE/)
+})
+
+test('cached peer originals remain available while transport initialization never finishes', async t => {
+  const held = Promise.withResolvers()
+  const prepared = await prepareIrfsFile(new Uint8Array(1048577).fill(7))
+  const chunks = await Array.fromAsync(prepared.chunks())
+  let queries = 0
+  let remote = 0
+  const f = fixture({
+    beforeOpen: () => held.promise,
+    fileDownload: async () => { remote++; throw new Error('NETWORK_MUST_NOT_RUN') },
+    query: async filter => { queries++; return { results: chunks.filter(chunk => chunk.tags.some(tag => tag[0] === 'd' && tag[1] === filter['#d']?.[0])) } }
+  })
+  t.after(async () => { held.resolve(); await f.transport.close(); prepared.close() })
+  const setup = f.transport.setState(active)
+  const file = { peer, root: prepared.root, size: prepared.size }
+  await ensurePrivateMedia(file, { signal: AbortSignal.timeout(1000) })
+  await ensurePrivateMedia(file, { manual: true, signal: AbortSignal.timeout(1000) })
+  assert.equal(queries, chunks.length, 'bubble and click share verified local availability')
+  assert.equal(remote, 0)
+  held.resolve()
+  await setup
 })
