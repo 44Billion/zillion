@@ -185,3 +185,25 @@ test('visible preparation awaits the same targeted lookup while cache reads rema
   assert.equal(queries, 1)
   references.clear()
 })
+
+test('summary metadata wins over an older pending miss and respects deletions', async () => {
+  const file = innerEvent({ kind: 1063, content: 'Already loaded' })
+  const read = Promise.withResolvers()
+  const notifications = []
+  const references = createChatReferences({
+    pubkey, signer, eventStore: { query: () => read.promise },
+    onResolved: (id, event) => notifications.push(event)
+  })
+  const pending = references.prepare(file)
+  references.seed([file])
+  assert.equal(references.prepare(file), file)
+  read.resolve({ results: [] })
+  assert.equal(await pending, file)
+  assert.equal(references.prepare(file), file)
+  assert.deepEqual(notifications, [file])
+  references.remove([file.id])
+  references.seed([file])
+  assert.equal(references.prepare(file), null)
+  assert.deepEqual(notifications, [file, null])
+  references.clear()
+})

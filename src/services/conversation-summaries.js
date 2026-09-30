@@ -27,6 +27,7 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
       const seen = new Set()
       let page = [wrapper]
       let best
+      let copies = []
       // Wrapper IDs and inner IDs differ. Resolve only the newest timestamp's
       // ties in bounded pages so its preview agrees with the chat's last bubble.
       while (page.length && current()) {
@@ -34,12 +35,14 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
           if (!current()) return null
           seen.add(copy.id)
           const event = await decryptPersonalCopy(copy, { pubkey, signer, encodedContext: entry.context, authors: [pubkey, entry.peer] })
-          if (event?.kind === 9 && (!best || compareChatMessages(event, best) > 0)) best = event
+          if (event?.kind !== 9) continue
+          if (!best || compareChatMessages(event, best) > 0) { best = event; copies = [] }
+          if (event.id === best.id) copies.push({ id: copy.id, created_at: copy.created_at })
         }
         if (!current()) return null
         page = (await read({ since: timestamp, until: timestamp, '!ids': [...seen], limit: 16 })).results
       }
-      if (best) return best
+      if (best) return { event: best, copies }
       if (!current() || timestamp === 0) return null
       // An invalid wrapper does not hide the latest valid local message.
       wrapper = (await read({ until: timestamp - 1, limit: 1 })).results[0]
@@ -57,7 +60,7 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
         const revision = entry.revision
         const current = () => active(entry) && entry.revision === revision
         try {
-          const event = await latest(entry, entry.first, current)
+          const { event = null, copies = [] } = await latest(entry, entry.first, current) || {}
           const references = {}
           // Point lookups only, with the same personal-copy admission as chat.
           const reader = createChatReferences({ pubkey, signer, eventStore, context: `dm:${entry.peer}` })
@@ -68,7 +71,7 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
             if (resolved) references[reference.id] = resolved
           }
           reader.clear()
-          if (current()) emit(entry, { event, references, state: 'loaded' })
+          if (current()) emit(entry, { event, copies, references, state: 'loaded' })
         } catch (error) {
           if (current()) { emit(entry, { state: 'unavailable' }); onError(error) }
         }

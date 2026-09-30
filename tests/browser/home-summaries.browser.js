@@ -84,8 +84,8 @@ test('cold home previews and ordering load independently of self and contact his
     for (const contact of [pubkey, peer, other]) {
       await evaluate(`(async () => { for (let index = 0; index < 12; index++) await contactBoot.seedMessage({ peer: '${contact}', at: ${base} + index, text: 'Older message ' + index }) })()`)
     }
-    await evaluate(`contactBoot.seedMessage({ peer: '${pubkey}', at: ${base + 100}, filename: 'self-notes.pdf' })`)
-    await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 200}, text: 'Latest contact text' })`)
+    const selfLatest = await evaluate(`contactBoot.seedMessage({ peer: '${pubkey}', at: ${base + 100}, filename: 'self-notes.pdf' })`)
+    const peerLatest = await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 200}, text: 'Latest contact text' })`)
     const newest = await evaluate(`contactBoot.seedMessage({ peer: '${other}', at: ${base + 300}, filename: 'trip.pdf', caption: 'Trip caption' })`)
     await browser.evaluate(`(() => {
       const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
@@ -93,11 +93,13 @@ test('cold home previews and ordering load independently of self and contact his
     })()`)
     await browser.until(() => evaluate(`['${pubkey}', '${peer}', '${other}', '${empty}'].every(peer => contactBoot.account.summaries$()[peer]?.state === 'loaded')`), 'cold local summaries ready before visiting any conversation')
     const rows = () => evaluate('[...document.querySelectorAll(\'.route-page[data-active=true] .conversation button\')].map(button => ({ id: button.dataset.contactId, preview: button.querySelector(\'.preview\').textContent }))')
-    assert.deepEqual(await rows(), [
+    const expectedRows = [
       { id: other, preview: 'Trip caption' },
       { id: peer, preview: 'Latest contact text' },
       { id: 'user', preview: 'self-notes.pdf' }
-    ])
+    ]
+    await browser.until(async () => JSON.stringify(await rows()) === JSON.stringify(expectedRows), 'summary state is rendered in all home rows')
+    assert.deepEqual(await rows(), expectedRows)
     assert.equal(await evaluate('contactBoot.queueFinished'), false)
     assert.equal(await evaluate('contactBoot.account.historyLoaded$()'), false, 'self history stays lazy')
     assert.equal(await evaluate('contactBoot.account.messages$().length'), 0)
@@ -116,14 +118,26 @@ test('cold home previews and ordering load independently of self and contact his
     await evaluate(`napp.eventStore.addPersonalCopy({kind:5,created_at:Math.floor(Date.now()/1000),tags:[['e','${newest}'],['k','9']],content:''},{context:'dm:${other}'})`)
     await browser.until(async () => { const list = await rows(); return list[0]?.id === peer && list[2]?.preview === 'Older message 11' }, 'another deletion falls back to older local history')
     const beforeVisit = await rows()
-    for (const [contact, key] of [['user', pubkey], [peer, peer]]) {
+    for (const [contact, key, id, text] of [['user', pubkey, selfLatest, 'self-notes'], [peer, peer, peerLatest, 'Latest contact text']]) {
+      await evaluate('contactBoot.holdHistory()')
       await evaluate(`document.querySelector('.route-page[data-active=true] .conversation button[data-contact-id="${contact}"]').click()`)
-      await browser.until(() => evaluate(contact === 'user' ? 'contactBoot.account.historyLoaded$()' : `contactBoot.account.conversations$()['${key}']?.historyLoaded`), 'history starts only on visiting the conversation')
+      const loaded = contact === 'user' ? 'contactBoot.account.historyLoaded$()' : `!!contactBoot.account.conversations$()['${key}']?.historyLoaded`
+      await browser.until(() => evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${id}"] .chat-bubble')?.textContent.includes('${text}')`), 'latest bubble and its content are immediately available while history delivery is held')
+      assert.equal(await evaluate(loaded), false)
+      assert.equal(await evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length'), 1)
+      assert.ok(await evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${id}"]').textContent.includes('${text}')`), 'text or filename is already expanded')
+      assert.ok(await evaluate('document.querySelector(\'.route-page[data-active=true] .chat-date[role=status]\').textContent.includes(\'Loading conversation\')'))
+      await evaluate(`contactBoot.lastBubble = document.querySelector('.route-page[data-active=true] [data-message-id="${id}"] .chat-bubble')`)
+      await evaluate('contactBoot.releaseHistory()')
+      await browser.until(() => evaluate(loaded), 'history starts only on visiting the conversation')
+      await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 13'), 'earlier messages join the existing latest bubble')
+      assert.equal(await evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${id}"] .chat-bubble') === contactBoot.lastBubble`), true, 'the latest bubble keeps its DOM node through history loading')
+      assert.equal(await evaluate(`document.querySelectorAll('.route-page[data-active=true] [data-message-id="${id}"]').length`), 1)
       await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
       await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .conversations")'), 'return to chat list')
       assert.deepEqual(await rows(), beforeVisit, 'visiting a conversation does not repair or change its preview/order')
     }
-    console.log('Cold previews, metadata-only reads, ordering, live updates, deletions and lazy histories verified')
+    console.log('Cold previews, metadata-only reads, ordering, live updates, deletions, immediate cached bubbles and lazy histories verified')
     await evaluate('contactBoot.releaseQueue()')
   } catch (error) {
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/home-summaries'))

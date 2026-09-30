@@ -97,6 +97,16 @@ export function createChatReferences ({
     // Pending outbox events by inner id; messages read them before the store.
     locals,
     peek: id => locals.get(id) || cache.get(id),
+    // Already admitted metadata from the conversation-list reader shares the
+    // normal cache, including its deletion and recovery lifecycle.
+    seed (events) {
+      for (const event of events) {
+        if (removed.has(event.id) || locals.has(event.id) || cache.get(event.id)) continue
+        misses.delete(event.id)
+        cache.set(event.id, event)
+        onResolved(event.id, event)
+      }
+    },
     refresh (event) {
       if (event.hearsay || (!locals.has(event.id) && !cache.has(event.id))) return
       if (locals.has(event.id)) locals.set(event.id, event)
@@ -152,6 +162,8 @@ export function createChatReferences ({
         pending.set(id, load(id)
           .then(event => {
             if (removed.has(id)) return null
+            // A summary can fill the cache while this older read is pending.
+            if (cache.get(id)) return cache.get(id)
             cache.set(id, event)
             if (event) onResolved(id, event)
             else misses.add(id)

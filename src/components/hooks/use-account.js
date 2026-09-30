@@ -42,7 +42,7 @@ export function useInitAccount () {
   useInitPrivateChats(account)
   useInitConversationSummaries(account)
   const runtime = useMemo(() => ({ chat: null, opened: false }))
-  account.openSelfConversation = () => { runtime.opened = true; return runtime.chat ? runtime.chat.start() : account.recover() }
+  account.openSelfConversation = () => { runtime.opened = true; return runtime.chat ? runtime.chat.start(account.summaries$()[account.pubkey$()]) : account.recover() }
   account.send = (content, replyTo, attachment) => {
     if (!runtime.chat) throw new Error('Account unavailable')
     return runtime.chat.send(content, replyTo, attachment)
@@ -113,7 +113,7 @@ export function useInitAccount () {
           runtime.chat.applyOutbox(account.outbox$())
           account.ready$(true)
           loadProfile(pubkey, eventStore)
-          return runtime.opened ? await runtime.chat.start() : true
+          return runtime.opened ? await runtime.chat.start(account.summaries$()[pubkey]) : true
         } catch (error) {
           if (!closed) { account.historyState$('unavailable'); account.ready$(true); report(error) }
           return false
@@ -185,7 +185,7 @@ function useInitPrivateChats (account) {
       chat.applyOutbox(runtime.outbox)
     }
     patch(peer, { error: null })
-    await runtime.chats.get(peer).start()
+    await runtime.chats.get(peer).start(account.summaries$()[peer])
   }
   account.chatFor = peer => runtime.chats.get(peer)
   account.recoverContacts = () => runtime.contacts?.start() ?? Promise.resolve(false)

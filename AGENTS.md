@@ -571,9 +571,18 @@ needed; empty folders mark the initial structure.
   Existing/pending visible chat messages can supplement a newer local preview.
   Nonself empty contacts remain in the strip/directory, not the active-chat list;
   self keeps the Notes shortcut but is sorted by its actual last-message time.
+- Opening a self/peer chat passes its account-store summary into the service's
+  first `start(snapshot)`. Reuse the admitted inner event and reference metadata
+  synchronously; keep all matching wrapper IDs/timestamps so the normal history
+  revalidation can remove deleted copies and skip repeat decryption. Do not
+  overwrite pending/failed outbox state, duplicate bubbles, or mark history ready.
+  Later starts/recovery never reapply a stale summary. Reference-cache seeding
+  respects deletions and cannot be overwritten by an older pending lookup.
 - Guarded `tests/browser/home-summaries.browser.js` checks a cold home with held
   transport, captions/filenames, no media-byte reads, ordering, live updates,
-  deletions and lazy self/peer histories. Visiting a chat must not repair its row.
+  deletions and lazy self/peer histories. Hold real history delivery to verify
+  the latest bubble/metadata appears during loading and keeps its DOM node when
+  earlier messages arrive. Visiting a chat must not repair its row.
 
 ## Real self chat
 

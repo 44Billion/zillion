@@ -27,6 +27,7 @@ f('z-home-conversation', ({ h, props }) => {
           .name, .preview { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
           .name { font-size: 16rem; font-weight: 550; line-height: 20px; letter-spacing: -.15px; }
           .preview { font-size: 13rem; line-height: 18px; color: var(--z-muted); }
+          .preview.placeholder { font-style: italic; opacity: .9; }
           .metadata { display: flex; flex-direction: column; align-items: end; gap: 6px; align-self: stretch; padding-top: 2px; }
           time { font-size: 10rem; line-height: 15px; color: var(--z-subtle); white-space: nowrap; }
           .unread .name { font-weight: 650; }
@@ -38,7 +39,7 @@ f('z-home-conversation', ({ h, props }) => {
         <span class="avatar" aria-hidden="true"><z-home-avatar props=${{ person$: view.person$ }} /></span>
         <span class="summary">
           <span class="name">${conversation.contact.self ? t('You') : conversation.contact.name}</span>
-          <span class="preview">${conversation.real ? conversation.message || t(conversation.contact.self ? 'Notes to yourself' : 'New message') : t(conversation.message)}</span>
+          <span class=${conversation.real && !conversation.message ? 'preview placeholder' : 'preview'}>${conversation.real ? conversation.message || t(conversation.contact.self ? 'Notes to yourself' : 'New message') : t(conversation.message)}</span>
         </span>
         <span class="metadata">
           <time datetime=${conversation.lastMessageAt}>${/^\d{2}:\d{2}$/.test(conversation.timeLabel) ? conversation.timeLabel : t(conversation.timeLabel)}</time>

@@ -5,6 +5,7 @@ import { bytesToBase64, base64ToBytes } from 'libp2r2p/base64'
 import { nfileEncode } from 'libp2r2p/nip19'
 import { createFileMetadata, decodeFileMetadata } from 'libp2r2p/nip94'
 import { chatReferenceUri } from '#services/chat-references.js'
+import { createChat } from '#services/self-chat.js'
 import { createConversationSummaries } from '#services/conversation-summaries.js'
 import { conversationPreview, compareChatMessages } from '#helpers/conversation-preview.js'
 
@@ -36,7 +37,7 @@ function fixture (t, initial = []) {
   let decrypt = async (_, kind, scope, content) => { decrypted.push(kind); return base64ToBytes(content).buffer }
   const select = filter => [...events.values()].filter(event => matches(event, filter)).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, filter.limit ?? Infinity)
   const eventStore = {
-    async query (filter) { queries.push(filter); return { results: select(filter) } },
+    async query (filter) { queries.push(filter); const results = select(filter); return { results: filter.ids_only ? results.map(event => event.id) : results } },
     subscribe (filter, options) {
       subscriptions.push({ filter, options })
       const queue = options?.initial ? select(filter).map(event => ({ type: 'event', event })).concat({ type: 'eose' }) : []
@@ -53,14 +54,15 @@ function fixture (t, initial = []) {
       return stream
     }
   }
+  const signer = { obfuscate: async value => value, nip44v3: { decrypt: (...args) => decrypt(...args) } }
   const summaries = createConversationSummaries({
-    pubkey: owner, eventStore, signer: { obfuscate: async value => value, nip44v3: { decrypt: (...args) => decrypt(...args) } },
+    pubkey: owner, eventStore, signer,
     onChange: (peer, record) => { updates.push({ peer, record }); if (record) records.set(peer, record); else records.delete(peer) },
     onError: error => errors.push(error)
   })
   t.after(() => summaries.close())
   const add = event => { events.set(event.id, event); for (const stream of streams) if (matches(event, stream.filter)) stream.push(event) }
-  return { summaries, records, queries, subscriptions, decrypted, updates, errors, events, streams, add, decrypt: value => { decrypt = value } }
+  return { summaries, signer, eventStore, records, queries, subscriptions, decrypted, updates, errors, events, streams, add, decrypt: value => { decrypt = value } }
 }
 
 function file (pubkey, caption = '') {
@@ -144,4 +146,129 @@ test('pending attachments use their local metadata before the private reference 
   assert.equal(conversationPreview(event), 'File')
   assert.equal(conversationPreview({ ...event, localAttachment: decodeFileMetadata(attachment) }), 'vacation.png')
   assert.equal(conversationPreview({ ...event, localAttachment: { ...decodeFileMetadata(attachment), caption: 'A  new\ncaption' } }), 'A new\ncaption')
+})
+
+for (const contact of [owner, peer]) {
+  test(`opening ${contact === owner ? 'self' : 'peer'} chat reuses its latest bubble and metadata before history, without decrypting them again`, async t => {
+    const attachment = file(contact, 'Already read caption')
+    const latest = inner(chatReferenceUri(identified(attachment)), 100, contact)
+    const older = inner('Earlier message', 50, contact)
+    const f = fixture(t, [copy(attachment, contact), copy(latest, contact), copy(older, contact)])
+    await f.summaries.setPeers([contact])
+    const snapshot = f.records.get(contact)
+    const held = Promise.withResolvers()
+    let loaded = false
+    let messages = []
+    const references = {}
+    const chat = createChat({
+      pubkey: owner, peer: contact, eventStore: f.eventStore,
+      signer: { ...f.signer, obfuscate: async value => { await held.promise; return value } },
+      onMessages: value => { messages = value }, onReference: (id, event) => { references[id] = event },
+      onInitialLoad: () => { loaded = true }, onError: error => f.errors.push(error)
+    })
+    t.after(() => { held.resolve(); chat.close() })
+    const starting = chat.start(snapshot)
+    assert.equal(loaded, false)
+    assert.deepEqual(messages.map(event => event.id), [snapshot.event.id])
+    assert.equal(messages[0].status, 'saved')
+    assert.equal(references[getEventHash(attachment)], snapshot.references[getEventHash(attachment)])
+    assert.equal(await chat.resolveReference({ id: getEventHash(attachment) }), references[getEventHash(attachment)])
+    const decryptions = f.decrypted.length
+    held.resolve()
+    assert.equal(await starting, true)
+    assert.equal(loaded, true)
+    assert.deepEqual(messages.map(event => event.id), [getEventHash(older), getEventHash(latest)])
+    assert.equal(f.decrypted.length, decryptions + 1, 'only the older message needs decryption')
+    assert.deepEqual(f.errors, [])
+  })
+}
+
+test('a reused summary preserves failed-send state and revalidates deleted copies', async t => {
+  const latest = inner('Latest persisted message', 100)
+  const f = fixture(t, [copy(latest)])
+  await f.summaries.setPeers([])
+  const snapshot = f.records.get(owner)
+  let messages = []
+  const chat = createChat({
+    pubkey: owner, eventStore: f.eventStore, signer: f.signer, transport: {},
+    onMessages: value => { messages = value }, onError: error => f.errors.push(error)
+  })
+  t.after(() => chat.close())
+  chat.applyOutbox([{ id: snapshot.event.id, peer: owner, event: snapshot.event, status: 'error', uploadProgress: 0.4 }])
+  const starting = chat.start(snapshot)
+  assert.equal(messages[0].status, 'error', 'cached personal copy does not confirm an unfinished send')
+  assert.equal(messages[0].uploadProgress, 0.4, 'outbox progress survives the handoff')
+  await starting
+  assert.equal(messages[0].status, 'error')
+  assert.equal(messages.length, 1)
+  f.events.clear()
+  await chat.start(snapshot)
+  assert.deepEqual(messages, [], 'recovery removes the deleted copy instead of restoring the stale summary')
+  assert.deepEqual(f.errors, [])
+})
+
+test('copies deleted after the summary read do not survive the initial history reconciliation', async t => {
+  const latest = inner('Deleted before opening', 100)
+  const older = inner('Still present', 50)
+  const f = fixture(t, [copy(latest), copy(older)])
+  await f.summaries.setPeers([])
+  const snapshot = f.records.get(owner)
+  f.events.delete(copy(latest).id)
+  let messages = []
+  const chat = createChat({ pubkey: owner, eventStore: f.eventStore, signer: f.signer, onMessages: value => { messages = value }, onError: error => f.errors.push(error) })
+  t.after(() => chat.close())
+  const starting = chat.start(snapshot)
+  assert.equal(messages[0].id, snapshot.event.id)
+  await starting
+  assert.deepEqual(messages.map(event => event.content), ['Still present'])
+  await chat.start(snapshot)
+  assert.deepEqual(messages.map(event => event.content), ['Still present'])
+  assert.deepEqual(f.errors, [])
+})
+
+test('summary handoff retains all admitted copies of the same message', async t => {
+  const latest = inner('Duplicated copy', 100)
+  const first = copy(latest)
+  const second = finalizeEvent({ ...first, tags: [...first.tags, ['salt', 'second-copy']] }, secret)
+  const f = fixture(t, [first, second])
+  await f.summaries.setPeers([])
+  const snapshot = f.records.get(owner)
+  assert.equal(snapshot.copies.length, 2)
+  f.events.delete(first.id)
+  let messages = []
+  const chat = createChat({ pubkey: owner, eventStore: f.eventStore, signer: f.signer, onMessages: value => { messages = value }, onError: error => f.errors.push(error) })
+  t.after(() => chat.close())
+  await chat.start(snapshot)
+  assert.deepEqual(messages.map(event => event.id), [snapshot.event.id], 'one remaining copy keeps the bubble')
+  assert.deepEqual(f.errors, [])
+})
+
+test('a cached bubble can be deleted while the first history read is still waiting', async t => {
+  const latest = inner('Delete before history', 100)
+  const f = fixture(t, [copy(latest)])
+  await f.summaries.setPeers([])
+  const snapshot = f.records.get(owner)
+  const held = Promise.withResolvers()
+  let messages = []
+  let request
+  f.eventStore.addPersonalCopy = async event => {
+    request = event
+    f.events.delete(copy(latest).id)
+    return { result: { ok: true } }
+  }
+  const chat = createChat({
+    pubkey: owner, eventStore: f.eventStore,
+    signer: { ...f.signer, obfuscate: async value => { await held.promise; return value } },
+    onMessages: value => { messages = value }, onError: error => f.errors.push(error)
+  })
+  t.after(() => { held.resolve(); chat.close() })
+  const starting = chat.start(snapshot)
+  assert.equal(await chat.deleteMessage(snapshot.event.id), true)
+  assert.deepEqual(messages, [])
+  assert.equal(request.kind, 5)
+  assert.ok(request.tags.some(tag => tag[0] === 'e' && tag[1] === snapshot.event.id))
+  held.resolve()
+  await starting
+  assert.deepEqual(messages, [])
+  assert.deepEqual(f.errors, [])
 })

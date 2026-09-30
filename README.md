@@ -81,8 +81,10 @@ without opening their histories. Media previews use caption or filename from
 local metadata, without downloading media. Active chats sort by that message's
 date and update on new messages and deletions, before any chat is visited.
 Contacts without messages stay in the contacts strip/directory; self-chat keeps
-its empty Notes shortcut. Full history loads only when opening a chat, including
-self-chat.
+its empty Notes shortcut. Opening a chat immediately reuses that loaded message
+and its attachment metadata while the earlier messages load, for both self and
+contacts. Full history stays lazy; the loading indicator remains until its first
+page is ready.
 
 The shared [toast](src/components/shared/toast.md) supports success, error,
 warning and info, expandable details and navigation through unique notices. It

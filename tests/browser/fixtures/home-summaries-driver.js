@@ -6,6 +6,8 @@ import { chatReferenceUri } from '#services/chat-references.js'
 
 const boot = window.contactBoot
 boot.reads = []
+boot.holdHistory = () => { boot.historyGate = Promise.withResolvers() }
+boot.releaseHistory = () => { boot.historyGate?.resolve(); boot.historyGate = null }
 const stores = new WeakMap()
 // Observe real bridge calls; permissions, signatures, encryption and storage
 // remain owned by the actual launcher/vault, with no synthetic read results.
@@ -15,7 +17,20 @@ boot.observeStore = store => {
       get (target, key) {
         const value = target[key]
         if (typeof value !== 'function') return value
-        return (...args) => { if (['query', 'subscribe'].includes(key)) boot.reads.push({ method: key, filter: args[0], options: args[1] }); return value.apply(target, args) }
+        return (...args) => {
+          if (['query', 'subscribe'].includes(key)) boot.reads.push({ method: key, filter: args[0], options: args[1] })
+          const result = value.apply(target, args)
+          if (key !== 'subscribe' || !args[0]['#k']?.includes('9') || args[0].limit !== 50 || !boot.historyGate) return result
+          // Delay delivery, without replacing any real history results.
+          const gate = boot.historyGate
+          const closed = Promise.withResolvers()
+          let finished = false
+          return {
+            [Symbol.asyncIterator] () { return this },
+            async next () { await Promise.race([gate.promise, closed.promise]); return finished ? { done: true } : result.next() },
+            return () { finished = true; closed.resolve(); return result.return() }
+          }
+        }
       }
     }))
   }

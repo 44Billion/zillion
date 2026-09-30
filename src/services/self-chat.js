@@ -40,6 +40,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   let deletionSubscription
   let generation = 0
   let loading
+  let started = false
   // Include pending/failed sends and observed history. Deletion must not move
   // this cursor backwards while the account service remains alive.
   let latest
@@ -117,9 +118,21 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     catalogWrites.set(root, work)
     return work
   }
-  function start () {
+  function start (snapshot) {
     if (closed) return Promise.resolve(false)
     if (loading) return loading
+    if (!started) {
+      started = true
+      // The root-owned summary has already admitted/decrypted these copies.
+      // Reuse its bubble and metadata immediately, then let history revalidate
+      // the wrapper IDs before marking the initial page complete.
+      if (snapshot?.event && snapshot.copies?.length) {
+        const event = snapshot.event
+        for (const copy of snapshot.copies) retained.set(copy.id, { innerId: event.id, created_at: copy.created_at })
+        references.seed(Object.values(snapshot.references || {}))
+        if (!messages.has(event.id)) confirm(event.id, event)
+      }
+    }
     const version = ++generation
     const current = () => !closed && generation === version
     history?.close()
