@@ -6,7 +6,8 @@ import { chatReferenceUri } from '#services/chat-references.js'
 
 const boot = window.contactBoot
 boot.reads = []
-boot.holdHistory = () => { boot.historyGate = Promise.withResolvers() }
+boot.holdHistory = () => { boot.historyGate = Promise.withResolvers(); boot.eoseGate = Promise.withResolvers() }
+boot.releaseEose = () => { boot.eoseGate?.resolve(); boot.eoseGate = null }
 boot.releaseHistory = () => { boot.historyGate?.resolve(); boot.historyGate = null }
 const stores = new WeakMap()
 // Observe real bridge calls; permissions, signatures, encryption and storage
@@ -20,14 +21,21 @@ boot.observeStore = store => {
         return (...args) => {
           if (['query', 'subscribe'].includes(key)) boot.reads.push({ method: key, filter: args[0], options: args[1] })
           const result = value.apply(target, args)
-          if (key !== 'subscribe' || !args[0]['#k']?.includes('9') || args[0].limit !== 50 || !boot.historyGate) return result
+          if (key !== 'subscribe' || !args[0]['#k']?.includes('9') || args[0].limit !== 25 || !boot.historyGate) return result
           // Delay delivery, without replacing any real history results.
           const gate = boot.historyGate
+          const eose = boot.eoseGate
           const closed = Promise.withResolvers()
           let finished = false
           return {
             [Symbol.asyncIterator] () { return this },
-            async next () { await Promise.race([gate.promise, closed.promise]); return finished ? { done: true } : result.next() },
+            async next () {
+              await Promise.race([gate.promise, closed.promise])
+              if (finished) return { done: true }
+              const item = await result.next()
+              if (item.value?.type === 'eose') await Promise.race([eose.promise, closed.promise])
+              return finished ? { done: true } : item
+            },
             return () { finished = true; closed.resolve(); return result.return() }
           }
         }

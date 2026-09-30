@@ -1,5 +1,5 @@
 // Wrapper-index pagination is independent of the inner event's presentation order.
-export const CHAT_PAGE_SIZE = 50
+export const CHAT_PAGE_SIZE = 25
 export function createChatWorkers (concurrency = 4) {
   let running = 0
   const queue = []
@@ -25,7 +25,10 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
   let initial
   const pending = new Map()
   const state = (loading = false, error = null) => { if (!closed) onState({ loading, error, hasOlder }) }
-  const batch = () => { if (!closed) onBatch() }
+  const batch = () => {
+    if (frame != null) { (globalThis.cancelAnimationFrame ?? clearTimeout)(frame); frame = null }
+    if (!closed) onBatch()
+  }
   const schedule = () => {
     if (frame != null) return
     const request = globalThis.requestAnimationFrame ?? (fn => setTimeout(fn, 0))
@@ -44,7 +47,10 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
     const work = workers(async () => {
       if (closed) return
       const innerId = await accept(wrapper, () => !closed)
-      if (!closed) retained.set(wrapper.id, { innerId, created_at: wrapper.created_at })
+      if (!closed) {
+        retained.set(wrapper.id, { innerId, created_at: wrapper.created_at })
+        schedule()
+      }
     }).finally(() => pending.delete(wrapper.id))
     pending.set(wrapper.id, work)
     return work
@@ -78,7 +84,7 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
       }
     }
     // Restart pagination at the recent snapshot after recovery. Retained older
-    // pages may be separated from it by more than 50 newly received wrappers.
+    // pages may be separated from it by more than one page of newly received wrappers.
   }
   async function start () {
     initial = Promise.withResolvers()
@@ -87,21 +93,32 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
     const recovery = revalidate()
     ;(async () => {
       const snapshot = []
+      const processing = []
       try {
         for await (const item of stream) {
           if (closed) return
           if (item.type === 'eose' && !ready) {
             await recovery
-            await processPage(snapshot)
+            const results = await Promise.all(processing)
+            const failed = results.find(Boolean)
+            if (failed) throw failed.error
             if (closed) return
             advance(snapshot)
             hasOlder = snapshot.length === CHAT_PAGE_SIZE
             snapshot.length = 0
+            processing.length = 0
             ready = true
             batch(); state(); initial.resolve(true)
           } else if (item.type === 'event') {
-            if (!ready) snapshot.push(item.event)
-            else if (frontier !== null && item.event.created_at < frontier) { hasOlder = true; state(!!older) } else process(item.event).then(schedule, error => { if (!closed) onError(error) })
+            if (!ready) {
+              snapshot.push(item.event)
+              // Revalidate retained IDs first, then decrypt as each copy arrives.
+              // Observe failures immediately even if EOSE has not arrived yet.
+              processing.push(recovery.then(() => process(item.event)).then(() => null, error => {
+                initial.reject(error)
+                return { error }
+              }))
+            } else if (frontier !== null && item.event.created_at < frontier) { hasOlder = true; state(!!older) } else process(item.event).catch(error => { if (!closed) onError(error) })
           }
         }
         if (!closed) throw new Error('Self chat subscription ended')

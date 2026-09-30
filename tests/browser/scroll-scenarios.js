@@ -59,7 +59,7 @@ export async function checkScrollScenarios ({ browser, evaluate, addNote, media 
     };
     requestAnimationFrame(sample);
   })()`)
-  await browser.until(() => evaluate(`document.querySelector('.chat-timeline').dataset.historyLoaded === 'true' && selfChatAccount.messages$().length === ${Math.min(50, expectedIds.length)}`), 'scroll history recovered', 60000)
+  await browser.until(() => evaluate(`document.querySelector('.chat-timeline').dataset.historyLoaded === 'true' && selfChatAccount.messages$().length === ${Math.min(25, expectedIds.length)}`), 'scroll history recovered', 60000)
   await browser.until(() => evaluate('!!document.querySelector(\'.chat-media a[href$="#dim=1x1"]\')'), 'bounded image rendered after snapshot')
   const reserved = await evaluate('document.querySelector(\'.chat-media a[href$="#dim=1x1"]\').nextElementSibling.getBoundingClientRect().height')
   assert.ok(reserved > 0, '#dim has a bounded media box')

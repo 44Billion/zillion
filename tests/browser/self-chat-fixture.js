@@ -6,9 +6,8 @@ import { rememberAttachmentPreview } from '#services/attachment-previews.js'
 import { f, useStore, useClosestStore, useMemo } from '#f'
 import { useAccount } from '#hooks/use-account.js'
 
-// Measurements use the real event-store bridge and vault. The serial baseline
-// measures one full query + sequential decryption (without its old duplicate replay).
-import { createSelfChat } from '#services/self-chat.js'
+// Compare outstanding-call limits over the same initial page and real APIs.
+import { createChatHistory, createChatWorkers } from '#services/chat-history.js'
 import { decryptPersonalCopy } from '#services/chat-references.js'
 
 // Test-only access to app state; launcher identity, storage and permissions stay real.
@@ -76,8 +75,8 @@ f('z-gallery-ui-fixture', ({ h }) => {
 window.measureChatHistory = async () => {
   const pubkey = await window.nostr.peekPublicKey()
   const context = await window.nostr.obfuscate(`dm:${pubkey}`, '1006', '')
-  const metrics = () => ({ queries: 0, queryMs: 0, deliveryMs: 0, decryptMs: 0, decryptions: 0, maxConcurrent: 0, updates: 0, totalMs: 0 })
-  async function measure (serial) {
+  const metrics = () => ({ queries: 0, queryMs: 0, deliveryMs: 0, decryptMs: 0, decryptions: 0, maxConcurrent: 0, updates: 0, firstMessageMs: null, totalMs: 0 })
+  async function measure (concurrency) {
     const measured = metrics()
     let concurrent = 0
     const signer = {
@@ -98,15 +97,24 @@ window.measureChatHistory = async () => {
       }
     }
     const start = performance.now()
-    if (serial) {
-      const { results } = await store.query({ kinds: [1006], '#k': ['9'], '#c': [context], '#v': ['0', '1'], authors: [pubkey] })
-      for (const wrapper of results) await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: context })
-    } else {
-      const chat = createSelfChat({ pubkey, eventStore: store, signer, onMessages: () => measured.updates++, onError: error => { throw error } })
-      try { await chat.start() } finally { chat.close() }
-    }
+    let accepted = 0
+    const history = createChatHistory({
+      eventStore: store, filter: { kinds: [1006], '#k': ['9'], '#c': [context], '#v': ['0', '1'], authors: [pubkey] },
+      workers: createChatWorkers(concurrency),
+      async accept (wrapper) {
+        const event = await decryptPersonalCopy(wrapper, { pubkey, signer, encodedContext: context })
+        if (event) accepted++
+        return event?.id
+      },
+      onBatch () { measured.updates++; if (accepted && measured.firstMessageMs === null) measured.firstMessageMs = performance.now() - start },
+      onState () {}, onMissing () {}, onError: error => { throw error }
+    })
+    try { await history.start() } finally { history.close() }
+    measured.concurrency = concurrency
     measured.totalMs = performance.now() - start
     return measured
   }
-  return { paged: await measure(false), serial: await measure(true) }
+  const runs = []
+  for (const concurrency of [4, 8, 16, 16, 8, 4]) runs.push(await measure(concurrency))
+  return runs
 }

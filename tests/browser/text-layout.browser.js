@@ -17,7 +17,7 @@ test('text-only history keeps the height and both edges of the latest bubbles st
   let browser
   let permissions
   try {
-    const files = await compile({ development: true })
+    const files = await compile({ development: true, sourceMaps: false })
     const script = files.find(file => file.name === 'app.js')
     const probe = await readFile(new URL('./fixtures/text-layout-probe.js', import.meta.url), 'utf8')
     // Instrument every new app document without replacing its runtime APIs.
@@ -78,7 +78,7 @@ test('text-only history keeps the height and both edges of the latest bubbles st
       const token = await evaluate('textLayoutProbe.token')
       await evaluate('location.reload()')
       await browser.until(() => evaluate(`window.textLayoutProbe && textLayoutProbe.token !== ${JSON.stringify(token)}`), 'new app document')
-      await browser.until(() => evaluate('document.querySelectorAll(".message-row").length === 30 && document.querySelector(".chat-timeline").dataset.initialLoading === "false"'), 'text history fully processed', 60000)
+      await browser.until(() => evaluate('document.querySelectorAll(".message-row").length === 25 && document.querySelector(".chat-timeline").dataset.initialLoading === "false"'), 'text history fully processed', 60000)
       await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
       const frames = await evaluate('textLayoutProbe.frames')
       for (const text of texts) {

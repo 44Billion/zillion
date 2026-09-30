@@ -1209,9 +1209,13 @@ requires the companion update. See `docs/private-chats.md` for that boundary.
 ### Incremental self-chat history
 
 Uses libp2r2p 0.10.19 and the launcher's typed event-store subscriptions. Opening
-uses a single `initial: true, limit: 50` kind-9 wrapper subscription; readiness
-waits for `eose` and processing. Four shared workers bound decryption. Older
-pages of 50 use inclusive `until` plus `!ids` at the boundary timestamp, so
+uses a single `initial: true, limit: 25` kind-9 wrapper subscription. Each arriving
+copy enters the queue (four concurrent decryptions) as soon as retained-ID
+revalidation finishes, without waiting for `eose`. Progress updates are coalesced
+per animation frame, including during older-page reads, with a final flush at
+page completion. Initial readiness still waits for `eose` and all initial work;
+failures surface even before `eose`. Older
+pages of 25 use inclusive `until` plus `!ids` at the boundary timestamp, so
 same-second groups are not skipped. Presentation still sorts inner timestamps
 and IDs; a later page can interleave within a tied group. Older live backfills
 only reopen history availability. Page failures preserve the cursor and offer

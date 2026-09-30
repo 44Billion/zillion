@@ -39,8 +39,8 @@ function fixture (history = [], options = {}) {
     subscribe (filter, options) {
       if (filter['#k'][0] === '9') {
         assert.deepEqual(options, { initial: true })
-        initial = [...history.filter(event => event.tags.some(tag => tag[0] === 'k' && tag[1] === '9')).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, 50).map(event => ({ type: 'event', event })), { type: 'eose' }]
-        assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'], limit: 50 })
+        initial = [...history.filter(event => event.tags.some(tag => tag[0] === 'k' && tag[1] === '9')).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, 25).map(event => ({ type: 'event', event })), { type: 'eose' }]
+        assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'], limit: 25 })
         return subscription
       }
       assert.deepEqual(filter, {

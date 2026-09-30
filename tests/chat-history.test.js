@@ -8,14 +8,15 @@ function fixture (count, options = {}) {
   const retained = new Map()
   const accepted = []
   const queries = []
+  const batches = []
   let running = 0; let maxRunning = 0; let state; let fail = false
   let wake
   const live = []
   const select = f => events.filter(e => (!f.ids || f.ids.includes(e.id)) && (f.until === undefined || e.created_at <= f.until) && !f['!ids']?.includes(e.id)).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, f.limit)
   const eventStore = {
     subscribe (f, opts) {
-      assert.equal(opts.initial, true); assert.equal(f.limit, 50)
-      const queue = [...select(f).map(event => ({ type: 'event', event })), { type: 'eose' }]
+      assert.equal(opts.initial, true); assert.equal(f.limit, 25)
+      const queue = options.manual ? [] : [...select(f).map(event => ({ type: 'event', event })), { type: 'eose' }]
       return {
         [Symbol.asyncIterator] () { return this },
         next: () => queue.length ? Promise.resolve({ value: queue.shift(), done: false }) : live.length ? Promise.resolve(live.shift()) : new Promise(resolve => { wake = resolve }),
@@ -26,26 +27,27 @@ function fixture (count, options = {}) {
   }
   const history = createChatHistory({
     eventStore, filter: { kinds: [1006], '#c': ['private'] }, retained,
-    async accept (event, active) { running++; maxRunning = Math.max(maxRunning, running); await tick(); running--; if (options.reject?.(event)) throw new Error('decrypt'); if (active()) accepted.push(event.id); return event.id },
-    onBatch () {}, onState (value) { state = value }, onMissing () {}, onError: assert.fail
+    async accept (event, active) { running++; maxRunning = Math.max(maxRunning, running); await options.wait?.(event); await tick(); running--; if (options.reject?.(event)) throw new Error('decrypt'); if (active()) accepted.push(event.id); return event.id },
+    onBatch () { batches.push([...accepted]) }, onState (value) { state = value }, onMissing () {}, onError: assert.fail
   })
   return {
-    history, eventStore, accepted, queries, retained, get state () { return state }, get maxRunning () { return maxRunning }, get fail () { return fail }, set fail (value) { fail = value },
+    history, eventStore, accepted, queries, retained, batches, get state () { return state }, get maxRunning () { return maxRunning }, get fail () { return fail }, set fail (value) { fail = value },
+    deliver (value) { const item = { value, done: false }; if (wake) { const resolve = wake; wake = null; resolve(item) } else live.push(item) },
     add (e, notify = true) { events.push(e); if (!notify) return; const item = { value: { type: 'event', event: e }, done: false }; if (wake) { const resolve = wake; wake = null; resolve(item) } else live.push(item) }
   }
 }
-test('50-item opening, four workers, inclusive pages across 235 equal timestamps, singleflight and failures', async () => {
+test('25-item opening, four workers, inclusive pages across 235 equal timestamps, singleflight and failures', async () => {
   const f = fixture(235)
   try {
     await f.history.start()
-    assert.equal(f.accepted.length, 50); assert.equal(f.queries.length, 0); assert.equal(f.maxRunning, 4)
+    assert.equal(f.accepted.length, 25); assert.equal(f.queries.length, 0); assert.equal(f.maxRunning, 4)
     f.fail = true
-    assert.equal(await f.history.loadOlder(), false); assert.equal(f.accepted.length, 50); assert.equal(f.state.error, 'offline')
+    assert.equal(await f.history.loadOlder(), false); assert.equal(f.accepted.length, 25); assert.equal(f.state.error, 'offline')
     f.fail = false
     const first = f.history.loadOlder(); assert.equal(f.history.loadOlder(), first); await first
     while (f.state.hasOlder) await f.history.loadOlder()
     assert.equal(new Set(f.accepted).size, 235); assert.equal(f.accepted.length, 235)
-    assert.ok(f.queries.every(q => q.until === 100 && q.limit === 50))
+    assert.ok(f.queries.every(q => q.until === 100 && q.limit === 25))
     f.add(wrapper(500, 50)); await tick(); assert.equal(f.accepted.length, 235); assert.equal(f.state.hasOlder, true)
     await f.history.loadOlder(); assert.equal(f.accepted.length, 236)
     f.add(wrapper(600, 101)); await tick(); await tick(); assert.equal(f.accepted.length, 237)
@@ -53,11 +55,12 @@ test('50-item opening, four workers, inclusive pages across 235 equal timestamps
 })
 test('failed decryption can retry the same page; close ignores queued work', async () => {
   let reject = true
-  const f = fixture(70, { reject: event => reject && event.id === wrapper(55).id })
+  const f = fixture(70, { reject: event => reject && event.id === wrapper(30).id })
   await f.history.start()
   assert.equal(await f.history.loadOlder(), false)
   reject = false
   assert.equal(await f.history.loadOlder(), true)
+  while (f.state.hasOlder) await f.history.loadOlder()
   assert.equal(new Set(f.accepted).size, 70)
   f.add(wrapper(800, 200)); f.history.close(); await tick(); await tick()
   assert.equal(new Set(f.accepted).size, 70)
@@ -77,10 +80,77 @@ test('recovery retains visited pages but does not skip a gap larger than its rec
   })
   try {
     await recovered.start()
-    assert.equal(f.retained.size, 170)
+    assert.equal(f.retained.size, 145)
     while (state.hasOlder) await recovered.loadOlder()
     assert.equal(f.retained.size, 200)
     assert.equal(f.accepted.length, 200, 'retained wrappers are not decrypted again')
-    assert.ok(f.queries.filter(query => query.ids).every(query => query.ids.length <= 50))
+    assert.ok(f.queries.filter(query => query.ids).every(query => query.ids.length <= 25))
   } finally { recovered.close() }
+})
+
+const until = async predicate => { for (let attempt = 0; attempt < 100; attempt++) { if (predicate()) return; await tick() }; assert.fail('condition not reached') }
+
+test('initial messages appear before EOSE and before slower decryptions, with bounded concurrency and deduplication', async t => {
+  const held = Promise.withResolvers()
+  const f = fixture(0, { manual: true, wait: event => event.id === wrapper(0).id ? held.promise : undefined })
+  t.after(() => { f.history.close(); held.resolve() })
+  let ready = false
+  const opening = f.history.start().then(value => { ready = true; return value })
+  for (let i = 0; i < 8; i++) f.deliver({ type: 'event', event: wrapper(i) })
+  f.deliver({ type: 'event', event: wrapper(1) })
+  await until(() => f.batches.some(batch => batch.length === 7))
+  assert.equal(ready, false, 'no EOSE yet')
+  assert.ok(!f.accepted.includes(wrapper(0).id), 'a slow message does not block the others')
+  assert.equal(f.maxRunning, 4)
+  f.deliver({ type: 'eose' })
+  await tick()
+  assert.equal(ready, false, 'EOSE alone does not finish pending decryptions')
+  held.resolve()
+  assert.equal(await opening, true)
+  assert.equal(f.accepted.length, 8)
+  assert.equal(new Set(f.accepted).size, 8)
+  assert.equal(f.batches.at(-1).length, 8)
+  assert.equal(f.state.hasOlder, false)
+})
+
+test('initial decryption failures surface before EOSE instead of hanging readiness', async t => {
+  const f = fixture(0, { manual: true, reject: () => true })
+  t.after(() => f.history.close())
+  const opening = assert.rejects(f.history.start(), /decrypt/)
+  f.deliver({ type: 'event', event: wrapper(1) })
+  await opening
+  assert.deepEqual(f.batches, [])
+})
+
+test('closing before EOSE settles readiness and prevents pending or queued work from updating the UI', async () => {
+  const held = Promise.withResolvers()
+  const f = fixture(0, { manual: true, wait: () => held.promise })
+  const opening = f.history.start()
+  for (let i = 0; i < 8; i++) f.deliver({ type: 'event', event: wrapper(i) })
+  await until(() => f.maxRunning === 4)
+  f.history.close()
+  assert.equal(await opening, false)
+  held.resolve()
+  await tick(); await tick()
+  assert.deepEqual(f.accepted, [])
+  assert.deepEqual(f.batches, [])
+})
+
+test('older pages also publish partial results and preserve their cursor when a decryption fails', async t => {
+  const held = Promise.withResolvers()
+  let reject = true
+  const f = fixture(51, { wait: event => event.id === wrapper(25).id ? held.promise : undefined, reject: event => reject && event.id === wrapper(25).id })
+  t.after(() => { f.history.close(); held.resolve() })
+  await f.history.start()
+  const loading = f.history.loadOlder()
+  await until(() => f.batches.some(batch => batch.length === 49))
+  assert.equal(f.state.loading, true)
+  held.resolve()
+  assert.equal(await loading, false)
+  assert.equal(f.state.error, 'decrypt')
+  reject = false
+  assert.equal(await f.history.loadOlder(), true)
+  assert.deepEqual(f.queries[1], f.queries[0], 'retry reads the same page')
+  assert.equal(f.accepted.length, 50)
+  assert.equal(new Set(f.accepted).size, 50)
 })

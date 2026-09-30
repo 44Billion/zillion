@@ -15,16 +15,19 @@ export async function checkHistoryScenarios ({ browser, evaluate, pubkey }) {
   })()`)
   await browser.until(() => evaluate('!window.historySeeded && !!document.querySelector(\'.conversation [data-contact-id=user]\')'), 'fresh history document')
   await evaluate('document.querySelector(\'.conversation [data-contact-id=user]\').click()')
-  await browser.until(() => evaluate('window.selfChatAccount?.historyState$() === "loaded" && document.querySelector(".chat-timeline")?.dataset.initialLoading === "false"'), '50-message opening', 60000)
-  assert.equal(await evaluate('selfChatAccount.messages$().length'), 50)
+  await browser.until(() => evaluate('window.selfChatAccount?.historyState$() === "loaded" && document.querySelector(".chat-timeline")?.dataset.initialLoading === "false"'), '25-message opening', 60000)
+  assert.equal(await evaluate('selfChatAccount.messages$().length'), 25)
   if (!process.argv.includes('--skip-measurement')) {
+    await browser.until(() => evaluate('selfChatAccount.summaries$()[selfChatAccount.pubkey$()]?.state === "loaded"'), 'summary reader idle before comparison', 120000)
     await evaluate('void window.measureChatHistory().then(value=>window.historyMeasurements=value).catch(error=>window.historyMeasureError=error.message)')
     const measurements = await browser.until(() => evaluate('if(window.historyMeasureError)throw new Error(window.historyMeasureError);window.historyMeasurements'), 'real vault measurements', 240000)
     console.log('Real vault history measurements:', JSON.stringify(measurements))
-    assert.equal(measurements.paged.decryptions, 50)
-    assert.ok(measurements.paged.maxConcurrent <= 4 && measurements.paged.maxConcurrent > 1)
-    assert.equal(measurements.paged.queries, 0)
-    assert.equal(measurements.serial.decryptions, 200)
+    for (const measured of measurements) {
+      assert.equal(measured.decryptions, 25)
+      assert.ok(measured.maxConcurrent <= measured.concurrency && measured.maxConcurrent > 1)
+      assert.equal(measured.queries, 0)
+      assert.ok(measured.firstMessageMs < measured.totalMs)
+    }
   }
   await evaluate('(() => { const input=document.querySelector(\'.chat-composer textarea\'); input.value=\'Preserved draft\'; input.dispatchEvent(new Event(\'input\',{bubbles:true})); })()')
   await evaluate(`(() => {
@@ -34,7 +37,7 @@ export async function checkHistoryScenarios ({ browser, evaluate, pubkey }) {
     const row=[...timeline.querySelectorAll('[data-message-id]')].find(row=>row.getBoundingClientRect().bottom>top+80);
     window.pageAnchor={id:row.dataset.messageId,top:row.getBoundingClientRect().top};
   })()`)
-  await browser.until(() => evaluate('selfChatAccount.messages$().length >= 100 && !selfChatAccount.older$().loading'), 'older page near viewport', 60000)
+  await browser.until(() => evaluate('selfChatAccount.messages$().length >= 50 && !selfChatAccount.older$().loading'), 'older page near viewport', 60000)
   await evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))')
   const drift = await evaluate('Math.abs(document.querySelector("[data-message-id="+CSS.escape(pageAnchor.id)+"]").getBoundingClientRect().top-pageAnchor.top)')
   assert.ok(drift < 3, `reading anchor drift ${drift}`)
