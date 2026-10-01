@@ -594,7 +594,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.10.19`
+This checkout consumes the public APIs from the published `libp2r2p@^0.11.3`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -700,17 +700,23 @@ Manual download intent survives reload encrypted; partial bytes are reused.
 All media entry points share the library coordinator. See
 [private media transport](docs/private-chats.md#per-file-data-channels-libp2r2p-011).
 
-This change targets libp2r2p 0.11.0, whose encrypted router recipient tag is p.
-Publish that prepared library release and update communicating consumers together
-before deployment. Local validation uses the packed release; production imports
+The encrypted router uses the p recipient tag introduced in libp2r2p 0.11.
+Communicating clients must use compatible library versions. Production imports
 remain public package subpaths. Multi-device seeds and groups are follow-ups.
 
 File recovery seeders reuse verified chunks already in the launcher rather than
 keeping a second ciphertext copy. A persistent per-recipient authorization expires
 with the sharing window and never pins file bytes; explicit new sends renew it,
-retries do not. Watchtowers retain ciphertext recovery. The coordinated package
-remains the unpublished libp2r2p 0.11.0 release.
+retries do not. Watchtowers retain ciphertext recovery.
 
 Private chat transport now uses the reusable libp2r2p session and event-store
 adapters. Recovery seeds and file authorizations are synchronized personal copies;
 file bytes retain NostrDB's existing IRFS storage and reference lifecycle.
+
+Send and explicit retry failures show localized, actionable toasts only while
+the initiating chat route is still active. Leaving a route discards its pending
+notifications, including when that route remains mounted or the same chat URL is
+opened in a new history entry. Failed bubbles remain available for retry. Relay
+NIP-01/NIP-42 codes select app-owned text; raw relay prose stays in diagnostics.
+This integration uses the `onSendError` callback from the published libp2r2p
+0.11.3 release, installed from npm and pinned in package-lock.json.

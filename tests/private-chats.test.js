@@ -16,7 +16,7 @@ const event = { kind: 9, created_at: 100, tags: [['salt', 'stable']], content: '
 const until = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)) }; assert.fail('condition not reached') }
 
 function fixture ({ beforeOpen = async () => {}, fileAuthorize = async () => {}, fileDownload = async () => {}, downloadPut = async () => {}, downloadRemove = async () => {}, primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }) } = {}) {
-  const grants = []; const errors = []; const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
+  const grants = []; const errors = []; const sendErrors = []; const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
   const signer = { getPublicKey: async () => primary, withSharedKey: (pubkey, info) => { assert.equal(info, 'dm'); return { getPublicKey: async () => `channel:${pubkey}` } } }
   const messenger = {
     update: async options => updates.push(options), pause: async reason => pauses.add(reason), resume: async reason => pauses.delete(reason), close: async () => {},
@@ -41,9 +41,9 @@ function fixture ({ beforeOpen = async () => {}, fileAuthorize = async () => {},
     owner: primary, signer, eventStore: { query, addPersonalCopy: async (...args) => { writes.push(args); return save(...args) } },
     Messenger: async options => { callbacks = options; return messenger },
     openOutbox: async () => { await beforeOpen(); return { list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} } },
-    onOutbox: list => states.push(structuredClone(list)), onError: error => errors.push(error)
+    onOutbox: list => states.push(structuredClone(list)), onError: error => errors.push(error), onSendError: (error, attempt) => sendErrors.push({ error, attempt })
   })
-  return { transport, grants, errors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
+  return { transport, grants, errors, sendErrors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
 }
 
 test('both peer-chat participants seed recovery, retain NIP-65 routing and exclude self channels', async t => {
@@ -235,6 +235,8 @@ test('relay failures retain diagnostics and remain retryable without resaving th
   assert.match(error.message, /wss:\/\/two.test: invalid: temporary relay policy/)
   assert.equal(error.reports[0].errors[0].reason.cause.message, 'socket closed')
   assert.equal(f.records.get(id).retryable, true, 'relay text is not a signer permission denial')
+  assert.equal(f.sendErrors[0].error, error)
+  assert.deepEqual(f.sendErrors[0].attempt, { id, peer })
   await f.transport.retry(id)
   assert.equal(f.errors.length, 2)
   fail = false

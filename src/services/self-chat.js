@@ -23,9 +23,11 @@ const SALT_SEARCH_MS = 4
 
 // The launcher owns encryption, signing and persistence. This service only
 // interprets its personal-copy contract for the primary user's own chat.
+const storageFailure = (stage, saved) => Object.assign(new Error(`${stage} storage failed: ${saved?.result?.code ?? 'unknown'}`), { code: saved?.result?.code?.toUpperCase() || 'MESSAGE_STORAGE_FAILED' })
+
 export function createSelfChat (options) { return createChat(options) }
 
-export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile, workers = createChatWorkers() }) {
+export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onSendError = () => {}, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile, workers = createChatWorkers() }) {
   const context = `dm:${peer}`
   const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference, workers })
   const catalog = createChatReferences({ pubkey, eventStore, signer, context: '' })
@@ -111,7 +113,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       if ((await catalog.readFiles({ root, limit: 1 })).length) return
       controller.signal.throwIfAborted()
       const saved = await eventStore.addPersonalCopy(event, { context: '' })
-      if (!saved?.result?.ok) throw new Error(`Catalog storage failed: ${saved?.result?.code ?? 'unknown'}`)
+      if (!saved?.result?.ok) throw storageFailure('Catalog', saved)
     }
     // Serialize the check/write across sends and same-origin app instances.
     const work = Promise.resolve().then(() => globalThis.navigator?.locks
@@ -254,7 +256,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
           })) return
           signal.throwIfAborted()
           const saved = await eventStore.addPersonalCopy(chunk, { context })
-          if (!saved?.result?.ok) throw new Error(`Chunk storage failed: ${saved?.result?.code ?? 'unknown'}`)
+          if (!saved?.result?.ok) throw storageFailure('Chunk', saved)
         }
         const settle = async () => {
           const results = await Promise.all(batch)
@@ -275,7 +277,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     signal.throwIfAborted()
     if (entry.fileEvent) {
       const savedFile = await eventStore.addPersonalCopy(entry.fileEvent, { context })
-      if (!savedFile?.result?.ok) throw new Error(`File storage failed: ${savedFile?.result?.code ?? 'unknown'}`)
+      if (!savedFile?.result?.ok) throw storageFailure('File', savedFile)
       await saveCatalogFile(entry.fileEvent, entry.attachment.metadata)
     }
   }
@@ -290,12 +292,13 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       await prepareEntry(entry)
       controller.signal.throwIfAborted()
       const saved = await eventStore.addPersonalCopy(entry.event, { context })
-      if (!saved?.result?.ok) throw new Error(`Message storage failed: ${saved?.result?.code ?? 'unknown'}`)
+      if (!saved?.result?.ok) throw storageFailure('Message', saved)
       confirm(id, { ...entry.event, pubkey })
-    }).catch(() => {
+    }).catch(error => {
       // A confirmed subscription result wins over a late write rejection.
       if (closed || outbox.get(id) !== entry) return
       messages.set(id, { ...messages.get(id), status: 'error' })
+      onSendError(error, { id, peer })
       emit()
     }).finally(() => { entry.work = null })
     return entry.work
@@ -324,9 +327,10 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       entry.enqueuing = true
       await transport.enqueue({ peer, event: { ...entry.event, pubkey }, context, requiredFiles: entry.fileEvent ? [getEventHash({ ...entry.fileEvent, pubkey })] : [] })
       entry.accepted = true
-    }).catch(() => {
+    }).catch(error => {
       if (signal.aborted || entry.observed) return
       messages.set(id, { ...messages.get(id), status: 'error' })
+      onSendError(error, { id, peer })
       emit()
     }).finally(async () => {
       // cancel() fences publication immediately; repeat after an in-flight

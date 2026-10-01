@@ -320,8 +320,8 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   icons to the bottom line. Drafts are local component state. Send asynchronously
   persists prepared attachments and the encrypted outbox entry, clears the draft/reply,
   and leaves the composer ready for another message. Rejection before acceptance
-  keeps the draft and shows a toast; asynchronous write failures belong to the
-  accepted bubble. Keep all added labels and fixture texts translated in 11 locales.
+  keeps the draft and shows a route-scoped toast; asynchronous write failures
+  mark the accepted bubble and notify only an eligible active user attempt. Keep all added labels and fixture texts translated in 11 locales.
 - The composer task synchronizes `textarea.value` from the draft signal before
   measuring its height. Do not also bind `.value` in the template: reactive task
   reruns can precede template commits and measure stale text after sending.
@@ -925,7 +925,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.0`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.3`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1337,3 +1337,27 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   catalog, pin IRFS roots with grants, or renew timestamps after sync/retry.
 - Preserve existing zillion outbox/download database names and encryption scopes;
   extraction is not a pending-work migration. No legacy file-seed migration.
+
+## Send failure feedback
+
+- `use-send-feedback.js` owns a non-reactive set of user-initiated sends/retries
+  per chat route. Subscribe to the account's live error bus only while that exact
+  `z-route-page` is active; clear attempts on deactivation/unmount. Recheck
+  `isActive$` at notification time. Never infer eligibility from a pathname or
+  from persisted `status: error`; returning to a route must not replay errors.
+- Root-owned account subscriptions forward preparation errors and the session's
+  `onSendError(error, { id, peer })` callback from published libp2r2p 0.11.3,
+  resolved from npm in the lockfile. The ID identifies the main outbox item even
+  for quote/file/chunk failures. Preserve
+  native console diagnostics and keep send errors separate from history errors.
+  No native error object or relay diagnostic is persisted in a UI store.
+- `send-failure.js` recognizes exact application codes and NIP-01/NIP-42 relay
+  prefixes. Unknown/mixed responses use generic guidance; relay `blocked` must
+  never imply the peer blocked the sender or that signer access was denied.
+  Cancellations remain silent. Do not add authentication, retry or routing policy
+  to this presentation layer. Stable translated toast callbacks deduplicate
+  equal guidance and follow locale changes in all eleven supported languages.
+- `tests/send-feedback.test.js` covers classification and intent ownership.
+  `tests/browser/send-feedback.browser.js` uses the real launcher/vault and a
+  controlled relay boundary to check active sends, explicit retry, retained
+  inactive routes, Back, replacement history entries, locale changes and success.

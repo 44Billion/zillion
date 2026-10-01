@@ -132,7 +132,7 @@ f('z-chat-composer', ({ h, props }) => {
         this.attachment$(null); this.source$(null)
         if (this.text$() === text) this.text$('')
         if (props.reply$?.()?.id === replyId) props.clearReply()
-      } catch (_) { error(() => t('Could not save message')) } finally { this.sending$(false) }
+      } catch (_) { if (page.isActive$()) error(() => t('Could not save message')) } finally { this.sending$(false) }
     }
   })
   useSignerRecovery(() => { if (view.catalogError$() && view.catalogRetryable) view.loadCatalog() })

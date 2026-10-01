@@ -10,6 +10,7 @@ import './header.js'
 import './day.js'
 import './composer.js'
 import { useInitChatLayout } from './hooks/use-chat-layout.js'
+import { useSendFeedback } from '#hooks/use-send-feedback.js'
 import { useAccount, useConversation } from '#hooks/use-account.js'
 
 f('z-chat-route', ({ h, props }) => {
@@ -39,6 +40,7 @@ f('z-chat', ({ h, props }) => {
   const page = useRoutePage()
   const identity = useAccount()
   const account = useConversation(() => props.person$().id, { open: true, active$: page.isActive$ })
+  const feedback = useSendFeedback(account)
   const view = useStore(() => ({
     timelineRef$: null,
     screenRef$: null,
@@ -53,7 +55,7 @@ f('z-chat', ({ h, props }) => {
     },
     days$ () { return groupChatDays(this.messages$()) },
     reply (id) { this.replyTo$(id); this.activeId$(null) },
-    retry (id) { this.activeId$(null); return account.retryMessage(id) },
+    retry (id) { this.activeId$(null); return feedback.retry(id, () => account.retryMessage(id)) },
     remove (id, options) { this.activeId$(null); return account.deleteMessage(id, options) },
     reply$ () { return this.messages$().find(message => message.id === this.replyTo$()) },
     historyLoaded$ () { return !this.real$() || account.historyLoaded$() || !!account.error$() },
@@ -66,7 +68,7 @@ f('z-chat', ({ h, props }) => {
     loading$ () { return this.contactsPending$() || !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) },
     recover () { if (this.contactsPending$()) identity.recoverContacts(); account.recover() },
     canSend$ () { return this.real$() && !this.contactsPending$() && (props.person$().self || this.saved$()) && account.ready$() && !!account.pubkey$() && (props.person$().self || (identity.signerState$()?.connection === 'connected' && identity.signerState$()?.access === 'allowed' && identity.signerState$()?.isLocked === false && identity.signerState$()?.isReadOnly === false)) },
-    send (text, attachment) { return account.send(text, this.replyTo$(), attachment) }
+    send (text, attachment) { return feedback.send(() => account.send(text, this.replyTo$(), attachment)) }
   }))
   const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length)
   useTask(({ track, cleanup }) => {

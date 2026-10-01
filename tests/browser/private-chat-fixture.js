@@ -31,11 +31,12 @@ export function installPrivateChatFixture () {
       send (raw) {
         const [op, event] = JSON.parse(raw)
         if (op !== 'EVENT' || window.dmTest?.rejectPublication) return
-        if (!events.has(event.id)) {
+        const rejection = window.dmTest?.rejectionReason || ''
+        if (!rejection && !events.has(event.id)) {
           events.set(event.id, event)
           for (const stream of streams) if (matchFilter(stream.filter, event)) stream.push({ type: 'event', event, relay })
         }
-        const acknowledge = () => { if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(['OK', event.id, true, '']) }) }
+        const acknowledge = () => { if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(['OK', event.id, !rejection, rejection]) }) }
         if (window.dmTest?.holdAcknowledgements) acknowledgements.push(acknowledge)
         else queueMicrotask(acknowledge)
       }

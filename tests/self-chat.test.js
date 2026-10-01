@@ -716,9 +716,10 @@ for (const failure of ['verification', 'enqueue']) {
   test(`transport sends show immediately and retry ${failure} failures with the same identity`, async () => {
     const gate = Promise.withResolvers()
     const attachment = await stagedAttachment()
-    const sent = []
+    const sent = []; const failures = []
     let fail = true
     const f = fixture([], {
+      onSendError: (error, attempt) => failures.push({ error, attempt }),
       verifyFile: async () => { await gate.promise; if (fail && failure === 'verification') throw new Error('Storage failed') },
       transport: { enqueue: async entry => { sent.push(entry); if (fail && failure === 'enqueue') throw new Error('Quota exceeded') }, retry: () => assert.fail('Preparation must retry before durable acceptance') }
     })
@@ -733,6 +734,9 @@ for (const failure of ['verification', 'enqueue']) {
     await f.chat.retry(id)
     assert.equal(f.messages[0].status, 'error')
     assert.equal(attachment.closes, 0, 'failed sends retain bytes for retry')
+    assert.equal(failures.length, 1)
+    assert.deepEqual(failures[0].attempt, { id, peer: pubkey })
+    assert.equal(f.errors.length, 0, 'send failures do not set the history error')
     fail = false
     const retry = f.chat.retry(id)
     assert.equal(f.chat.retry(id), retry)

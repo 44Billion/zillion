@@ -41,6 +41,10 @@ export function useAccount () {
 // Mounted once at the app root; retained routes only read these signals.
 export function useInitAccount () {
   const account = useAccount()
+  const sendErrors = useMemo(() => new Set())
+  account.observeSendErrors = listener => { sendErrors.add(listener); return () => sendErrors.delete(listener) }
+  account.reportSendError = (error, attempt) => { for (const listener of sendErrors) listener(error, attempt) }
+  useTask(({ cleanup }) => cleanup(() => sendErrors.clear()))
   const queue = useMemo(() => ({ run: createChatWorkers(), foreground: null, opened: new Set() }))
   useInitPrivateChats(account, queue)
   useInitConversationSummaries(account)
@@ -106,7 +110,7 @@ export function useInitAccount () {
           if (closed) return false
           if (!runtime.chat) {
             runtime.chat = createSelfChat({
-              pubkey, eventStore, signer: window.nostr, workers: work => queue.run(work, () => queue.foreground === pubkey ? 1 : 0), transport: demoEnabled ? undefined : { enqueue: options => account.delivery().enqueue(options), cancel: id => account.delivery().cancel(id), retry: id => account.delivery().retry(id) }, onMessages: account.messages$, onError: report,
+              pubkey, eventStore, signer: window.nostr, workers: work => queue.run(work, () => queue.foreground === pubkey ? 1 : 0), transport: demoEnabled ? undefined : { enqueue: options => account.delivery().enqueue(options), cancel: id => account.delivery().cancel(id), retry: id => account.delivery().retry(id) }, onMessages: account.messages$, onError: report, onSendError: account.reportSendError,
               onReference: (id, event) => { if (!closed) account.references$({ ...account.references$(), [id]: event }) },
               onDelete: ids => {
                 if (closed) return
@@ -222,6 +226,7 @@ function useInitPrivateChats (account, queue) {
         workers: work => queue.run(work, () => queue.foreground === peer ? 1 : 0),
         onMessages: messages => patch(peer, { messages }),
         onError: error => patch(peer, { error: error.message }),
+        onSendError: account.reportSendError,
         onReference: (id, event) => patch(peer, { references: { ...account.conversations$()[peer]?.references, [id]: event } }),
         onHistoryState: historyState => patch(peer, { historyState }),
         onOlderState: older => patch(peer, { older }),
@@ -276,6 +281,7 @@ function useInitPrivateChats (account, queue) {
     account.contactsState$('loading')
     runtime.transport = createPrivateChats({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
+      onSendError: (error, attempt) => { if (!closed) account.reportSendError(error, attempt) },
       onOutbox: entries => {
         if (closed) return
         runtime.outbox = entries
