@@ -114,7 +114,7 @@ establish the cause of an earlier incident.
 
 ## Relay fallback
 
-Published libp2r2p 0.11.5 performs fallback inside PrivateMessenger,
+Published libp2r2p 0.11.8 performs fallback inside PrivateMessenger,
 shared by text, quoted context, announcements and attachment chunks. For implicit
 single-recipient NIP-65 routing, it selects at most two recipient read relays per
 attempt and republishes the exact signed outer event to remaining candidates.
@@ -139,7 +139,7 @@ Cancellation and session close stop further fallback publications.
 The controlled browser scenario `tests/browser/send-feedback.browser.js` checks
 all five read relays fail before the toast, successful replacement without a toast,
 unchanged outer event IDs, the two-recipient-relay limit and inactive retained
-routes. Published libp2r2p 0.11.5 exposes `fallbackRelays` through both
+routes. Published libp2r2p 0.11.8 exposes `fallbackRelays` through both
 the messenger and session constructors. Zillion sets it to
 `['wss://relay.44billion.net']` in `private-chats.js`. The same signed outer event
 is published only after eligible primary failures; no public recipient `p` tag
@@ -158,7 +158,7 @@ This does not add group conversations to Zillion.
 The browser scenario now also verifies fallback listening with a distinct owner
 read relay, quiet successful fallback publication, exhaustion including fallback
 before feedback, and unchanged public tags. Validation uses published
-libp2r2p 0.11.5 from npm, resolved in the production lockfile; no local archive
+libp2r2p 0.11.8 from npm, resolved in the production lockfile; no local archive
 or sibling source import is required.
 
 ## Recovery diagnostics
