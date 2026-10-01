@@ -43,7 +43,7 @@ function fixture ({ beforeOpen = async () => {}, fileAuthorize = async () => {},
     openOutbox: async () => { await beforeOpen(); return { list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} } },
     onOutbox: list => states.push(structuredClone(list)), onError: error => errors.push(error), onSendError: (error, attempt) => sendErrors.push({ error, attempt })
   })
-  return { transport, grants, errors, sendErrors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
+  return { transport, messengerOptions: () => callbacks, grants, errors, sendErrors, states, sends, writes, queue, updates, pauses, records, async open () { await transport.setPeers([peer]); await transport.setState(active) }, receive (message) { const row = { message }; queue.push(row); callbacks.onMessageQueued(); return row } }
 }
 
 test('both peer-chat participants seed recovery, retain NIP-65 routing and exclude self channels', async t => {
@@ -54,6 +54,7 @@ test('both peer-chat participants seed recovery, retain NIP-65 routing and exclu
     await f.transport.setState(active)
     const settings = () => f.updates.at(-1).channels.map(({ signer: _signer, ...settings }) => settings)
     const expected = [{ pubkey: `channel:${contact}`, mode: 'seeder', seeders: [contact] }]
+    assert.deepEqual(f.messengerOptions().fallbackRelays, ['wss://relay.44billion.net'])
     assert.deepEqual(settings(), expected, 'only the contact is a remote seeder and relay routing is inherited')
     await f.transport.setState({ ...active, isLocked: true })
     await f.transport.setState(active)

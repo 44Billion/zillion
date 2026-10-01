@@ -4,7 +4,7 @@ import { createQueue } from 'libp2r2p/idb-queue'
 import { prepareAttachment } from '#services/chat-attachments.js'
 import { chatReferenceUri } from '#services/chat-references.js'
 import { getEventHash } from 'libp2r2p/event'
-import { RelayPool, relayPool } from 'libp2r2p/relay'
+import { RelayPool, relayPool, getRelaysByPubkey } from 'libp2r2p/relay'
 import { createPrivateMessenger } from 'libp2r2p/private-messenger'
 import { createPrivateChats } from '#services/private-chats.js'
 import { createChat } from '#services/self-chat.js'
@@ -50,13 +50,14 @@ export function installPrivateChatFixture () {
   })
   // The installed library owns acknowledgement timing; only socket I/O is fake.
   relayPool.sendEvent = (event, urls, options = {}) => {
-    window.dmTest?.publicationBatches?.push({ id: event.id, relays: [...urls] })
+    window.dmTest?.publicationBatches?.push({ id: event.id, kind: event.kind, tags: event.tags, relays: [...urls] })
     return publisher.sendEvent(event, urls, {
       ...options,
       ...(window.dmTest?.rejectPublication ? { timeout: 25 } : {})
     })
   }
   const subscribe = (filter, urls, { signal } = {}) => {
+    window.dmTest?.subscriptionBatches?.push({ filter, relays: [...urls] })
     const queue = select(filter).map(event => ({ type: 'event', event, relay })).concat({ type: 'eose', relays })
     let waiter; let closed = false
     const stream = {
@@ -74,6 +75,7 @@ export function installPrivateChatFixture () {
   relayPool.getEventsFeedGenerator = subscribe
   relayPool.getLiveEventsGenerator = subscribe
   const fixture = { chunkId: (root, index) => NMMR.deriveChunkId(root, index), prepareAttachment, chatReferenceUri, getEventHash, errors: [], messages: [], outbox: [], events }
+  fixture.refreshRelayLists = pubkeys => getRelaysByPubkey(pubkeys, { forceRefresh: true })
   fixture.checkTemporaryLeaves = async () => {
     const a = new NMMR(); const b = new NMMR()
     try {

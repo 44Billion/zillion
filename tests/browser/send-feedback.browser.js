@@ -70,9 +70,13 @@ test('send failures show actionable toasts only for the originating active chat'
     await browser.until(() => evaluate('sendTest.account.contactsState$() === "loaded"'), 'initial local contacts')
     const peerSecret = generateSecretKey()
     const peer = getPublicKey(peerSecret)
+    const fallbackRelay = 'wss://relay.44billion.net'
     const readRelays = ['a', 'b', 'c', 'd', 'e'].map(name => `wss://${name}.relay-fallback.example`)
     const relayList = finalizeEvent({ kind: 10002, created_at: Math.floor(Date.now() / 1000), tags: readRelays.map(relay => ['r', relay, 'read']), content: '' }, peerSecret)
-    await evaluate(`dmTest.events.set('${relayList.id}', ${JSON.stringify(relayList)}); dmTest.publicationBatches = []`)
+    const ownReadRelay = 'wss://own-read.relay-fallback.example'
+    const ownRelayList = finalizeEvent({ kind: 10002, created_at: relayList.created_at, tags: [['r', ownReadRelay, 'read']], content: '' }, secret)
+    await evaluate(`dmTest.events.set('${relayList.id}', ${JSON.stringify(relayList)}); dmTest.events.set('${ownRelayList.id}', ${JSON.stringify(ownRelayList)}); dmTest.publicationBatches = []; dmTest.subscriptionBatches = []`)
+    await evaluate(`dmTest.refreshRelayLists(['${pubkey}', '${peer}'])`)
     await evaluate(`sendTest.account.setContact('${peer}', true)`)
     const push = async url => {
       await evaluate(`testNavigation.pushState({}, '', ${JSON.stringify(url)})`)
@@ -99,7 +103,14 @@ test('send failures show actionable toasts only for the originating active chat'
     await evaluate('dmTest.rejectionReason = \'blocked: only accepts some kinds that support public mentions well\'')
     const first = await send('Rejected active send')
     await failed(first)
-    assert.deepEqual(new Set((await evaluate('dmTest.publicationBatches')).flatMap(batch => batch.relays).filter(relay => readRelays.includes(relay))), new Set(readRelays), 'all advertised read relays are exhausted before the final error')
+    const failedBatches = await evaluate('dmTest.publicationBatches')
+    const initial = failedBatches.find(batch => batch.relays.includes(readRelays[0]) && failedBatches.some(attempt => attempt.id === batch.id && attempt.relays.length === 1 && attempt.relays[0] === fallbackRelay))
+    assert.ok(initial)
+    const attempts = failedBatches.filter(batch => batch.id === initial.id)
+    assert.deepEqual(attempts.map(batch => batch.relays), [readRelays.slice(0, 2), readRelays.slice(2, 4), [readRelays[4]], [fallbackRelay]], 'configured fallback is tried only after every advertised read relay, before the final error')
+    const subscriptions = await evaluate('dmTest.subscriptionBatches')
+    const watchedRelays = new Set(subscriptions.filter(batch => batch.filter.kinds?.includes(3560)).flatMap(batch => batch.relays))
+    assert.deepEqual(watchedRelays, new Set([ownReadRelay, fallbackRelay]), 'primary and fallback both have private-channel subscriptions before the user send completes')
     await browser.until(async () => (await toast()).includes('access rules'), 'friendly blocked toast')
     assert.equal(await evaluate('document.querySelector(".toast-message").textContent.includes("blocked:")'), false)
     // The message keeps its failed state independently of the toast.
@@ -114,8 +125,8 @@ test('send failures show actionable toasts only for the originating active chat'
     await dismiss()
 
     // A user retry remains pending while alternate relays answer. The first
-    // pair refuses and the replacement pair accepts the same encrypted event.
-    await evaluate(`dmTest.rejectionReason = ''; dmTest.rejectionReasons = ${JSON.stringify(Object.fromEntries(readRelays.slice(0, 2).map(relay => [relay, 'blocked: unsupported kind'])))}; dmTest.heldRelays = ${JSON.stringify(readRelays.slice(2, 4))}; dmTest.publicationBatches = []; document.querySelector('[data-message-id="${first}"] .status-indicator').click()`)
+    // five read relays refuse and the configured fallback accepts the same event.
+    await evaluate(`dmTest.rejectionReason = ''; dmTest.rejectionReasons = ${JSON.stringify(Object.fromEntries(readRelays.map(relay => [relay, 'blocked: unsupported kind'])))}; dmTest.heldRelays = ${JSON.stringify([fallbackRelay])}; dmTest.publicationBatches = []; document.querySelector('[data-message-id="${first}"] .status-indicator').click()`)
     await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .message-retry")'), 'second retry menu')
     await evaluate('document.querySelector(".route-page[data-active=true] .message-retry").click()')
     await browser.until(() => evaluate('dmTest.pendingAcknowledgements() > 0'), 'replacement relay responses held')
@@ -124,8 +135,9 @@ test('send failures show actionable toasts only for the originating active chat'
     const batches = await evaluate('dmTest.publicationBatches')
     const firstBatch = batches.find(batch => batch.relays.includes(readRelays[0]))
     assert.ok(firstBatch)
-    assert.ok(batches.some(batch => batch.id === firstBatch.id && batch.relays.includes(readRelays[2])), 'the replacement relays receive the same outer event ID')
-    assert.ok(batches.every(batch => batch.relays.filter(relay => readRelays.includes(relay)).length <= 2), 'at most two recipient relays per attempt')
+    assert.ok(batches.some(batch => batch.id === firstBatch.id && batch.relays.includes(fallbackRelay)), 'the configured fallback receives the same outer event ID')
+    assert.ok(batches.every(batch => batch.relays.filter(relay => [...readRelays, fallbackRelay].includes(relay)).length <= 2), 'at most two recipient/fallback relays per attempt')
+    assert.ok(batches.filter(batch => batch.id === firstBatch.id).every(batch => batch.kind === 3560 && !batch.tags.some(tag => tag[0] === 'p')), 'fallback never adds a public recipient p tag')
     await evaluate('dmTest.heldRelays = []; dmTest.releaseAcknowledgements()')
     await browser.until(async () => (await messages()).find(message => message.id === first)?.status === 'saved', 'replacement relay accepts the retry')
     assert.equal(await toast(), '')
@@ -170,7 +182,7 @@ test('send failures show actionable toasts only for the originating active chat'
     const success = await send('Successful send stays quiet')
     await browser.until(async () => (await messages()).find(message => message.id === success)?.status === 'saved', 'accepted send')
     assert.equal(await toast(), '')
-    console.log('All read relays exhausted before toast; fallback preserves pending bubble and outer ID; route guards, locale and successful sends verified')
+    console.log('All read and configured fallback relays exhausted before toast; fallback success preserves pending bubble, outer ID and private tags; route guards, locale and successful sends verified')
   } catch (error) {
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/send-feedback'))
     throw error

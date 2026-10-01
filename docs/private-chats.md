@@ -114,7 +114,7 @@ establish the cause of an earlier incident.
 
 ## Relay fallback
 
-Published libp2r2p 0.11.4 performs fallback inside PrivateMessenger,
+Published libp2r2p 0.11.5 performs fallback inside PrivateMessenger,
 shared by text, quoted context, announcements and attachment chunks. For implicit
 single-recipient NIP-65 routing, it selects at most two recipient read relays per
 attempt and republishes the exact signed outer event to remaining candidates.
@@ -126,7 +126,7 @@ Only machine-readable policy/server rejections (`blocked`, `restricted`,
 `auth-required`, `pow`, `rate-limited`, `error`) and native connection/transport/
 timeout failures permit replacement, after `isOnline` confirms connectivity.
 Invalid events, local signer/authentication failures and unknown errors retain
-their diagnosis. Explicit relay overrides remain authoritative. Candidate lists
+their diagnosis. Explicit relay lists remain primary destinations. Candidate lists
 are finite; exclusions last five minutes in memory and do not alter subscriptions.
 
 The outbox stays pending while alternatives are tried. Only final failures reach
@@ -139,8 +139,27 @@ Cancellation and session close stop further fallback publications.
 The controlled browser scenario `tests/browser/send-feedback.browser.js` checks
 all five read relays fail before the toast, successful replacement without a toast,
 unchanged outer event IDs, the two-recipient-relay limit and inactive retained
-routes. Zillion consumes the published `libp2r2p@^0.11.4` package, with 0.11.4
-resolved from npm in the production lockfile.
+routes. Published libp2r2p 0.11.5 exposes `fallbackRelays` through both
+the messenger and session constructors. Zillion sets it to
+`['wss://relay.44billion.net']` in `private-chats.js`. The same signed outer event
+is published only after eligible primary failures; no public recipient `p` tag
+is introduced. A relay ACK continues to mean publication, not peer receipt.
+
+The fallback is watched from the start alongside the owner's read relays and is
+queried during history/file recovery. Healthy primary subscriptions cannot prove
+that a sender did not use the fallback. This union also applies to explicit
+`relays`; outgoing `relays`/`sendRelays` lists keep their primary role and initial
+fanout before configured fallbacks are tried in pairs. NIP-65 lists are unchanged,
+and automatic relay-list refreshes retain the fallback. The library also supports
+automatic multi-recipient routing and explicit `relayToReceivers` maps, preserving
+encrypted subsets and requiring accepted publication covering every recipient.
+This does not add group conversations to Zillion.
+
+The browser scenario now also verifies fallback listening with a distinct owner
+read relay, quiet successful fallback publication, exhaustion including fallback
+before feedback, and unchanged public tags. Validation uses published
+libp2r2p 0.11.5 from npm, resolved in the production lockfile; no local archive
+or sibling source import is required.
 
 ## Recovery diagnostics
 

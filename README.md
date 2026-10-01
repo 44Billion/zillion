@@ -594,7 +594,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.11.4`
+This checkout consumes the public APIs from the published `libp2r2p@^0.11.5`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -719,12 +719,21 @@ notifications, including when that route remains mounted or the same chat URL is
 opened in a new history entry. Failed bubbles remain available for retry. Relay
 NIP-01/NIP-42 codes select app-owned text; raw relay prose stays in diagnostics.
 This integration uses the `onSendError` callback from the published libp2r2p
-0.11.4 release, installed from npm and pinned in package-lock.json.
+0.11.5 release, installed from npm and pinned in package-lock.json.
 
-libp2r2p 0.11.4 tries remaining recipient read relays in pairs
+libp2r2p 0.11.5 tries remaining recipient read relays in pairs
 when the selected pair refuses publication, preserving the encrypted event ID.
 Intermediate failures stay pending and quiet; the existing route-scoped toast
 receives only the final failure after eligible alternatives are exhausted. A
 single accepting relay still completes each outer event immediately. The published
 release is resolved from npm in the production lockfile. See
 [relay fallback](docs/private-chats.md#relay-fallback).
+
+
+Zillion configures `fallbackRelays: ['wss://relay.44billion.net']` in its private
+session. Recipient read relays remain primary for sends; the fallback is tried
+only after eligible primary failures and is included from the start in live,
+historical and file-channel reads. The library also supports multi-recipient
+channels and explicit recipient maps; Zillion continues to use DM sessions.
+The published libp2r2p 0.11.5 release is installed from npm and recorded in the
+production lockfile.

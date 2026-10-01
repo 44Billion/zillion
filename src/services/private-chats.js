@@ -14,6 +14,7 @@ export function createPrivateChats (options) {
   const local = createLocalMediaAccess(chunkStorage)
   const session = createPrivateMessageSession({
     ...options,
+    fallbackRelays: options.fallbackRelays === undefined ? ['wss://relay.44billion.net'] : options.fallbackRelays,
     chunkStorage,
     FileTransfer: options.FileTransfer || createMediaTransferPresentation,
     recoveryStorage: recovery,

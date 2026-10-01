@@ -82,7 +82,7 @@
     "@mediabunny/mp3-encoder": "1.56.3",
     "@scure/base": "2.4.0",
     "@scure/btc-signer": "2.4.1",
-    "libp2r2p": "^0.11.4",
+    "libp2r2p": "^0.11.5",
     "mediabunny": "1.56.3",
     "mime": "^4.1.0",
     "nmmr": "^2.0.1",
