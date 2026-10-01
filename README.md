@@ -121,8 +121,9 @@ transport recovery, and a cached public contact list avoids startup relay discov
 Demonstration builds retain the fictional directory and `luna@example.com` flow.
 Back/Forward preserves search, scroll and chat drafts. Contact changes in normal
 builds persist only to the private override list, compacting membership-`0`
-entries that no known kind-3 list follows after each edit; pin/edit controls
-remain previews.
+entries that no known kind-3 list follows after each edit. Pinned contacts
+persist in the same override and lead the home strip; the profile editor
+remains a preview.
 
 ## Profile preview
 
@@ -134,8 +135,8 @@ The adjacent Share/Copy action sends the complete displayed identifier through
 the existing native-share/clipboard fallback. Canceling Share does not copy.
 
 Contact controls persist the private override list and update home/chat;
-pin state remains a local preview within the retained profile page. Removing
-a contact also clears its pin. `/profile/user/edit` allows local
+pin state persists in the same entry and removing a contact clears it.
+Self and demo profiles keep pin as a local preview. `/profile/user/edit` allows local
 text drafts (including a Lightning address or LNURL) with Save and image controls
 disabled; it does not publish kind 0. Bitcoin and npub remain read-only.
 Self data follows the existing account profile. Third-party profiles use the

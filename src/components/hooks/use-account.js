@@ -29,7 +29,7 @@ export function useAccount () {
       const contact = this.contacts$().find(contact => contact.pubkey === id)
       const npub = npubEncode(id)
       const name = contact?.petname || profile.name?.trim() || profile.display_name?.trim() || `${npub.slice(0, 12)}…`
-      return { id, pubkey: id, profile, npub, nip05: profile.nip05 || '', name, shortName: name, saved: !!contact, pinned: false, unread: 0 }
+      return { id, pubkey: id, profile, npub, nip05: profile.nip05 || '', name, shortName: name, saved: !!contact, pinned: !!contact?.pinned, unread: 0 }
     },
     person$ () {
       const profile = this.profile$()
@@ -255,6 +255,11 @@ function useInitPrivateChats (account, queue) {
     if (demoPeople.some(person => person.pubkey === peer)) return false
     if (!runtime.contacts) throw new Error('Account unavailable')
     return runtime.contacts.set(peer, included)
+  }
+  account.setPinned = async (peer, pinned) => {
+    if (demoPeople.some(person => person.pubkey === peer)) return false
+    if (!runtime.contacts) throw new Error('Account unavailable')
+    return runtime.contacts.setPin(peer, pinned)
   }
   account.loadPerson = peer => {
     if (!/^[0-9a-f]{64}$/.test(peer || '') || runtime.profiles.has(peer)) return runtime.profiles.get(peer)

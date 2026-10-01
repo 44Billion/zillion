@@ -15,8 +15,12 @@ attempt and retries with exponential backoff from 1s up to 5 minutes while no
 local public list is known; generic connectivity probes never gate attempts.
 When a probe confirms the device is offline, the wait also ends on the next
 `onOnline` notification instead of only on the timer. `p` fields are pubkey,
-relay hint, petname, membership: `0` excludes, `1`/absent includes; CRDT suffixes
-are not membership values. Other entries and their metadata survive edits. Each
+relay hint, petname, membership, pinned: membership `0` excludes and any other
+value includes; pinned `1` fixes the contact and `0`/absent/empty does not. CRDT
+decorations are never relay hints, petnames, membership nor pin values; entries
+shifted by the early pin bug are read correctly and rewritten clean on the next
+edit. A removed contact is never pinned. Other entries and their metadata
+survive edits. Each
 edit also compacts the override: a `0` entry whose pubkey appears in neither the
 public nor the private kind-3 snapshot is dropped, and the store's local CRDT
 merge records the omission as a tombstone. While no public snapshot is known,
@@ -27,8 +31,9 @@ resumes the available recovery interval.
 `/chat/user` is self-chat; `/chat/<64-character peer key>` uses the real shared
 chat service. `/contacts/add` searches current contacts and resolves complete
 NIP-19/NIP-05 identifiers through point profile lookups; profile cache is shared
-with home and chat. `/profile/:contactId` persists contact changes. Pinning and
-profile editing remain local previews; removing a contact clears the local pin.
+with home and chat. `/profile/:contactId` persists contact and pin changes.
+Pinning persists in the override entry and profile editing remains a local
+preview; removing a contact clears its pin.
 No bottom navigation is added.
 
 ## Delivery and storage

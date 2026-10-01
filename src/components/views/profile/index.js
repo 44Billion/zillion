@@ -32,8 +32,12 @@ f('z-profile', ({ h, props }) => {
   const account = useAccount()
   const view = useStore(() => ({
     saved$ () { return props.person$().demo ? this.demoSaved$() : props.person$().saved !== false },
-    demoSaved$: props.person$().saved !== false, busy$: false,
-    pinned$: !!props.person$().pinned && (props.person$().self || props.person$().saved !== false),
+    demoSaved$: props.person$().saved !== false, busy$: false, pinBusy$: false,
+    simulatedPinned$: !!(props.person$().pinned && (props.person$().self || props.person$().demo)),
+    pinned$ () {
+      const person = props.person$()
+      return person.self || person.demo ? this.simulatedPinned$() : !!person.pinned && person.saved !== false
+    },
     details$ () { return profileDetails(props.person$()) },
     title$ () { return t(props.person$().self ? 'My profile' : 'Profile') },
     banner$ () { return props.person$().previewCover ? fixtureCover : this.details$().banner },
@@ -48,12 +52,20 @@ f('z-profile', ({ h, props }) => {
       try {
         if (props.person$().demo) this.demoSaved$(included)
         else await account.setContact(props.person$().pubkey, included)
-        if (!included) this.pinned$(false)
+        if (!included) this.simulatedPinned$(false)
       } catch { error(() => t('Could not update contacts')) } finally { this.busy$(false) }
+    },
+    async togglePin () {
+      if (this.pinBusy$() || (!props.person$().self && !this.saved$())) return
+      const pinned = !this.pinned$()
+      this.pinBusy$(true)
+      try {
+        if (props.person$().self || props.person$().demo) this.simulatedPinned$(pinned)
+        else await account.setPinned(props.person$().pubkey, pinned)
+      } catch { error(() => t('Could not update contacts')) } finally { this.pinBusy$(false) }
     }
   }))
   const details = view.details$()
-  useTask(({ track }) => { if (!track(() => view.saved$()) && !props.person$().self) view.pinned$(false) })
   const self = props.person$().self
   return h`
     <main class="profile-screen" data-profile-id=${props.person$().id}>
@@ -78,7 +90,7 @@ f('z-profile', ({ h, props }) => {
 : h`<button class=${`profile-action contact-toggle${view.saved$() ? '' : ' primary'}`} type="button" aria-pressed=${String(view.saved$())} aria-busy=${String(view.busy$())} onclick=${view.toggleContact} ?disabled=${view.busy$()}>
             <span class="profile-action-content">${view.saved$() ? h`<icon-user-minus props=${{ size: '22px' }} />` : h`<icon-user-plus props=${{ size: '22px' }} />`}<span>${t(view.saved$() ? 'Remove contact' : 'Add contact')}</span></span>
           </button>`}
-          ${self || view.saved$() ? h`<button class="profile-action pin-toggle" type="button" aria-pressed=${String(view.pinned$())} onclick=${() => view.pinned$(pinned => !pinned)}><icon-pin props=${{ size: '22px', weight: view.pinned$() ? 'regular' : 'light' }} /><span>${t(view.pinned$() ? 'Unpin' : 'Pin')}</span></button>` : null}
+          ${self || view.saved$() ? h`<button class="profile-action pin-toggle" type="button" aria-pressed=${String(view.pinned$())} aria-busy=${String(view.pinBusy$())} onclick=${view.togglePin} ?disabled=${view.pinBusy$()}><span class="profile-action-content"><icon-pin props=${{ size: '22px', weight: view.pinned$() ? 'regular' : 'light' }} /><span>${t(view.pinned$() ? 'Unpin' : 'Pin')}</span></span></button>` : null}
         </div>
       </div>
     </main>

@@ -11,18 +11,41 @@ const CONTACTS_ONLINE_TIMEOUT_MS = 6000
 const CONTACTS_REFRESH_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 5 * 60 * 1000]
 const hex = value => /^[0-9a-f]{64}$/.test(value || '')
 const preferred = (a, b) => !a || b.created_at > a.created_at || (b.created_at === a.created_at && b.id < a.id) ? b : a
+// NostrDB decorates owner-authored tags with reserved "~..." values. They are
+// never metadata: a decorated kind-3 tag may occupy the relay-hint slot, and
+// the store strips decorations on merge, so copying one into a new tag shifts
+// every later value.
+const isDecoration = value => typeof value === 'string' && value.startsWith('~')
+const tagValue = (tag, index) => isDecoration(tag?.[index]) ? '' : tag?.[index] || ''
+// Pin lives next to membership in the p tag; only an exact '1' means pinned.
+const isPinned = tag => tag?.[5] === '1'
+// A pre-fix release could copy a decorated relay hint into the override tag;
+// the next merge stripped it and shifted membership/pin into the
+// petname/membership slots. Those shifted values are always '0'/'1' and the
+// original petname (when present) took the relay slot. Recover the intended
+// entry so reads stay correct and the next edit rewrites a clean tag.
+const isShiftedEntry = tag => {
+  if (tag?.[3] !== '0' && tag?.[3] !== '1') return false
+  if (tag?.[4] === '0' || tag?.[4] === '1') return isDecoration(tag?.[5])
+  return isDecoration(tag?.[4])
+}
+function entryFields (tag) {
+  if (isShiftedEntry(tag)) return { relayHint: '', petname: tagValue(tag, 2), membership: tag[3], pinned: tag[4] === '1' }
+  return { relayHint: tagValue(tag, 2), petname: tagValue(tag, 3), membership: tagValue(tag, 4) || null, pinned: isPinned(tag) }
+}
 export function contactMembership (lists, owner) {
   const contacts = new Map()
   for (const event of lists.slice(0, 2)) {
     if (event?.pubkey !== owner) continue
-    for (const tag of event.tags) if (tag[0] === 'p' && hex(tag[1]) && tag[1] !== owner) contacts.set(tag[1], { pubkey: tag[1], relayHint: tag[2] || '', petname: tag[3]?.startsWith('~') ? '' : tag[3] || '' })
+    for (const tag of event.tags) if (tag[0] === 'p' && hex(tag[1]) && tag[1] !== owner) contacts.set(tag[1], { pubkey: tag[1], relayHint: tagValue(tag, 2), petname: tagValue(tag, 3), pinned: false })
   }
   const overrides = lists[2]
   if (overrides?.pubkey === owner) {
     for (const tag of overrides.tags) {
       if (tag[0] !== 'p' || !hex(tag[1]) || tag[1] === owner) continue
-      if (tag[4] === '0') contacts.delete(tag[1])
-      else if (tag[4] == null || tag[4] === '1' || tag[4].startsWith('~')) contacts.set(tag[1], { pubkey: tag[1], relayHint: tag[2] || '', petname: tag[3]?.startsWith('~') ? '' : tag[3] || '' })
+      const { relayHint, petname, membership, pinned } = entryFields(tag)
+      if (membership === '0') contacts.delete(tag[1])
+      else contacts.set(tag[1], { pubkey: tag[1], relayHint, petname, pinned })
     }
   }
   return [...contacts.values()]
@@ -39,7 +62,7 @@ export function compactContactOverrides (lists, owner, tags) {
     if (event?.pubkey !== owner) continue
     for (const tag of event.tags) if (tag[0] === 'p' && hex(tag[1]) && tag[1] !== owner) followed.add(tag[1])
   }
-  return tags.filter(tag => tag[0] !== 'p' || tag[4] !== '0' || followed.has(tag[1]))
+  return tags.filter(tag => tag[0] !== 'p' || entryFields(tag).membership !== '0' || followed.has(tag[1]))
 }
 
 export function createContacts ({ owner, signer, eventStore, onChange, onState = () => {}, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS, _isOnline = isOnline, _onOnline = onOnline }) {
@@ -198,7 +221,10 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
       return await initial.promise
     } catch (error) { fail(error); return false } finally { signal.removeEventListener('abort', cancel) }
   }
-  function set (peer, included) {
+  // Membership and pin share the override entry. Pin edits require an
+  // effective contact and materialize base-list metadata so an entry does not
+  // erase the relay hint or petname; removing membership always clears pin.
+  function update (peer, change) {
     if (!hex(peer) || peer === owner) return Promise.reject(new Error('INVALID_CONTACT'))
     const work = writes.catch(() => {}).then(async () => {
       if (!loaded && !await start()) throw new Error('CONTACTS_UNAVAILABLE')
@@ -210,9 +236,17 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
       }
       const previous = lists[2]
       const existing = previous?.tags.find(tag => tag[0] === 'p' && tag[1] === peer)
+      const existingFields = existing ? entryFields(existing) : null
+      const current = contactMembership(lists, owner).find(contact => contact.pubkey === peer)
+      if (change.included === undefined) {
+        if (!current) throw new Error('INVALID_CONTACT')
+        if (!change.pinned && !existingFields?.pinned) return true
+      }
+      const included = change.included ?? true
+      const pinned = included && (change.pinned ?? existingFields?.pinned ?? false)
       const tags = (previous?.tags || [['d', CONTACTS_DTAG]]).filter(tag => tag[0] !== 'p' || tag[1] !== peer)
       // Let the store stamp this changed p entry; preserve other entries' CRDT data.
-      tags.push(['p', peer, existing?.[2] || '', existing?.[3]?.startsWith('~') ? '' : existing?.[3] || '', included ? '1' : '0'])
+      tags.push(['p', peer, existingFields?.relayHint || current?.relayHint || '', existingFields?.petname || current?.petname || '', included ? '1' : '0', pinned ? '1' : '0'])
       // Best-effort compaction on every edit. Entries that no longer negate a
       // follow are dropped so the override only carries live decisions.
       const event = { kind: 30000, created_at: Math.max(Math.floor(Date.now() / 1000), (previous?.created_at || 0) + 1), tags: compactContactOverrides(lists, owner, tags), content: previous?.content || '' }
@@ -226,5 +260,5 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
     writes = work
     return work
   }
-  return { start, set, close () { generation++; remote?.abort(); for (const stream of streams) stream.return().catch(() => {}); streams = [] } }
+  return { start, set: (peer, included) => update(peer, { included }), setPin: (peer, pinned) => update(peer, { pinned }), close () { generation++; remote?.abort(); for (const stream of streams) stream.return().catch(() => {}); streams = [] } }
 }

@@ -197,8 +197,8 @@ test('close settles an incomplete initial read without publishing a late contact
   assert.deepEqual(f.changes, [])
 })
 
-test('removing a non-followed contact compacts its membership-0 override', async () => {
-  const f = localFixture({ publicList: () => [], override: peer => [['p', peer, '', '', '1']] })
+test('removing a non-followed pinned contact drops its entry entirely', async () => {
+  const f = localFixture({ publicList: () => [], override: peer => [['p', peer, '', '', '1', '1']] })
   await localStart(f)
   assert.deepEqual(f.changes.at(-1).map(contact => contact.pubkey), [f.peer])
   await f.contacts.set(f.peer, false)
@@ -211,10 +211,10 @@ test('removing a non-followed contact compacts its membership-0 override', async
 })
 
 test('removing a followed contact keeps the membership-0 override', async () => {
-  const f = localFixture({ publicList: peer => [['p', peer]], override: peer => [['p', peer, '', '', '1']] })
+  const f = localFixture({ publicList: peer => [['p', peer]], override: peer => [['p', peer, '', '', '1', '1']] })
   await localStart(f)
   await f.contacts.set(f.peer, false)
-  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '0']])
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '0', '0']], 'removal clears the pin')
   assert.deepEqual(f.changes.at(-1), [])
   f.contacts.close()
 })
@@ -231,7 +231,7 @@ test('an edit compacts stale membership-0 entries and preserves live metadata', 
   assert.deepEqual(f.writes[0].event.tags, [
     ['d', '+zillion:contacts'],
     ['p', followed, '', '', '0'],
-    ['p', f.peer, '', '', '1']
+    ['p', f.peer, '', '', '1', '0']
   ])
   f.contacts.close()
 })
@@ -240,6 +240,52 @@ test('compaction preserves overrides while the public list is unknown', async ()
   const f = localFixture({ override: peer => [['p', peer, '', '', '1']] })
   await localStart(f)
   await f.contacts.set(f.peer, false)
-  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '0']])
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '0', '0']])
+  f.contacts.close()
+})
+
+test('pinning a followed contact materializes base-list metadata', async () => {
+  const f = localFixture({ publicList: peer => [['p', peer, 'wss://relay.example', 'Public name']] })
+  await localStart(f)
+  await f.contacts.setPin(f.peer, true)
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, 'wss://relay.example', 'Public name', '1', '1']])
+  assert.deepEqual(f.changes.at(-1).map(contact => [contact.pubkey, contact.pinned, contact.petname]), [[f.peer, true, 'Public name']])
+  f.contacts.close()
+})
+
+test('a membership edit preserves an existing pin and unpin clears only the pin', async () => {
+  const f = localFixture({ publicList: () => [], override: peer => [['p', peer, '', '', '1', '1']] })
+  await localStart(f)
+  await f.contacts.set(f.peer, true)
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '1', '1']], 'membership edit keeps the pin')
+  await f.contacts.setPin(f.peer, false)
+  assert.deepEqual(f.writes[1].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '1', '0']], 'unpin keeps the contact')
+  assert.equal(f.changes.at(-1)[0].pinned, false)
+  f.contacts.close()
+})
+
+test('pin edits require an effective contact', async () => {
+  const f = localFixture({ publicList: () => [] })
+  await localStart(f)
+  await assert.rejects(f.contacts.setPin(f.peer, true), /INVALID_CONTACT/)
+  assert.equal(f.writes.length, 0)
+  f.contacts.close()
+})
+
+test('pinning a decorated public contact writes clean tag values', async () => {
+  const f = localFixture({ publicList: peer => [['p', peer, '~u=1;o=x']] })
+  await localStart(f)
+  await f.contacts.setPin(f.peer, true)
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '1', '1']])
+  assert.deepEqual(f.changes.at(-1).map(contact => [contact.pubkey, contact.petname, contact.pinned]), [[f.peer, '', true]])
+  f.contacts.close()
+})
+
+test('a shifted pre-fix entry heals when the contact is next edited', async () => {
+  const f = localFixture({ publicList: () => [], override: peer => [['p', peer, '', '1', '1', '~u=2;o=x']] })
+  await localStart(f)
+  assert.deepEqual(f.changes.at(-1).map(contact => [contact.petname, contact.pinned]), [['', true]], 'the shifted pin is recovered')
+  await f.contacts.set(f.peer, true)
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '1', '1']], 'the rewrite drops the artifact')
   f.contacts.close()
 })

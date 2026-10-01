@@ -169,6 +169,21 @@ test('direct peer routes wait for local contact membership without waiting for t
     assert.equal(await evaluate('getComputedStyle(document.querySelector(".contact-invitation .contact-action-content")).animationName'), 'z-contact-invitation-pulse', 'add contact content pulses while busy')
     await evaluate('contactBoot.releaseContactWrite()')
     await browser.until(() => evaluate('!document.querySelector(".contact-invitation")'), 'gated contact write completes')
+    await browser.evaluate(`(() => {
+      const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
+      const url = new URL(frame.src); url.pathname = '/profile/${peer}'; url.search = ''; frame.src = url.href;
+    })()`)
+    await browser.until(() => evaluate('!!document.querySelector(".profile-screen .pin-toggle")'), 'contact profile for pin')
+    const peerName = await evaluate(`contactBoot.account.personFor('${peer}').name`)
+    await evaluate('document.querySelector(".profile-screen .pin-toggle").click()')
+    await browser.until(() => evaluate('document.querySelector(".profile-screen .pin-toggle").getAttribute("aria-pressed") === "true"'), 'pin persists in the override')
+    await browser.evaluate(`(() => {
+      const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
+      const url = new URL(frame.src); url.pathname = '/'; url.search = ''; frame.src = url.href;
+    })()`)
+    await browser.until(() => evaluate(`!!document.querySelector('.contact-item[data-contact-id="${peer}"] .contact-pin')`), 'pinned contact badge on home')
+    assert.equal(await evaluate(`document.querySelector('.contact-item[data-contact-id="${peer}"] .contact-name').textContent`), peerName, 'pin keeps the contact name')
+    assert.equal(await evaluate('document.querySelector(".contact-item .contact-name").textContent'), peerName, 'pinned contact leads the home strip')
   } catch (error) {
     for (const context of browser?.contexts.values() || []) {
       if (!/^http:\/\/[0-9]+\.localhost/.test(context.origin) || !context.auxData?.isDefault) continue
