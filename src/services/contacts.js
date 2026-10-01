@@ -16,22 +16,15 @@ const preferred = (a, b) => !a || b.created_at > a.created_at || (b.created_at =
 // the store strips decorations on merge, so copying one into a new tag shifts
 // every later value.
 const isDecoration = value => typeof value === 'string' && value.startsWith('~')
-const tagValue = (tag, index) => isDecoration(tag?.[index]) ? '' : tag?.[index] || ''
-// Pin lives next to membership in the p tag; only an exact '1' means pinned.
-const isPinned = tag => tag?.[5] === '1'
-// A pre-fix release could copy a decorated relay hint into the override tag;
-// the next merge stripped it and shifted membership/pin into the
-// petname/membership slots. Those shifted values are always '0'/'1' and the
-// original petname (when present) took the relay slot. Recover the intended
-// entry so reads stay correct and the next edit rewrites a clean tag.
-const isShiftedEntry = tag => {
-  if (tag?.[3] !== '0' && tag?.[3] !== '1') return false
-  if (tag?.[4] === '0' || tag?.[4] === '1') return isDecoration(tag?.[5])
-  return isDecoration(tag?.[4])
-}
-function entryFields (tag) {
-  if (isShiftedEntry(tag)) return { relayHint: '', petname: tagValue(tag, 2), membership: tag[3], pinned: tag[4] === '1' }
-  return { relayHint: tagValue(tag, 2), petname: tagValue(tag, 3), membership: tagValue(tag, 4) || null, pinned: isPinned(tag) }
+const tagValue = (tag, index) => typeof tag?.[index] === 'string' && !isDecoration(tag[index]) ? tag[index] : ''
+// The override label merges every state letter in one slot: 'r' removes the
+// contact (and wins over 'p'), 'p' pins it, and absent/empty/unknown values
+// mean an unpinned contact. Letter order never matters; unknown letters are
+// ignored so newer interoperable writers can add labels without breaking us.
+function entryState (tag) {
+  const label = typeof tag?.[4] === 'string' && !isDecoration(tag[4]) ? tag[4] : ''
+  const removed = label.includes('r')
+  return { relayHint: tagValue(tag, 2), petname: tagValue(tag, 3), removed, pinned: !removed && label.includes('p') }
 }
 export function contactMembership (lists, owner) {
   const contacts = new Map()
@@ -43,16 +36,16 @@ export function contactMembership (lists, owner) {
   if (overrides?.pubkey === owner) {
     for (const tag of overrides.tags) {
       if (tag[0] !== 'p' || !hex(tag[1]) || tag[1] === owner) continue
-      const { relayHint, petname, membership, pinned } = entryFields(tag)
-      if (membership === '0') contacts.delete(tag[1])
+      const { relayHint, petname, removed, pinned } = entryState(tag)
+      if (removed) contacts.delete(tag[1])
       else contacts.set(tag[1], { pubkey: tag[1], relayHint, petname, pinned })
     }
   }
   return [...contacts.values()]
 }
 
-// A membership-0 entry only excludes a peer that a kind-3 snapshot follows.
-// Keep every override while the public snapshot is unknown: a missing list may
+// A removed entry only excludes a peer that a kind-3 snapshot follows. Keep
+// every override while the public snapshot is unknown: a missing list may
 // follow the peer. The local CRDT merge turns an omitted entry into a durable
 // tombstone, so dropping the tag here removes it across merges.
 export function compactContactOverrides (lists, owner, tags) {
@@ -62,7 +55,7 @@ export function compactContactOverrides (lists, owner, tags) {
     if (event?.pubkey !== owner) continue
     for (const tag of event.tags) if (tag[0] === 'p' && hex(tag[1]) && tag[1] !== owner) followed.add(tag[1])
   }
-  return tags.filter(tag => tag[0] !== 'p' || entryFields(tag).membership !== '0' || followed.has(tag[1]))
+  return tags.filter(tag => tag[0] !== 'p' || !entryState(tag).removed || followed.has(tag[1]))
 }
 
 export function createContacts ({ owner, signer, eventStore, onChange, onState = () => {}, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS, _isOnline = isOnline, _onOnline = onOnline }) {
@@ -221,9 +214,9 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
       return await initial.promise
     } catch (error) { fail(error); return false } finally { signal.removeEventListener('abort', cancel) }
   }
-  // Membership and pin share the override entry. Pin edits require an
+  // The override label carries membership and pin. Pin edits require an
   // effective contact and materialize base-list metadata so an entry does not
-  // erase the relay hint or petname; removing membership always clears pin.
+  // erase the relay hint or petname; removing a contact always clears pin.
   function update (peer, change) {
     if (!hex(peer) || peer === owner) return Promise.reject(new Error('INVALID_CONTACT'))
     const work = writes.catch(() => {}).then(async () => {
@@ -236,23 +229,25 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
       }
       const previous = lists[2]
       const existing = previous?.tags.find(tag => tag[0] === 'p' && tag[1] === peer)
-      const existingFields = existing ? entryFields(existing) : null
+      const existingState = existing ? entryState(existing) : null
       const current = contactMembership(lists, owner).find(contact => contact.pubkey === peer)
       if (change.included === undefined) {
         if (!current) throw new Error('INVALID_CONTACT')
-        if (!change.pinned && !existingFields?.pinned) return true
+        if (!change.pinned && !existingState?.pinned) return true
       }
       const included = change.included ?? true
-      const pinned = included && (change.pinned ?? existingFields?.pinned ?? false)
+      const pinned = included && (change.pinned ?? existingState?.pinned ?? false)
       const tags = (previous?.tags || [['d', CONTACTS_DTAG]]).filter(tag => tag[0] !== 'p' || tag[1] !== peer)
-      // Let the store stamp this changed p entry; preserve other entries' CRDT data.
-      tags.push(['p', peer, existingFields?.relayHint || current?.relayHint || '', existingFields?.petname || current?.petname || '', included ? '1' : '0', pinned ? '1' : '0'])
+      // Let the store stamp this changed p entry; preserve other entries' CRDT
+      // data. Removing always clears pin, and the canonical label never
+      // combines 'r' with 'p'.
+      tags.push(['p', peer, existingState?.relayHint || current?.relayHint || '', existingState?.petname || current?.petname || '', included ? (pinned ? 'p' : '') : 'r'])
       // Best-effort compaction on every edit. Entries that no longer negate a
       // follow are dropped so the override only carries live decisions.
       const event = { kind: 30000, created_at: Math.max(Math.floor(Date.now() / 1000), (previous?.created_at || 0) + 1), tags: compactContactOverrides(lists, owner, tags), content: previous?.content || '' }
       const result = await eventStore.addPersonalCopy(event, { context: '' })
       if (!result?.result?.ok) throw new Error('CONTACT_STORAGE_FAILED')
-      // Read the authoritative merged row on replay; update membership immediately.
+      // Read the authoritative merged row on replay; refresh the in-memory snapshot.
       lists[2] = { ...event, pubkey: owner, id: 'f'.repeat(64) }
       notify()
       return true

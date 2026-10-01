@@ -66,25 +66,25 @@ test('both peer-chat participants seed recovery, retain NIP-65 routing and exclu
   }
 })
 
-test('contacts merge owner lists and explicit overrides without confusing CRDT metadata', () => {
+test('contacts merge owner lists and explicit override labels without confusing CRDT metadata', () => {
   const list = tags => ({ pubkey: owner, tags })
-  assert.deepEqual(contactMembership([list([['p', peer], ['p', other]]), list([['p', 'd'.repeat(64)]]), list([['p', peer, '', '', '0', '~u=1;o=x'], ['p', other, '', '', '~u=2;o=x']])], owner).map(value => value.pubkey), [other, 'd'.repeat(64)])
+  assert.deepEqual(contactMembership([list([['p', peer], ['p', other]]), list([['p', 'd'.repeat(64)]]), list([['p', peer, '', '', 'r', '~u=1;o=x'], ['p', other, '', '', '~u=2;o=x']])], owner).map(value => value.pubkey), [other, 'd'.repeat(64)])
   assert.deepEqual(contactMembership([{ pubkey: peer, tags: [['p', other]] }, null, null], owner), [])
   assert.deepEqual(
-    contactMembership([list([['p', peer]]), null, list([['p', peer, '', '', '1', '1'], ['p', other, '', '', '1', '~u=2;o=x']])], owner).map(contact => [contact.pubkey, contact.pinned]),
-    [[peer, true], [other, false]],
-    'pin reads the value after membership and ignores CRDT decorations'
+    contactMembership([list([['p', peer]]), null, list([['p', peer, '', '', 'p'], ['p', other, '', '', 'px']])], owner).map(contact => [contact.pubkey, contact.pinned]),
+    [[peer, true], [other, true]],
+    'the label is a letter set and ignores unknown letters'
   )
-  assert.deepEqual(contactMembership([null, null, list([['p', peer, '', '', '0', '1']])], owner), [], 'a removed contact cannot stay pinned')
+  assert.deepEqual(contactMembership([null, null, list([['p', peer, '', '', 'rp']])], owner), [], 'r wins over p and a removed contact cannot stay pinned')
   assert.deepEqual(
     contactMembership([list([['p', peer, '~u=1;o=x'], ['p', other, 'wss://relay.example', 'Alice', '~u=2;o=x']]), null, null], owner).map(contact => [contact.pubkey, contact.relayHint, contact.petname]),
     [[peer, '', ''], [other, 'wss://relay.example', 'Alice']],
     'kind-3 CRDT decorations are not relay hints or petnames'
   )
   assert.deepEqual(
-    contactMembership([null, null, list([['p', peer, 'Alice', '1', '~u=2;o=x'], ['p', other, '', '1', '1', '~u=3;o=x']])], owner).map(contact => [contact.pubkey, contact.petname, contact.pinned]),
-    [[peer, 'Alice', false], [other, '', true]],
-    'shifted pre-fix entries recover the intended petname and pin'
+    contactMembership([null, null, list([['p', peer, '', '', '1'], ['p', other, '', '', ''], ['p', 'd'.repeat(64), '', '', 'x']])], owner).map(contact => [contact.pubkey, contact.pinned]),
+    [[peer, false], [other, false], ['d'.repeat(64), false]],
+    'legacy and unknown values mean an unpinned contact'
   )
 })
 

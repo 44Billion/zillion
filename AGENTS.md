@@ -1157,12 +1157,13 @@ requires the companion update. See `docs/private-chats.md` for that boundary.
   task. Missing, invalid or failed covers keep the compact layout; loaded covers
   are 160px with a 96px avatar overlapping by 32px. Do not reserve missing covers.
   Fixture cover bytes are bundled, with no external dependencies.
-- Contact controls and pin persist in the owner override list: the `p` tag
-  carries membership followed by pinned (`1` pinned; `0`/absent/empty not),
-  CRDT decorations are ignored, removing membership clears pin and compacts the
-  entry when the peer is not followed, and noncontacts cannot pin. Self and demo
+- Contact controls and pin persist in the owner override list: the `p` label
+  merges state letters (`r` removes and wins over `p`; `p` pins; absent, empty
+  or unknown letters mean an unpinned contact; letter order never matters),
+  CRDT decorations are ignored, removing clears pin and compacts the entry when
+  the peer is not followed, and noncontacts cannot pin. Self and demo
   profiles keep pin simulation local to each retained profile component; self
-  cannot add/remove itself. Every edit also compacts membership-`0` entries that
+  cannot add/remove itself. Every edit also compacts removed entries that
   neither the public nor the private kind-3 snapshot follows; while the public
   snapshot is unknown, keep every override. Retained Back/Forward preserves simulation and edit
   drafts; eviction/reload discards them. Key self views by owner to prevent drafts
