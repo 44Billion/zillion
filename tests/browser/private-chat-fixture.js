@@ -31,13 +31,13 @@ export function installPrivateChatFixture () {
       send (raw) {
         const [op, event] = JSON.parse(raw)
         if (op !== 'EVENT' || window.dmTest?.rejectPublication) return
-        const rejection = window.dmTest?.rejectionReason || ''
+        const rejection = window.dmTest?.rejectionReasons?.[this.url] ?? window.dmTest?.rejectionReason ?? ''
         if (!rejection && !events.has(event.id)) {
           events.set(event.id, event)
           for (const stream of streams) if (matchFilter(stream.filter, event)) stream.push({ type: 'event', event, relay })
         }
         const acknowledge = () => { if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(['OK', event.id, !rejection, rejection]) }) }
-        if (window.dmTest?.holdAcknowledgements) acknowledgements.push(acknowledge)
+        if (window.dmTest?.holdAcknowledgements || window.dmTest?.heldRelays?.includes(this.url)) acknowledgements.push(acknowledge)
         else queueMicrotask(acknowledge)
       }
 
@@ -49,10 +49,13 @@ export function installPrivateChatFixture () {
     }
   })
   // The installed library owns acknowledgement timing; only socket I/O is fake.
-  relayPool.sendEvent = (event, urls, options = {}) => publisher.sendEvent(event, urls, {
-    ...options,
-    ...(window.dmTest?.rejectPublication ? { timeout: 25 } : {})
-  })
+  relayPool.sendEvent = (event, urls, options = {}) => {
+    window.dmTest?.publicationBatches?.push({ id: event.id, relays: [...urls] })
+    return publisher.sendEvent(event, urls, {
+      ...options,
+      ...(window.dmTest?.rejectPublication ? { timeout: 25 } : {})
+    })
+  }
   const subscribe = (filter, urls, { signal } = {}) => {
     const queue = select(filter).map(event => ({ type: 'event', event, relay })).concat({ type: 'eose', relays })
     let waiter; let closed = false

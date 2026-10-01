@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import path from 'node:path'
 import esbuild from 'esbuild'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
+import { finalizeEvent } from 'libp2r2p/event'
 import { bytesToBase16 } from 'libp2r2p/base16'
 import { buildOptions, root } from '../../bin/build-options.js'
 import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
@@ -22,7 +23,12 @@ test('send failures show actionable toasts only for the originating active chat'
     html.bytes = new TextEncoder().encode(new TextDecoder().decode(html.bytes).replaceAll('z-app', 'z-send-feedback-fixture'))
     const app = await prepareTestApp(files, { identifier: 'send-feedback-test', name: 'Send feedback test' })
     browser = await launchChrome({
-      intercept: request => /^(?:[a-z0-9-]+\.)*localhost$/.test(new URL(request.url).hostname) ? null : false
+      intercept: request => {
+        const { hostname } = new URL(request.url)
+        if (/^(?:[a-z0-9-]+\.)*localhost$/.test(hostname)) return null
+        if (['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(hostname)) return { responseCode: 204, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '' }
+        return false
+      }
     })
     permissions = setInterval(() => browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {}), 100)
     await browser.navigate('http://localhost:10000')
@@ -62,7 +68,11 @@ test('send failures show actionable toasts only for the originating active chat'
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("vault-lock-button") && !document.querySelector("vault-lock-button").hidden)', vaultOrigin), 'unlocked vault')
     await browser.until(() => evaluate('sendTest.account.contactsState$() === "loaded"'), 'initial local contacts')
-    const peer = getPublicKey(generateSecretKey())
+    const peerSecret = generateSecretKey()
+    const peer = getPublicKey(peerSecret)
+    const readRelays = ['a', 'b', 'c', 'd', 'e'].map(name => `wss://${name}.relay-fallback.example`)
+    const relayList = finalizeEvent({ kind: 10002, created_at: Math.floor(Date.now() / 1000), tags: readRelays.map(relay => ['r', relay, 'read']), content: '' }, peerSecret)
+    await evaluate(`dmTest.events.set('${relayList.id}', ${JSON.stringify(relayList)}); dmTest.publicationBatches = []`)
     await evaluate(`sendTest.account.setContact('${peer}', true)`)
     const push = async url => {
       await evaluate(`testNavigation.pushState({}, '', ${JSON.stringify(url)})`)
@@ -89,6 +99,7 @@ test('send failures show actionable toasts only for the originating active chat'
     await evaluate('dmTest.rejectionReason = \'blocked: only accepts some kinds that support public mentions well\'')
     const first = await send('Rejected active send')
     await failed(first)
+    assert.deepEqual(new Set((await evaluate('dmTest.publicationBatches')).flatMap(batch => batch.relays).filter(relay => readRelays.includes(relay))), new Set(readRelays), 'all advertised read relays are exhausted before the final error')
     await browser.until(async () => (await toast()).includes('access rules'), 'friendly blocked toast')
     assert.equal(await evaluate('document.querySelector(".toast-message").textContent.includes("blocked:")'), false)
     // The message keeps its failed state independently of the toast.
@@ -101,6 +112,24 @@ test('send failures show actionable toasts only for the originating active chat'
     await evaluate('document.querySelector(".route-page[data-active=true] .message-retry").click()')
     await browser.until(async () => (await toast()).includes('Wait a moment'), 'retry guidance')
     await dismiss()
+
+    // A user retry remains pending while alternate relays answer. The first
+    // pair refuses and the replacement pair accepts the same encrypted event.
+    await evaluate(`dmTest.rejectionReason = ''; dmTest.rejectionReasons = ${JSON.stringify(Object.fromEntries(readRelays.slice(0, 2).map(relay => [relay, 'blocked: unsupported kind'])))}; dmTest.heldRelays = ${JSON.stringify(readRelays.slice(2, 4))}; dmTest.publicationBatches = []; document.querySelector('[data-message-id="${first}"] .status-indicator').click()`)
+    await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .message-retry")'), 'second retry menu')
+    await evaluate('document.querySelector(".route-page[data-active=true] .message-retry").click()')
+    await browser.until(() => evaluate('dmTest.pendingAcknowledgements() > 0'), 'replacement relay responses held')
+    assert.equal((await messages()).find(message => message.id === first)?.status, 'pending')
+    assert.equal(await toast(), '', 'intermediate relay rejections never show a toast')
+    const batches = await evaluate('dmTest.publicationBatches')
+    const firstBatch = batches.find(batch => batch.relays.includes(readRelays[0]))
+    assert.ok(firstBatch)
+    assert.ok(batches.some(batch => batch.id === firstBatch.id && batch.relays.includes(readRelays[2])), 'the replacement relays receive the same outer event ID')
+    assert.ok(batches.every(batch => batch.relays.filter(relay => readRelays.includes(relay)).length <= 2), 'at most two recipient relays per attempt')
+    await evaluate('dmTest.heldRelays = []; dmTest.releaseAcknowledgements()')
+    await browser.until(async () => (await messages()).find(message => message.id === first)?.status === 'saved', 'replacement relay accepts the retry')
+    assert.equal(await toast(), '')
+    await evaluate('dmTest.rejectionReasons = {}')
 
     await evaluate("dmTest.rejectionReason = 'auth-required: authenticate'; dmTest.holdAcknowledgements = true")
     const second = await send('Failure after leaving')
@@ -141,7 +170,7 @@ test('send failures show actionable toasts only for the originating active chat'
     const success = await send('Successful send stays quiet')
     await browser.until(async () => (await messages()).find(message => message.id === success)?.status === 'saved', 'accepted send')
     assert.equal(await toast(), '')
-    console.log('Active send, retry, hidden retained chat, Back, replacement route, locale and successful send verified')
+    console.log('All read relays exhausted before toast; fallback preserves pending bubble and outer ID; route guards, locale and successful sends verified')
   } catch (error) {
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/send-feedback'))
     throw error

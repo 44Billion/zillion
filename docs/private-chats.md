@@ -112,6 +112,36 @@ failures remain retryable, preserving the inner ID and committed local copy.
 These diagnostics identify future failures; the former generic error cannot
 establish the cause of an earlier incident.
 
+## Relay fallback
+
+Published libp2r2p 0.11.4 performs fallback inside PrivateMessenger,
+shared by text, quoted context, announcements and attachment chunks. For implicit
+single-recipient NIP-65 routing, it selects at most two recipient read relays per
+attempt and republishes the exact signed outer event to remaining candidates.
+One accepting relay completes that outer event immediately. There is no extra
+publication solely to replace a failed redundant copy; eligible redundant
+failures influence later selections while the healthy relay remains selected.
+
+Only machine-readable policy/server rejections (`blocked`, `restricted`,
+`auth-required`, `pow`, `rate-limited`, `error`) and native connection/transport/
+timeout failures permit replacement, after `isOnline` confirms connectivity.
+Invalid events, local signer/authentication failures and unknown errors retain
+their diagnosis. Explicit relay overrides remain authoritative. Candidate lists
+are finite; exclusions last five minutes in memory and do not alter subscriptions.
+
+The outbox stays pending while alternatives are tried. Only final failures reach
+`onSendError` and Zillion's existing route-instance filter, so the toast for relay
+refusals appears only after eligible alternatives are exhausted. Offline work
+with remaining alternatives also stays pending and quiet; a temporary shared
+`onOnline` listener retries it without overriding signer/account unavailability.
+Cancellation and session close stop further fallback publications.
+
+The controlled browser scenario `tests/browser/send-feedback.browser.js` checks
+all five read relays fail before the toast, successful replacement without a toast,
+unchanged outer event IDs, the two-recipient-relay limit and inactive retained
+routes. Zillion consumes the published `libp2r2p@^0.11.4` package, with 0.11.4
+resolved from npm in the production lockfile.
+
 ## Recovery diagnostics
 
 `PRIVATE_CHANNEL_FETCH_INCOMPLETE` describes a historical read, independently of
