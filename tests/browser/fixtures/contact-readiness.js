@@ -29,13 +29,15 @@ export function createContacts (options) {
   let held = parameters.has('holdContacts')
   let snapshot
   let state
+  const writeGate = Promise.withResolvers()
+  boot.releaseContactWrite = writeGate.resolve
   boot.failContacts = () => options.onState('unavailable')
   boot.releaseContacts = () => {
     held = false
     if (snapshot) options.onChange(snapshot)
     if (state) options.onState(state)
   }
-  return contacts({
+  const service = contacts({
     ...options,
     onChange: value => { snapshot = value; if (!held) options.onChange(value) },
     onState: value => {
@@ -44,4 +46,12 @@ export function createContacts (options) {
       if (!held || value === 'loading') options.onState(value)
     }
   })
+  if (!parameters.has('holdContactWrite')) return service
+  const set = service.set
+  service.set = async (peer, included) => {
+    boot.contactWriteStarted = true
+    await writeGate.promise
+    return set(peer, included)
+  }
+  return service
 }

@@ -75,8 +75,8 @@ f('z-profile', ({ h, props }) => {
         <div class="profile-actions">
           ${self
 ? h`<button class="profile-action edit-profile" type="button" onclick=${() => location.pushState({ fromProfile: true }, '', '/profile/user/edit')}><icon-pencil props=${{ size: '22px' }} /><span>${t('Edit profile')}</span></button>`
-: h`<button class=${`profile-action contact-toggle${view.saved$() ? '' : ' primary'}`} type="button" aria-pressed=${String(view.saved$())} onclick=${view.toggleContact} ?disabled=${view.busy$()}>
-            ${view.saved$() ? h`<icon-user-minus props=${{ size: '22px' }} />` : h`<icon-user-plus props=${{ size: '22px' }} />`}<span>${t(view.saved$() ? 'Remove contact' : 'Add contact')}</span>
+: h`<button class=${`profile-action contact-toggle${view.saved$() ? '' : ' primary'}`} type="button" aria-pressed=${String(view.saved$())} aria-busy=${String(view.busy$())} onclick=${view.toggleContact} ?disabled=${view.busy$()}>
+            <span class="profile-action-content">${view.saved$() ? h`<icon-user-minus props=${{ size: '22px' }} />` : h`<icon-user-plus props=${{ size: '22px' }} />`}<span>${t(view.saved$() ? 'Remove contact' : 'Add contact')}</span></span>
           </button>`}
           ${self || view.saved$() ? h`<button class="profile-action pin-toggle" type="button" aria-pressed=${String(view.pinned$())} onclick=${() => view.pinned$(pinned => !pinned)}><icon-pin props=${{ size: '22px', weight: view.pinned$() ? 'regular' : 'light' }} /><span>${t(view.pinned$() ? 'Unpin' : 'Pin')}</span></button>` : null}
         </div>

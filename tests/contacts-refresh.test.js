@@ -90,6 +90,7 @@ function localFixture ({ publicList = null, override = null, decrypt } = {}) {
   const changes = []
   const errors = []
   const streams = []
+  const writes = []
   let remoteRequests = 0
   const contacts = createContacts({
     owner,
@@ -114,7 +115,9 @@ function localFixture ({ publicList = null, override = null, decrypt } = {}) {
         }
         return stream
       },
-      add: async () => {}
+      add: async () => {},
+      query: async () => ({ results: [] }),
+      addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true } } }
     },
     onChange: value => changes.push(value),
     onState: value => states.push(value),
@@ -124,7 +127,14 @@ function localFixture ({ publicList = null, override = null, decrypt } = {}) {
       return signal.aborted ? Promise.resolve({ result: [] }) : new Promise(resolve => signal.addEventListener('abort', () => resolve({ result: [] }), { once: true }))
     }
   })
-  return { contacts, states, changes, errors, streams, peer, remoteRequests: () => remoteRequests }
+  return { contacts, states, changes, errors, streams, writes, peer, remoteRequests: () => remoteRequests }
+}
+
+async function localStart (f) {
+  const starting = f.contacts.start()
+  await until(() => f.streams.length === 3)
+  for (const stream of f.streams) stream.push({ type: 'eose' })
+  assert.equal(await starting, true)
 }
 
 test('membership waits for all local lists, including an override removing a public contact', async () => {
@@ -185,4 +195,51 @@ test('close settles an incomplete initial read without publishing a late contact
   assert.equal(await starting, false)
   assert.deepEqual(f.states, ['loading'])
   assert.deepEqual(f.changes, [])
+})
+
+test('removing a non-followed contact compacts its membership-0 override', async () => {
+  const f = localFixture({ publicList: () => [], override: peer => [['p', peer, '', '', '1']] })
+  await localStart(f)
+  assert.deepEqual(f.changes.at(-1).map(contact => contact.pubkey), [f.peer])
+  await f.contacts.set(f.peer, false)
+  assert.equal(f.writes.length, 1)
+  assert.equal(f.writes[0].options.context, '')
+  assert.equal(f.writes[0].event.kind, 30000)
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts']])
+  assert.deepEqual(f.changes.at(-1), [])
+  f.contacts.close()
+})
+
+test('removing a followed contact keeps the membership-0 override', async () => {
+  const f = localFixture({ publicList: peer => [['p', peer]], override: peer => [['p', peer, '', '', '1']] })
+  await localStart(f)
+  await f.contacts.set(f.peer, false)
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '0']])
+  assert.deepEqual(f.changes.at(-1), [])
+  f.contacts.close()
+})
+
+test('an edit compacts stale membership-0 entries and preserves live metadata', async () => {
+  const stale = pubkeyOf(generateSecretKey())
+  const followed = pubkeyOf(generateSecretKey())
+  const f = localFixture({
+    publicList: () => [['p', followed]],
+    override: peer => [['p', stale, 'wss://relay.example', 'Old name', '0'], ['p', followed, '', '', '0'], ['p', peer, '', '', '0']]
+  })
+  await localStart(f)
+  await f.contacts.set(f.peer, true)
+  assert.deepEqual(f.writes[0].event.tags, [
+    ['d', '+zillion:contacts'],
+    ['p', followed, '', '', '0'],
+    ['p', f.peer, '', '', '1']
+  ])
+  f.contacts.close()
+})
+
+test('compaction preserves overrides while the public list is unknown', async () => {
+  const f = localFixture({ override: peer => [['p', peer, '', '', '1']] })
+  await localStart(f)
+  await f.contacts.set(f.peer, false)
+  assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, '', '', '0']])
+  f.contacts.close()
 })

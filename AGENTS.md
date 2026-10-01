@@ -1159,7 +1159,9 @@ requires the companion update. See `docs/private-chats.md` for that boundary.
   Fixture cover bytes are bundled, with no external dependencies.
 - Contact controls persist the owner override list; pin simulation stays local
   to each retained profile component: removing clears pin, noncontacts cannot pin, and self
-  cannot add/remove itself. Retained Back/Forward preserves simulation and edit
+  cannot add/remove itself. Every edit also compacts membership-`0` entries that
+  neither the public nor the private kind-3 snapshot follows; while the public
+  snapshot is unknown, keep every override. Retained Back/Forward preserves simulation and edit
   drafts; eviction/reload discards them. Key self views by owner to prevent drafts
   or simulation leaking between accounts. Untouched edit fields follow incoming
   account metadata; touched fields preserve drafts without changing account data.

@@ -120,7 +120,9 @@ transport recovery, and a cached public contact list avoids startup relay discov
 
 Demonstration builds retain the fictional directory and `luna@example.com` flow.
 Back/Forward preserves search, scroll and chat drafts. Contact changes in normal
-builds persist only to the private override list; pin/edit controls remain previews.
+builds persist only to the private override list, compacting membership-`0`
+entries that no known kind-3 list follows after each edit; pin/edit controls
+remain previews.
 
 ## Profile preview
 

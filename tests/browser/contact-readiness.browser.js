@@ -154,6 +154,21 @@ test('direct peer routes wait for local contact membership without waiting for t
     await browser.until(() => evaluate('!!document.querySelector(".contact-invitation") && !!document.querySelector(".contact-profile")'), 'noncontact invitation follows the completed local decision')
     assert.equal(await evaluate('!!document.querySelector(".compose-action")'), false)
     await evaluate('contactBoot.releaseQueue()')
+    await browser.evaluate(`(() => {
+      const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)});
+      const url = new URL(frame.src); url.pathname = '/chat/${peer}'; url.search = '?holdContactWrite=1'; frame.src = url.href;
+    })()`)
+    await browser.until(() => evaluate('!!document.querySelector(".contact-invitation button")'), 'noncontact invitation for the busy check')
+    const idleBackground = await evaluate('getComputedStyle(document.querySelector(".contact-invitation button")).backgroundColor')
+    await evaluate('document.querySelector(".contact-invitation button").click()')
+    await browser.until(() => evaluate('contactBoot.contactWriteStarted'), 'contact write pending')
+    await browser.until(() => evaluate('document.querySelector(".contact-invitation button").disabled'), 'add contact disables while busy')
+    assert.equal(await evaluate('document.querySelector(".contact-invitation button").getAttribute("aria-busy")'), 'true', 'add contact reports busy')
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".contact-invitation button")).pointerEvents'), 'none', 'add contact ignores presses while busy')
+    assert.notEqual(await evaluate('getComputedStyle(document.querySelector(".contact-invitation button")).backgroundColor'), idleBackground, 'add contact dims its background while busy')
+    assert.equal(await evaluate('getComputedStyle(document.querySelector(".contact-invitation .contact-action-content")).animationName'), 'z-contact-invitation-pulse', 'add contact content pulses while busy')
+    await evaluate('contactBoot.releaseContactWrite()')
+    await browser.until(() => evaluate('!document.querySelector(".contact-invitation")'), 'gated contact write completes')
   } catch (error) {
     for (const context of browser?.contexts.values() || []) {
       if (!/^http:\/\/[0-9]+\.localhost/.test(context.origin) || !context.auxData?.isDefault) continue

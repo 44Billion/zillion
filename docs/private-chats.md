@@ -16,7 +16,11 @@ local public list is known; generic connectivity probes never gate attempts.
 When a probe confirms the device is offline, the wait also ends on the next
 `onOnline` notification instead of only on the timer. `p` fields are pubkey,
 relay hint, petname, membership: `0` excludes, `1`/absent includes; CRDT suffixes
-are not membership values. Other entries and their metadata survive edits.
+are not membership values. Other entries and their metadata survive edits. Each
+edit also compacts the override: a `0` entry whose pubkey appears in neither the
+public nor the private kind-3 snapshot is dropped, and the store's local CRDT
+merge records the omission as a tombstone. While no public snapshot is known,
+every override is preserved because the missing list may follow the peer.
 Removing a contact keeps history and suspends sending/listening; re-adding
 resumes the available recovery interval.
 

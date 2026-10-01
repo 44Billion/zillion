@@ -1,4 +1,4 @@
-import { f, useLocation } from '#f'
+import { f, useLocation, useStore } from '#f'
 import { t } from '#i18n/messages.js'
 import { useAccount } from '#hooks/use-account.js'
 import { info, error } from '#shared/toast.js'
@@ -28,9 +28,22 @@ f('z-contact-profile', ({ h, props }) => {
 
 f('z-contact-invitation', ({ h, props }) => {
   const account = useAccount()
+  const view = useStore(() => ({
+    busy$: false,
+    async add () {
+      if (this.busy$()) return
+      if (props.person$().demo) return info(() => t('Adding contacts is not available yet.'))
+      this.busy$(true)
+      try { await account.setContact(props.person$().pubkey, true) } catch { error(() => t('Could not update contacts')) } finally { this.busy$(false) }
+    }
+  }))
   return h`
   <div class="contact-invitation">
     <style>${`
+      @keyframes z-contact-invitation-pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: .45; }
+      }
       z-contact-invitation .contact-invitation {
         flex: none; margin: 8px 12px max(12px, env(safe-area-inset-bottom)); padding: 18px 16px 16px;
         border: 1px solid var(--z-border); border-radius: 18px; background: var(--z-chat-overlay);
@@ -38,15 +51,16 @@ f('z-contact-invitation', ({ h, props }) => {
         p { margin: 0 auto 16px; max-width: 360px; font-size: 14rem; line-height: 1.5; color: var(--z-muted); }
         button { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 48px;
           border: 0; border-radius: 12px; background: var(--z-primary); color: var(--z-on-primary); font-size: 16rem; cursor: pointer; }
-        button:active { opacity: .8; }
+        button:active:not(:disabled) { opacity: .8; }
+        button:disabled { cursor: default; pointer-events: none; background: color-mix(in srgb, var(--z-primary) 55%, transparent); }
+        .contact-action-content { display: flex; align-items: center; justify-content: center; gap: 10px; }
+        button:disabled .contact-action-content { animation: z-contact-invitation-pulse 1.1s ease-in-out infinite; }
+        @media (prefers-reduced-motion: reduce) { button:disabled .contact-action-content { animation: none; opacity: .6; } }
       }
     `}</style>
     <p>${t('Add {{name}} to your contacts to send messages.', { name: props.person$().shortName })}</p>
-    <button type="button" onclick=${async () => {
-      if (props.person$().demo) return info(() => t('Adding contacts is not available yet.'))
-      try { await account.setContact(props.person$().pubkey, true) } catch { error(() => t('Could not update contacts')) }
-    }}>
-      <icon-user-plus props=${{ size: '24px', weight: 'regular' }} /><span>${t('Add contact')}</span>
+    <button type="button" aria-busy=${String(view.busy$())} onclick=${view.add} ?disabled=${view.busy$()}>
+      <span class="contact-action-content"><icon-user-plus props=${{ size: '24px', weight: 'regular' }} /><span>${t('Add contact')}</span></span>
     </button>
   </div>
 `

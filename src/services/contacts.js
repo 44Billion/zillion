@@ -28,6 +28,20 @@ export function contactMembership (lists, owner) {
   return [...contacts.values()]
 }
 
+// A membership-0 entry only excludes a peer that a kind-3 snapshot follows.
+// Keep every override while the public snapshot is unknown: a missing list may
+// follow the peer. The local CRDT merge turns an omitted entry into a durable
+// tombstone, so dropping the tag here removes it across merges.
+export function compactContactOverrides (lists, owner, tags) {
+  if (lists[0]?.pubkey !== owner) return tags
+  const followed = new Set()
+  for (const event of lists.slice(0, 2)) {
+    if (event?.pubkey !== owner) continue
+    for (const tag of event.tags) if (tag[0] === 'p' && hex(tag[1]) && tag[1] !== owner) followed.add(tag[1])
+  }
+  return tags.filter(tag => tag[0] !== 'p' || tag[4] !== '0' || followed.has(tag[1]))
+}
+
 export function createContacts ({ owner, signer, eventStore, onChange, onState = () => {}, onError = () => {}, _getEvents, _retryDelays = CONTACTS_REFRESH_DELAYS, _isOnline = isOnline, _onOnline = onOnline }) {
   const lists = [null, null, null]
   let streams = []
@@ -199,7 +213,9 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
       const tags = (previous?.tags || [['d', CONTACTS_DTAG]]).filter(tag => tag[0] !== 'p' || tag[1] !== peer)
       // Let the store stamp this changed p entry; preserve other entries' CRDT data.
       tags.push(['p', peer, existing?.[2] || '', existing?.[3]?.startsWith('~') ? '' : existing?.[3] || '', included ? '1' : '0'])
-      const event = { kind: 30000, created_at: Math.max(Math.floor(Date.now() / 1000), (previous?.created_at || 0) + 1), tags, content: previous?.content || '' }
+      // Best-effort compaction on every edit. Entries that no longer negate a
+      // follow are dropped so the override only carries live decisions.
+      const event = { kind: 30000, created_at: Math.max(Math.floor(Date.now() / 1000), (previous?.created_at || 0) + 1), tags: compactContactOverrides(lists, owner, tags), content: previous?.content || '' }
       const result = await eventStore.addPersonalCopy(event, { context: '' })
       if (!result?.result?.ok) throw new Error('CONTACT_STORAGE_FAILED')
       // Read the authoritative merged row on replay; update membership immediately.
