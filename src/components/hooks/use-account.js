@@ -53,6 +53,7 @@ export function useInitAccount () {
   account.openSelfConversation = () => {
     runtime.opened = true
     account.focusConversation(account.pubkey$())
+    account.prefetchContentKeys(account.pubkey$())
     return runtime.chat ? runtime.chat.ensureStarted(account.summaries$()[account.pubkey$()]) : account.recover()
   }
   account.send = (content, replyTo, attachment) => {
@@ -216,6 +217,12 @@ function useInitPrivateChats (account, queue) {
   const runtime = useMemo(() => ({ chats: new Map(), transport: null, contacts: null, outbox: [], profiles: new Map(), profileActive: 0, profileQueue: [], version: 0 }))
   const patch = (peer, values) => account.conversations$(previous => ({ ...previous, [peer]: { ...previous[peer], ...values } }))
   account.delivery = () => { if (!runtime.transport) throw new Error('Account unavailable'); return runtime.transport }
+  // Opening a chat warms the content-key lookup cache so the first send does
+  // not pay the relay round trip. Best-effort: prefetchContentKeys never rejects.
+  account.prefetchContentKeys = peer => {
+    if (!/^[0-9a-f]{64}$/.test(peer || '')) return
+    runtime.transport?.prefetchContentKeys?.([peer])?.catch(() => {})
+  }
   account.ensureConversation = peer => {
     const owner = account.pubkey$()
     if (!owner || !/^[0-9a-f]{64}$/.test(peer || '') || peer === owner) return
@@ -238,6 +245,7 @@ function useInitPrivateChats (account, queue) {
     return runtime.chats.get(peer)
   }
   account.openConversation = peer => {
+    account.prefetchContentKeys(peer)
     const chat = account.ensureConversation(peer)
     if (!chat) return Promise.resolve(false)
     account.focusConversation(peer)
