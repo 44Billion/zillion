@@ -449,12 +449,16 @@ needed; empty folders mark the initial structure.
   user's chosen identity and existing files; do not migrate or rotate secrets
   implicitly when changing dependencies. Never log secret values.
 - `npm run start:publish` publishes
-  successful builds to draft after a two-second debounce; `upload:draft` performs
-  one upload. Both use identifier `zillion` and share a project upload lock.
-  The main channel is published only by an explicit `npm run upload`.
-- Preserve immutable build bytes while nappup reads them. Temporary directories
-  isolate uploads without changing published filenames. Build errors invalidate
-  pending publication; only the latest pending successful build is retained.
+  successful builds to draft after a two-second debounce without prompting.
+  `upload` and `upload:draft` clean and rebuild `dist/zillion/` under the shared
+  project upload lock, then let nappup confirm on the terminal before publishing.
+  All use identifier `zillion`. The main channel is published only by an explicit
+  `npm run upload`.
+- Watcher publications preserve immutable build bytes while nappup reads them:
+  temporary directories isolate uploads without changing published filenames.
+  Manual uploads hold the lock while nappup reads `dist/zillion/`, and nappup's
+  prompt names that build folder. Build errors invalidate pending publication;
+  only the latest pending successful build is retained.
 - A stale upload lock fails explicitly instead of being reclaimed concurrently.
   Check that its uploader has stopped before removing `tmp/upload.lock`.
 - Let nappup manage publisher authentication and its existing environment file.

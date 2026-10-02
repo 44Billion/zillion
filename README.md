@@ -320,7 +320,8 @@ npm test                  # fast Node tests; no publishing
 npm run test:browser      # real launcher/vault in disposable Chrome profiles
 npm run lint
 npm run build             # production files in dist/zillion/
-npm run upload:draft      # one-shot development build and draft upload
+npm run upload            # build production files and confirm a main upload
+npm run upload:draft      # build development files and confirm a draft upload
 npm run serve             # standalone production preview; stop the dev vault first
 ```
 
@@ -359,10 +360,12 @@ deletes every vault account and all local data of every app in that browser and
 reloads; it aborts with an error when the vault is unreachable. Reopen the
 printed local link afterwards to reinstall the app files.
 
-`start:publish` retains the two-second debounce, isolated upload files and shared
-`tmp/upload.lock` used by `upload:draft`. It publishes to the real network. If an
-uploader is forcibly killed, remove a stale lock only after confirming its process
-has stopped. Changes to build scripts or dependencies require restarting watchers.
+`start:publish` retains the two-second debounce and isolated upload files. It
+shares the project `tmp/upload.lock` with `upload` and `upload:draft`; those
+manual commands clean and rebuild `dist/zillion/` under the lock and let nappup
+confirm before publishing. All of them publish to the real network. If an uploader
+is forcibly killed, remove a stale lock only after confirming its process has
+stopped. Changes to build scripts or dependencies require restarting watchers.
 
 Browser tests install an unpublished build into the real launcher's caches using
 its own storage helpers. They use the actual injected APIs, vault and permission
@@ -386,10 +389,14 @@ Zillion will be a static site published as an **nsite** (also called an app,
 napp, or Nostr app), following [NIP-5A — Named Sites](https://github.com/nostr-protocol/nips/blob/master/5A.md#named-sites).
 The project's runtime environment **does not support service workers**.
 
-`npm run upload` compiles and publishes to **main** using the installed nappup.
-`npm run start:publish` and `npm run upload:draft` publish only to **draft**, with identifier
-`zillion`. All three publish to the real network, even with a local launcher.
-Publisher identity and upload options follow [nappup](../../nappup/README.md).
+`npm run upload` cleans and builds production files into `dist/zillion/`, then
+publishes to **main** with the installed nappup, which asks for confirmation on
+the terminal. `npm run upload:draft` follows the same steps with a development
+build for the **draft** channel. `npm run start:publish` publishes watched
+development builds to **draft** automatically, without prompting. All three
+publish to the real network, even with a local launcher, and use identifier
+`zillion`. Publisher identity and upload options follow
+[nappup](../../nappup/README.md).
 
 Publishing uses the sibling `../../nappup` checkout, whose dependencies must be
 installed. Run `npm run link:nappup` here after initial setup, switching Node/npm,

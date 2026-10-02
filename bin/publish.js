@@ -36,19 +36,19 @@ export async function acquireUploadLock ({ projectRoot = root, signal } = {}) {
   }
 }
 
-export async function publishBuild (files, { channel = 'draft', signal, projectRoot = root, log = text => process.stdout.write(text) } = {}) {
-  if (!['draft', 'main'].includes(channel)) throw new Error('Unsupported publication channel')
-  const release = await acquireUploadLock({ projectRoot, signal })
-  let snapshot
-  try {
-    signal?.throwIfAborted()
-    snapshot = await snapshotBuild(files, projectRoot)
-    const entry = fileURLToPath(new URL('../bin/nappup/index.js', import.meta.resolve('nappup')))
-    const child = spawn(process.execPath, [entry, snapshot.directory, '-d', 'zillion', `--${channel}`, '-y'], {
-      cwd: projectRoot, env: process.env, stdio: ['ignore', 'pipe', 'pipe']
-    })
-    let output = ''
-    let app
+// Runs one nappup publication while the caller holds the project upload lock.
+// Watchers pass yes: true to skip the confirmation prompt and capture the
+// published URL; manual uploads keep the terminal attached so nappup asks first.
+export async function runNappup (directory, { channel = 'draft', yes = false, signal, projectRoot = root, log = text => process.stdout.write(text) } = {}) {
+  const entry = fileURLToPath(new URL('../bin/nappup/index.js', import.meta.resolve('nappup')))
+  const args = [entry, directory, '-d', 'zillion', `--${channel}`]
+  if (yes) args.push('-y')
+  const child = spawn(process.execPath, args, {
+    cwd: projectRoot, env: process.env, stdio: yes ? ['ignore', 'pipe', 'pipe'] : 'inherit'
+  })
+  let output = ''
+  let app
+  if (yes) {
     for (const stream of [child.stdout, child.stderr]) {
       stream.on('data', bytes => {
         const text = bytes.toString()
@@ -57,22 +57,34 @@ export async function publishBuild (files, { channel = 'draft', signal, projectR
         app = output.match(/Visit at https:\/\/44billion\.net\/(\S+)/)?.[1] ?? app
       })
     }
-    let killTimer
-    const abort = () => {
-      child.kill('SIGTERM')
-      killTimer = setTimeout(() => child.kill('SIGKILL'), 5000)
-    }
-    signal?.addEventListener('abort', abort, { once: true })
-    if (signal?.aborted) abort()
-    try {
-      await new Promise((resolve, reject) => {
-        child.once('error', reject)
-        child.once('close', code => code === 0 ? resolve() : reject(new Error(`nappup exited (${code})`)))
-      })
-      if (!app) throw new Error('nappup did not report a completed publication')
-      if (channel === 'draft') log(`Draft preview: http://localhost:10000/${app}\n`)
-      return { app, url: `http://localhost:10000/${app}` }
-    } finally { signal?.removeEventListener('abort', abort); clearTimeout(killTimer) }
+  }
+  let killTimer
+  const abort = () => {
+    child.kill('SIGTERM')
+    killTimer = setTimeout(() => child.kill('SIGKILL'), 5000)
+  }
+  signal?.addEventListener('abort', abort, { once: true })
+  if (signal?.aborted) abort()
+  try {
+    await new Promise((resolve, reject) => {
+      child.once('error', reject)
+      child.once('close', code => code === 0 ? resolve() : reject(new Error(`nappup exited (${code})`)))
+    })
+    if (!yes) return {}
+    if (!app) throw new Error('nappup did not report a completed publication')
+    if (channel === 'draft') log(`Draft preview: http://localhost:10000/${app}\n`)
+    return { app, url: `http://localhost:10000/${app}` }
+  } finally { signal?.removeEventListener('abort', abort); clearTimeout(killTimer) }
+}
+
+export async function publishBuild (files, { channel = 'draft', signal, projectRoot = root, log } = {}) {
+  if (!['draft', 'main'].includes(channel)) throw new Error('Unsupported publication channel')
+  const release = await acquireUploadLock({ projectRoot, signal })
+  let snapshot
+  try {
+    signal?.throwIfAborted()
+    snapshot = await snapshotBuild(files, projectRoot)
+    return await runNappup(snapshot.directory, { channel, yes: true, signal, projectRoot, log })
   } finally {
     try { await snapshot?.dispose() } finally { await release() }
   }
