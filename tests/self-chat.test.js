@@ -16,32 +16,37 @@ function wrapper (event, context = `dm:${pubkey}`, provenance = '1') {
   return finalizeEvent({ kind: 1006, created_at: event.created_at, tags: [['k', String(event.kind)], ['c', context], ['v', provenance], ['o', getEventHash({ ...event, pubkey })], ...event.tags.filter(tag => tag[0] === 'r').map(tag => ['o', tag[1]])], content: bytesToBase64(new TextEncoder().encode(JSON.stringify(event))) }, secret)
 }
 function fixture (history = [], options = {}) {
-  let deliver
-  let deliverDeletion
+  let deliver = () => {}
+  let deliverDeletion = () => {}
   let returned = false
-  let initial = []
   const writes = []
   const errors = []
   let messages = []
   let initialMessages = null
-  const subscription = {
-    [Symbol.asyncIterator] () { return this },
-    next: () => initial.length ? Promise.resolve({ value: initial.shift(), done: false }) : new Promise(resolve => { deliver = resolve }),
-    return: async () => { returned = true; deliver?.({ done: true }); return { done: true } }
-  }
-  const deletionSubscription = {
-    [Symbol.asyncIterator] () { return this },
-    next: () => new Promise(resolve => { deliverDeletion = resolve }),
-    return: async () => { deliverDeletion?.({ done: true }); return { done: true } }
+  let historyPulls = 0
+  let deletionPulls = 0
+  // Deliveries queue instead of resolving a captured resolver, so two events
+  // arriving before the consumer asks again are never dropped.
+  const createStream = (initial, register, onPull) => {
+    const queue = [...initial]
+    let wake = null
+    register(item => {
+      if (wake) { const resolve = wake; wake = null; resolve({ value: item, done: false }) } else queue.push(item)
+    })
+    return {
+      [Symbol.asyncIterator] () { return this },
+      next: () => { onPull(); return queue.length ? Promise.resolve({ value: queue.shift(), done: false }) : new Promise(resolve => { wake = resolve }) },
+      return: async () => { returned = true; wake?.({ done: true }); wake = null; return { done: true } }
+    }
   }
   const publicEvents = options.publicEvents ?? []
   const eventStore = {
     subscribe (filter, options) {
       if (filter['#k'][0] === '9') {
         assert.deepEqual(options, { initial: true })
-        initial = [...history.filter(event => event.tags.some(tag => tag[0] === 'k' && tag[1] === '9')).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, 25).map(event => ({ type: 'event', event })), { type: 'eose' }]
+        const initial = [...history.filter(event => event.tags.some(tag => tag[0] === 'k' && tag[1] === '9')).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, 25).map(event => ({ type: 'event', event })), { type: 'eose' }]
         assert.deepEqual(filter, { kinds: [1006], authors: [pubkey], '#k': ['9'], '#c': [`dm:${pubkey}`], '#v': ['0', '1'], limit: 25 })
-        return subscription
+        return createStream(initial, push => { deliver = event => push({ type: 'event', event }) }, () => { historyPulls++ })
       }
       assert.deepEqual(filter, {
         kinds: [1006],
@@ -51,7 +56,7 @@ function fixture (history = [], options = {}) {
         '#v': ['0', '1'],
         '#o': ['9', '1063']
       })
-      return deletionSubscription
+      return createStream([], push => { deliverDeletion = event => push({ type: 'event', event }) }, () => { deletionPulls++ })
     },
     query: async (filter = {}) => {
       if (filter.ids) return { results: publicEvents.filter(event => filter.ids.includes(event.id)) }
@@ -77,11 +82,20 @@ function fixture (history = [], options = {}) {
     get initialMessages () { return initialMessages },
     get messages () { return messages },
     get returned () { return returned },
-    deliver: event => deliver({ done: false, value: { type: 'event', event } }),
-    deliverDeletion: event => deliverDeletion({ done: false, value: { type: 'event', event } })
+    get historyPulls () { return historyPulls },
+    get deletionPulls () { return deletionPulls },
+    deliver: event => deliver(event),
+    deliverDeletion: event => deliverDeletion(event)
   }
 }
 const tick = () => new Promise(resolve => setTimeout(resolve, 10))
+const until = async (predicate, message = 'condition not reached') => {
+  for (let attempt = 0; attempt < 300; attempt++) {
+    if (predicate()) return
+    await tick()
+  }
+  assert.fail(message)
+}
 
 test('self history and live copies deduplicate, order by inner ID and exclude hearsay, other authors and contexts', async () => {
   const first = inner('Private note')
@@ -164,8 +178,7 @@ test('concurrent sends and retries keep stable IDs, and live confirmation wins o
   assert.deepEqual(attempts[2].event, attempts[0].event)
   assert.deepEqual(Object.keys(attempts[2].event).sort(), ['content', 'created_at', 'kind', 'tags'], 'UI state never enters the stored event')
   f.deliver(wrapper(attempts[2].event))
-  await tick()
-  assert.equal(status(first), 'saved')
+  await until(() => status(first) === 'saved', 'live confirmation updates the bubble')
   attempts[2].reject(new Error('Late bridge failure'))
   await retried
   assert.equal(status(first), 'saved')
@@ -311,7 +324,7 @@ test('private deletion envelopes remove matching messages from the local list', 
 
   const request = { kind: 5, created_at: 12, tags: [['e', targetId], ['k', '9']], content: '' }
   f.deliverDeletion(wrapper(request))
-  await tick()
+  await until(() => removed.length === 1, 'remote deletion is applied')
 
   assert.deepEqual(removed, [targetId])
   f.chat.close()
@@ -391,8 +404,7 @@ test('recovering subscriptions ignores replaced streams and late decryptions aft
   assert.equal(streams[1].returned, true)
   assert.deepEqual(f.errors, [])
   streams[3].emit(wrapper(inner('Current stream')))
-  await tick()
-  assert.equal(f.messages[0].content, 'Current stream')
+  await until(() => f.messages[0]?.content === 'Current stream', 'the current stream is applied')
   f.chat.close()
   assert.equal(streams[2].returned, true)
 
@@ -515,8 +527,7 @@ test('pasted file pointers are preserved and remote deletion cannot resurrect th
   await f.chat.deleteMessage(pasted)
   assert.deepEqual(f.writes.at(-1).event.tags, [['e', pasted], ['k', '9']])
   f.deliverDeletion(wrapper({ kind: 5, created_at: 100, content: '', tags: [['e', id], ['k', '9']] }))
-  await tick()
-  assert.equal(f.messages.length, 0)
+  await until(() => f.messages.length === 0, 'remote deletion removes the file message')
   f.deliver(wrapper({ kind: 9, created_at: fileMessage.created_at, content: fileMessage.content, tags: fileMessage.tags }))
   await tick()
   const survivor = f.chat.send('Survivor')
@@ -533,8 +544,10 @@ test('a confirmed remote deletion wins over a late local deletion failure', asyn
   f.eventStore.addPersonalCopy = () => pending.promise
   const deleting = f.chat.deleteMessage(id)
   await tick()
+  const deletionPulls = f.deletionPulls
   f.deliverDeletion(wrapper({ kind: 5, created_at: 11, content: '', tags: [['e', id], ['k', '9']] }))
-  await tick()
+  // The deletion loop awaits its processing before pulling again.
+  await until(() => f.deletionPulls > deletionPulls, 'remote deletion is processed')
   pending.resolve({ result: { ok: false } })
   assert.equal(await deleting, false)
   assert.equal(f.messages.length, 0, 'the failed local attempt cannot undo another confirmed deletion')
@@ -678,7 +691,7 @@ test('history and live events seed the newest boundary regardless of arrival ord
   random.mock.restore()
   await f.chat.retry(id)
   f.deliver(wrapper(inner('Live newer', 2005)))
-  await tick()
+  await until(() => f.messages.some(message => message.content === 'Live newer'), 'live backfill is processed')
   const later = f.chat.send('After live history')
   await f.chat.retry(later)
   assert.equal(f.messages.at(-1).id, later)
