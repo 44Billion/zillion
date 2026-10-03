@@ -10,8 +10,10 @@ import './header.js'
 import './day.js'
 import './composer.js'
 import { useInitChatLayout } from './hooks/use-chat-layout.js'
+import { useInitChatReadState } from './hooks/use-chat-read-state.js'
 import { useSendFeedback } from '#hooks/use-send-feedback.js'
 import { useAccount, useConversation } from '#hooks/use-account.js'
+import { firstUnreadMessageId } from '#helpers/conversation-preview.js'
 
 f('z-chat-route', ({ h, props }) => {
   const location = useLocation()
@@ -53,6 +55,30 @@ f('z-chat', ({ h, props }) => {
       if (!this.real$()) return getMessages(props.person$())
       return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$(), owner: account.pubkey$() })
     },
+    anchor$ () {
+      const person = props.person$()
+      if (!this.real$() || person.self) return null
+      return identity.readAnchors$()[person.pubkey] || null
+    },
+    // Latched once per open: the marker never moves while the chat is open; it
+    // only disappears under the dismissal rule in the read-state hook.
+    dividerId$: null,
+    dividerReady$: false,
+    latchDivider () {
+      if (this.dividerReady$()) return
+      this.dividerId$(firstUnreadMessageId(this.messages$(), this.anchor$()))
+      this.dividerReady$(true)
+    },
+    dismissDivider () {
+      if (this.dividerId$()) this.dividerId$(null)
+    },
+    // 'pending' keeps the viewport from settling at the bottom while the
+    // anchored window is still loading and no divider exists yet.
+    initialAnchor$ () {
+      if (this.dividerId$()) return this.dividerId$()
+      if (this.anchor$() && !this.dividerReady$()) return 'pending'
+      return null
+    },
     days$ () { return groupChatDays(this.messages$()) },
     reply (id) { this.replyTo$(id); this.activeId$(null) },
     retry (id) { this.activeId$(null); return feedback.retry(id, () => account.retryMessage(id)) },
@@ -70,7 +96,27 @@ f('z-chat', ({ h, props }) => {
     canSend$ () { return this.real$() && !this.contactsPending$() && (props.person$().self || this.saved$()) && account.ready$() && !!account.pubkey$() && (props.person$().self || (identity.signerState$()?.connection === 'connected' && identity.signerState$()?.access === 'allowed' && identity.signerState$()?.isLocked === false && identity.signerState$()?.isReadOnly === false)) },
     send (text, attachment) { return feedback.send(() => account.send(text, this.replyTo$(), attachment)) }
   }))
-  const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length)
+  const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length, view.initialAnchor$)
+  useInitChatReadState(identity, {
+    peer$: () => props.person$().pubkey,
+    self$: () => props.person$().self === true,
+    messages$: view.messages$,
+    timelineRef$: view.timelineRef$,
+    active$: page.isActive$,
+    settled$: () => !layout.initial$(),
+    dividerId$: view.dividerId$,
+    dismissDivider: view.dismissDivider
+  })
+  useTask(({ track }) => {
+    const [active, loaded] = track(() => [page.isActive$(), account.historyLoaded$()])
+    if (!active) {
+      // A reopened chat latches a fresh marker from the persisted anchor.
+      view.dividerReady$(false)
+      view.dividerId$(null)
+      return
+    }
+    if (loaded && view.real$() && !props.person$().self) view.latchDivider()
+  })
   useTask(({ track, cleanup }) => {
     const [timeline, active, initial, loaded, older] = track(() => [view.timelineRef$(), page.isActive$(), layout.initial$(), account.historyState$(), account.older$()])
     if (!timeline || !active || initial || loaded !== 'loaded' || !view.real$() || older.loading || older.error || !older.hasOlder) return
@@ -78,6 +124,17 @@ f('z-chat', ({ h, props }) => {
       if (timeline.scrollTop <= timeline.clientHeight) account.loadOlder()
     }
     // Defer until the viewport controller has reconciled the last insertion.
+    const frame = requestAnimationFrame(check)
+    timeline.addEventListener('scroll', check, { passive: true })
+    cleanup(() => { cancelAnimationFrame(frame); timeline.removeEventListener('scroll', check) })
+  }, { after: 'rendering' })
+  useTask(({ track, cleanup }) => {
+    const [timeline, active, initial, loaded, newer] = track(() => [view.timelineRef$(), page.isActive$(), layout.initial$(), account.historyState$(), account.newer$()])
+    if (!timeline || !active || initial || loaded !== 'loaded' || !view.real$() || newer.loading || !newer.hasNewer) return
+    const check = () => {
+      if (timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight <= 48) account.loadNewer()
+    }
+    // Forward pages keep loading while the reader stays at the bottom.
     const frame = requestAnimationFrame(check)
     timeline.addEventListener('scroll', check, { passive: true })
     cleanup(() => { cancelAnimationFrame(frame); timeline.removeEventListener('scroll', check) })
@@ -141,6 +198,7 @@ f('z-chat', ({ h, props }) => {
           .timeline-content { display: flow-root; }
           .message-list { list-style: none; padding: 0; margin: 0; }
           .chat-date { width: fit-content; margin: 8px auto 16px; padding: 4px 12px; border-radius: 14px; background: var(--z-chat-overlay); color: var(--z-muted); font-size: 12rem; line-height: 1.4; }
+          .unread-divider { width: fit-content; margin: 8px auto 16px; padding: 4px 12px; border-radius: 14px; background: var(--z-primary); color: var(--z-on-primary); font-size: 12rem; line-height: 1.4; }
           .retry-btn { margin-left: 8px; background: var(--z-control); color: var(--z-text); border: 2px solid var(--z-border); border-radius: 4px; cursor: pointer; }
           .retry-btn:active { background: var(--z-pressed); }
         }
@@ -155,7 +213,7 @@ f('z-chat', ({ h, props }) => {
           ${view.days$().map(day => h({ key: day.key })`
             <f-to-signals props=${{
               from: { day },
-              render: ({ h, props: data }) => h`<z-chat-day props=${{ day$: data.day$, messages$: view.messages$, person$: props.person$, activeId$: view.activeId$, onReply: view.reply, onRetry: view.retry, onDelete: view.remove, references$: () => account.references$(), resolve$: account.resolveReference }} />`
+              render: ({ h, props: data }) => h`<z-chat-day props=${{ day$: data.day$, messages$: view.messages$, person$: props.person$, activeId$: view.activeId$, onReply: view.reply, onRetry: view.retry, onDelete: view.remove, references$: () => account.references$(), resolve$: account.resolveReference, dividerId$: view.dividerId$ }} />`
             }} />
           `)}
         </ol>

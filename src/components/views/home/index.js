@@ -22,7 +22,7 @@ f('z-home', ({ h }) => {
     contacts$ () {
       return [...account.people$().filter(person => person.saved !== false), account.person$()].toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
         ...contact,
-        unread: data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0
+        unread: demoEnabled ? (data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0) : contact.unread
       }))
     },
     conversations$ () {
@@ -38,7 +38,8 @@ f('z-home', ({ h }) => {
         if (!latest && !person.self) return []
         const date = latest ? new Date(latest.created_at * 1000) : null
         return [{
-          ...conversation, contact: person.self ? self : person, real: true, unread: 0,
+          ...conversation, contact: person.self ? self : person, real: true,
+          unread: demoEnabled ? conversation.unread ?? 0 : person.self ? 0 : (account.unread$()[person.pubkey] ?? 0),
           message: conversationPreview(latest, { ...summary?.references, ...chat?.references }, t),
           lastMessageAt: date?.toISOString() ?? '',
           timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''

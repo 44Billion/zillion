@@ -5,6 +5,13 @@ import { compactWhitespace } from 'libp2r2p/nip27'
 // Same order as the chat: newest timestamp, then lowest inner event ID.
 export const compareChatMessages = (a, b) => a.created_at - b.created_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
 
+// First loaded message newer than the read anchor; null when everything shown
+// is already read, which is when the unread divider disappears.
+export function firstUnreadMessageId (messages, anchor) {
+  if (!anchor) return null
+  return messages.find(message => compareChatMessages(message, anchor) > 0)?.id ?? null
+}
+
 export function conversationPreview (event, references = {}, t = value => value) {
   if (!event) return ''
   // Known chat pointers are structural even while their local metadata is

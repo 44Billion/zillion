@@ -4,15 +4,21 @@ import { createChatHistory } from '../src/services/chat-history.js'
 const tick = () => new Promise(resolve => setTimeout(resolve, 5))
 const wrapper = (id, at = 100) => ({ id: String(id).padStart(64, '0'), created_at: at })
 function fixture (count, options = {}) {
-  const events = Array.from({ length: count }, (_, i) => wrapper(i))
+  const events = Array.from({ length: count }, (_, i) => wrapper(i, options.at ? options.at(i) : 100))
   const retained = new Map()
   const accepted = []
   const queries = []
   const batches = []
-  let running = 0; let maxRunning = 0; let state; let fail = false
+  let running = 0; let maxRunning = 0; let state; let newerState; let fail = false
   let wake
   const live = []
-  const select = f => events.filter(e => (!f.ids || f.ids.includes(e.id)) && (f.until === undefined || e.created_at <= f.until) && !f['!ids']?.includes(e.id)).sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id)).slice(0, f.limit)
+  const select = f => {
+    const matched = events.filter(e => (!f.ids || f.ids.includes(e.id)) && (f.until === undefined || e.created_at <= f.until) && (f.since === undefined || e.created_at >= f.since) && !f['!ids']?.includes(e.id))
+    const sorted = f.search === 'sort:asc'
+      ? matched.sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id))
+      : matched.sort((a, b) => b.created_at - a.created_at || a.id.localeCompare(b.id))
+    return sorted.slice(0, f.limit)
+  }
   const eventStore = {
     subscribe (f, opts) {
       assert.equal(opts.initial, true); assert.equal(f.limit, 25)
@@ -28,10 +34,10 @@ function fixture (count, options = {}) {
   const history = createChatHistory({
     eventStore, filter: { kinds: [1006], '#c': ['private'] }, retained,
     async accept (event, active) { running++; maxRunning = Math.max(maxRunning, running); await options.wait?.(event); await tick(); running--; if (options.reject?.(event)) throw new Error('decrypt'); if (active()) accepted.push(event.id); return event.id },
-    onBatch () { batches.push([...accepted]) }, onState (value) { state = value }, onMissing () {}, onError: assert.fail
+    onBatch () { batches.push([...accepted]) }, onState (value) { state = value }, onNewerState (value) { newerState = value }, onMissing () {}, onError: assert.fail
   })
   return {
-    history, eventStore, accepted, queries, retained, batches, get state () { return state }, get maxRunning () { return maxRunning }, get fail () { return fail }, set fail (value) { fail = value },
+    history, eventStore, accepted, queries, retained, batches, get state () { return state }, get newerState () { return newerState }, get maxRunning () { return maxRunning }, get fail () { return fail }, set fail (value) { fail = value },
     deliver (value) { const item = { value, done: false }; if (wake) { const resolve = wake; wake = null; resolve(item) } else live.push(item) },
     add (e, notify = true) { events.push(e); if (!notify) return; const item = { value: { type: 'event', event: e }, done: false }; if (wake) { const resolve = wake; wake = null; resolve(item) } else live.push(item) }
   }
@@ -170,4 +176,49 @@ test('shared workers promote queued foreground work without increasing concurren
   gate.resolve()
   await Promise.all([first, second, background, promoted])
   assert.deepEqual(calls, ['c', 'b'])
+})
+
+test('anchored start opens the first unread page, forward pages reach the live frontier and older pages stay paginated', async () => {
+  const f = fixture(80, { at: i => 100 + Math.floor(i / 4) })
+  try {
+    const anchor = { id: wrapper(20).id, created_at: wrapper(20, 105).created_at }
+    await f.history.start({ anchor })
+    assert.equal(f.accepted.length, new Set(f.accepted).size, 'initial pages never duplicate a bubble')
+    assert.ok(f.accepted.includes(wrapper(24).id), 'the window starts at the first message newer than the anchor')
+    assert.ok(!f.accepted.includes(wrapper(23).id), 'same-second messages above the anchor are older')
+    assert.ok(f.accepted.includes(wrapper(79).id), 'the recent snapshot is still loaded')
+    assert.equal(f.newerState.hasNewer, true)
+    assert.ok(f.queries.some(query => query.search === 'sort:asc'), 'forward pages read ascending')
+    while (f.newerState.hasNewer) await f.history.loadNewer()
+    assert.equal(f.accepted.length, new Set(f.accepted).size, 'no duplicate bubbles across forward pages')
+    assert.equal(f.newerState.hasNewer, false)
+    while (f.state.hasOlder) await f.history.loadOlder()
+    assert.equal(new Set(f.accepted).size, 80, 'every wrapper is reachable exactly once')
+    assert.equal(f.accepted.length, 80)
+  } finally { f.history.close() }
+})
+
+test('an anchor at or after the newest message keeps the recent-page behavior', async () => {
+  const f = fixture(80, { at: i => 100 + Math.floor(i / 4) })
+  try {
+    const anchor = { id: wrapper(79).id, created_at: wrapper(79, 119).created_at }
+    await f.history.start({ anchor })
+    assert.equal(f.accepted.length, 25, 'only the recent snapshot loads')
+    assert.equal(f.newerState.hasNewer, false)
+    assert.equal(f.state.hasOlder, true)
+    assert.equal(await f.history.loadNewer(), false)
+    assert.ok(f.queries.every(query => query.search !== 'sort:asc'), 'no forward page is read without unread messages')
+  } finally { f.history.close() }
+})
+
+test('an anchor inside the recent snapshot never prefetches a forward page', async () => {
+  const f = fixture(60, { at: i => 100 + Math.floor(i / 4) })
+  try {
+    const anchor = { id: wrapper(45).id, created_at: wrapper(45, 111).created_at }
+    await f.history.start({ anchor })
+    assert.equal(f.accepted.length, 25)
+    assert.equal(f.newerState.hasNewer, false)
+    assert.equal(await f.history.loadNewer(), false)
+    assert.ok(f.queries.every(query => query.search !== 'sort:asc'))
+  } finally { f.history.close() }
 })

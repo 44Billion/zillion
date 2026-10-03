@@ -1,6 +1,6 @@
 // Own both bottom following and the reading anchor; native anchoring must not
 // apply a second adjustment to the same layout change.
-export function createChatViewport (timeline, { active = true, historyLoaded = false, messageCount = () => 0, onInitialChange = () => {}, onScroll = () => {} } = {}) {
+export function createChatViewport (timeline, { active = true, historyLoaded = false, messageCount = () => 0, initialAnchor = () => null, onInitialChange = () => {}, onScroll = () => {} } = {}) {
   const content = timeline.querySelector('.timeline-content')
   const previousPadding = content.style.paddingTop
   let following = true
@@ -63,6 +63,21 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
     settleFrame = requestAnimationFrame(() => {
       settleFrame = requestAnimationFrame(() => {
         if (!active || !initial || revision !== currentRevision) return
+        // An anchored open waits for the divider and then places it below the
+        // floating header instead of following the bottom.
+        const pendingAnchor = initialAnchor()
+        if (pendingAnchor === 'pending') return
+        if (pendingAnchor) {
+          const divider = timeline.querySelector('[data-unread-divider]')
+          if (!divider) return
+          following = false
+          const padding = parseFloat(getComputedStyle(timeline).paddingTop) || 0
+          const delta = divider.getBoundingClientRect().top - timeline.getBoundingClientRect().top - padding
+          if (Math.abs(delta) > 0.5) writeScroll(timeline.scrollTop + delta)
+          remember()
+          endInitial()
+          return
+        }
         // Snapshot delivery can precede nested component rendering by several
         // frames. An empty DOM is not settled while messages await mounting.
         if (timeline.querySelectorAll('[data-message-id]').length < messageCount()) return
@@ -76,7 +91,9 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
   }
   const reconcile = () => {
     if (!active) return
-    if (following && !inputPending && !dragging) pinBottom()
+    // While an anchored open is waiting for its divider, never settle at the
+    // bottom: the scroll position must not flash before the anchor lands.
+    if (following && !inputPending && !dragging && !(initial && initialAnchor() !== null)) pinBottom()
     else if (!inputPending && !dragging && anchor?.element.isConnected) {
       const delta = anchor.element.getBoundingClientRect().top - timeline.getBoundingClientRect().top - anchor.top
       if (Math.abs(delta) > 0.1) writeScroll(timeline.scrollTop + delta)

@@ -4,7 +4,7 @@ import { createChatViewport } from '#helpers/chat-viewport.js'
 
 export const useChatLayout = () => useClosestStore('z-chat-layout')
 
-export function useInitChatLayout (timelineRef$, historyLoaded$, onScroll, messageCount$ = () => 0) {
+export function useInitChatLayout (timelineRef$, historyLoaded$, onScroll, messageCount$ = () => 0, initialAnchor$ = () => null) {
   const page = useRoutePage()
   const runtime = useMemo(() => ({ controller: null }))
   const layout = useClosestStore('z-chat-layout', () => ({
@@ -17,7 +17,7 @@ export function useInitChatLayout (timelineRef$, historyLoaded$, onScroll, messa
     if (!timeline) return
     runtime.controller = createChatViewport(timeline, {
       active: page.isActive$(), historyLoaded: historyLoaded$(),
-      onInitialChange: layout.initial$, onScroll, messageCount: messageCount$
+      onInitialChange: layout.initial$, onScroll, messageCount: messageCount$, initialAnchor: initialAnchor$
     })
     cleanup(() => { runtime.controller.close(); runtime.controller = null })
   }, { after: 'rendering' })

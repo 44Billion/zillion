@@ -1,9 +1,12 @@
-import { useStore, useTask } from '#f'
+import { useMemo, useStore, useTask } from '#f'
 import { useRoutePage } from '#shared/route-page.js'
 import { demoEnabled } from '#services/demo.js'
 
 export function useConversationPrefetch (account, view) {
   const page = useRoutePage()
+  // Tail priority for each row is requested once per mounted home: repeating it
+  // on every scroll would only add overlapping windows.
+  const prioritized = useMemo(() => new Set())
   const state = useStore({
     order$ () {
       const signer = account.signerState$()
@@ -33,6 +36,11 @@ export function useConversationPrefetch (account, view) {
         return peers.has(row.dataset.prefetchPeer) && rect.bottom > top && rect.top < bottom && rect.right > left && rect.left < right
       }).map(row => row.dataset.prefetchPeer)
       account.prefetchConversations(visible)
+      for (const peer of visible) {
+        if (prioritized.has(peer)) continue
+        prioritized.add(peer)
+        account.prioritizeRange?.(peer, { type: 'tail' })
+      }
     }
     const schedule = () => {
       clearTimeout(timer)

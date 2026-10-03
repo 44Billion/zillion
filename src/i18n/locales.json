@@ -12,6 +12,19 @@
     "ja": "ダイレクトメッセージ",
     "ko": "다이렉트 메시지"
   },
+  "Unread messages": {
+    "en": "Unread messages",
+    "fr": "Messages non lus",
+    "it": "Messaggi non letti",
+    "de": "Ungelesene Nachrichten",
+    "es": "Mensajes sin leer",
+    "pt-BR": "Mensagens não lidas",
+    "ru": "Непрочитанные сообщения",
+    "zh-CN": "未读消息",
+    "zh-TW": "未讀訊息",
+    "ja": "未読メッセージ",
+    "ko": "읽지 않은 메시지"
+  },
   "Search messages": {
     "en": "Search messages",
     "fr": "Rechercher des messages",

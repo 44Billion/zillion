@@ -328,6 +328,41 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Clearing an accepted draft resets height and internal scrolling without another
   input event; later write completion/failure never changes the current draft.
 
+## Read state and recovery priorities
+
+- Per-peer read state is one owner-authored addressable personal copy in the
+  empty context: kind 30078, coordinate `+zillion:read:<peer>`, `content: ''`
+  and a single `['anchor', '<event id hex>', '<created_at>']` tag. Never move
+  the anchor into JSON content, never append a second anchor tag, and keep
+  `created_at` monotonic beyond the stored version. The reader picks the newest
+  `(created_at, id)` pair, keeps `max(stored, local)`, and a canonical rewrite
+  repairs duplicates through the store's local CRDT tombstones.
+- `src/services/read-state.js` owns anchor persistence, the debounced write
+  (flush on route exit, `pagehide` and hidden documents) and the capped unread
+  counter. `useInitReadState` in `use-account.js` keeps one subscription per
+  contact and exposes the counts as `account.unread$`; `useInitChatReadState`
+  owns the 50%-for-2s dwell rule and the immediate read of confirmed outgoing
+  messages. The anchor update must never break the UI when storage or
+  permissions fail.
+- Contact chats open with `createChatHistory.start({ anchor })`. The recent
+  snapshot still loads through the normal subscription; the anchored window is
+  an ascending `sort:asc` page after the anchor, and `loadNewer()` keeps reading
+  ascending pages (bounded boundary exclusion) until the live frontier. Older
+  pagination and its inclusive `until` boundary stay unchanged.
+- The divider is latched once per open (`z-chat.latchDivider`) and never moves
+  while the chat is open; it is the viewport's `initialAnchor` target, and
+  `'pending'` keeps the viewport from settling at the bottom while the anchored
+  window loads. It only disappears when a newer message became read and scrolling
+  left the marker above the visible content area by a margin; removal animates
+  its height, margins, padding and opacity to zero (skipped under reduced
+  motion) before the element is dropped, so the list never jumps. Self chat and
+  demo fixtures keep no unread state.
+- `account.prioritizeRange` is best-effort and requires libp2r2p 0.11.12+:
+  chat open sends `{ since: anchor.created_at, type: 'unread-page' }` and each
+  visible home row sends `{ type: 'tail' }` once. Priorities and relay
+  statistics stay in memory in the library; a missing API must not gate reads,
+  sends or navigation.
+
 ## Structure and imports
 
 Use the `package.json` aliases copied from nappstore:

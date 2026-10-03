@@ -1,4 +1,6 @@
 // Wrapper-index pagination is independent of the inner event's presentation order.
+import { compareChatMessages } from '#helpers/conversation-preview.js'
+
 export const CHAT_PAGE_SIZE = 25
 export function createChatWorkers (concurrency = 4) {
   let running = 0
@@ -17,7 +19,7 @@ export function createChatWorkers (concurrency = 4) {
   return (work, priority = () => 0) => new Promise((resolve, reject) => { queue.push({ work, priority, resolve, reject }); drain() })
 }
 
-export function createChatHistory ({ eventStore, filter, accept, retained = new Map(), workers = createChatWorkers(), onMissing, onBatch, onState, onError }) {
+export function createChatHistory ({ eventStore, filter, accept, retained = new Map(), workers = createChatWorkers(), onMissing, onBatch, onState, onNewerState = () => {}, onError }) {
   let closed = false
   let stream
   let frontier = null
@@ -27,8 +29,17 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
   let ready = false
   let frame
   let initial
+  // Forward pagination (anchored opens): the ascending cursor of the loaded
+  // window, plus the newest timestamp any subscription delivered.
+  let forwardTop = null
+  let forwardBoundary = new Set()
+  let forwardFull = false
+  let knownTop = null
+  let hasNewer = false
+  let newer
   const pending = new Map()
   const state = (loading = false, error = null) => { if (!closed) onState({ loading, error, hasOlder }) }
+  const newerState = (loading = false, error = null) => { if (!closed) onNewerState({ loading, error, hasNewer }) }
   const batch = () => {
     if (frame != null) { (globalThis.cancelAnimationFrame ?? clearTimeout)(frame); frame = null }
     if (!closed) onBatch()
@@ -44,6 +55,23 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
       if (frontier === null || wrapper.created_at < frontier) { frontier = wrapper.created_at; boundary = new Set() }
       if (wrapper.created_at === frontier) boundary.add(wrapper.id)
     }
+  }
+  function advanceKnown (wrappers) {
+    for (const wrapper of wrappers) {
+      if (!Number.isSafeInteger(wrapper.created_at)) continue
+      if (knownTop === null || wrapper.created_at > knownTop) knownTop = wrapper.created_at
+    }
+  }
+  function advanceForward (wrappers) {
+    for (const wrapper of wrappers) {
+      if (!Number.isSafeInteger(wrapper.created_at)) continue
+      if (forwardTop === null || wrapper.created_at > forwardTop) { forwardTop = wrapper.created_at; forwardBoundary = new Set() }
+      if (wrapper.created_at === forwardTop) forwardBoundary.add(wrapper.id)
+    }
+  }
+  function refreshNewer () {
+    hasNewer = forwardTop !== null && (forwardFull || (knownTop !== null && knownTop > forwardTop))
+    newerState()
   }
   function process (wrapper) {
     if (closed || retained.has(wrapper.id)) return Promise.resolve()
@@ -90,7 +118,34 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
     // Restart pagination at the recent snapshot after recovery. Retained older
     // pages may be separated from it by more than one page of newly received wrappers.
   }
-  async function start () {
+  // Ascending page from the forward cursor. `accept` filters wrappers that
+  // belong before the anchor; retained duplicates still advance the cursor.
+  async function fetchForward (limit, accept = null) {
+    const page = []
+    let exhausted = false
+    for (let rounds = 0; rounds < 12 && page.length < limit && !exhausted; rounds++) {
+      const want = limit - page.length
+      const { results } = await eventStore.query({
+        ...filter,
+        ...(forwardTop === null ? {} : { since: forwardTop, ...(forwardBoundary.size ? { '!ids': [...forwardBoundary] } : {}) }),
+        limit: want,
+        search: 'sort:asc'
+      })
+      if (closed) return { page, exhausted: true }
+      if (!results.length) { exhausted = true; break }
+      advanceKnown(results)
+      advanceForward(results)
+      for (const wrapper of results) {
+        if (accept && !accept(wrapper)) continue
+        if (!retained.has(wrapper.id)) page.push(wrapper)
+      }
+      if (results.length < want) exhausted = true
+    }
+    forwardFull = !exhausted && page.length >= limit
+    return { page, exhausted }
+  }
+
+  async function start ({ anchor = null } = {}) {
     initial = Promise.withResolvers()
     stream = eventStore.subscribe({ ...filter, limit: CHAT_PAGE_SIZE }, { initial: true })
     // The live iterator is registered before revalidation to avoid a recovery gap.
@@ -107,8 +162,36 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
             const failed = results.find(Boolean)
             if (failed) throw failed.error
             if (closed) return
-            advance(snapshot)
-            hasOlder = snapshot.length === CHAT_PAGE_SIZE
+            advanceKnown(snapshot)
+            const hasUnread = anchor !== null && Number.isSafeInteger(anchor?.created_at) && snapshot.some(wrapper => compareChatMessages(wrapper, anchor) > 0)
+            const anchorInside = hasUnread && snapshot.some(wrapper => compareChatMessages(wrapper, anchor) <= 0)
+            let anchored = false
+            if (hasUnread && !anchorInside) {
+              // The newest page is already decrypted and retained; this adds the
+              // window that begins at the first unread message. The remaining
+              // gap is filled by loadNewer() as the reader scrolls forward.
+              forwardTop = anchor.created_at
+              forwardBoundary = new Set()
+              try {
+                const { page } = await fetchForward(CHAT_PAGE_SIZE, wrapper => compareChatMessages(wrapper, anchor) > 0)
+                if (closed) return
+                if (page.length) {
+                  await processPage(page)
+                  if (closed) return
+                  advance(page)
+                  hasOlder = true
+                  anchored = true
+                }
+              } catch { /* The recent page stays usable when the anchor read fails. */ }
+            }
+            if (!anchored) {
+              advance(snapshot)
+              hasOlder = snapshot.length === CHAT_PAGE_SIZE
+              forwardTop = null
+              forwardBoundary = new Set()
+              forwardFull = false
+            }
+            refreshNewer()
             snapshot.length = 0
             processing.length = 0
             ready = true
@@ -122,7 +205,10 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
                 initial.reject(error)
                 return { error }
               }))
-            } else if (frontier !== null && item.event.created_at < frontier) { hasOlder = true; state(!!older) } else process(item.event).catch(error => { if (!closed) onError(error) })
+            } else if (frontier !== null && item.event.created_at < frontier) { hasOlder = true; state(!!older) } else {
+              advanceKnown([item.event])
+              process(item.event).catch(error => { if (!closed) onError(error) })
+            }
           }
         }
         if (!closed) throw new Error('Self chat subscription ended')
@@ -150,8 +236,24 @@ export function createChatHistory ({ eventStore, filter, accept, retained = new 
     })()
     return older
   }
+  function loadNewer () {
+    if (closed || !ready || !hasNewer) return Promise.resolve(false)
+    if (newer) return newer
+    newerState(true)
+    newer = (async () => {
+      try {
+        const { page } = await fetchForward(CHAT_PAGE_SIZE)
+        if (closed) return false
+        await processPage(page)
+        if (closed) return false
+        refreshNewer()
+        batch(); newerState(); return page.length > 0
+      } catch (error) { if (!closed) { batch(); newerState(false, error.message || String(error)) }; return false } finally { newer = null }
+    })()
+    return newer
+  }
   return {
-    start, loadOlder,
+    start, loadOlder, loadNewer,
     close () {
       closed = true
       initial?.resolve(false)

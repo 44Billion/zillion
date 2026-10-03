@@ -3,6 +3,7 @@ import { createChatWorkers } from '#services/chat-history.js'
 import { createConversationSummaries } from '#services/conversation-summaries.js'
 import { createContacts } from '#services/contacts.js'
 import { createPrivateChats } from '#services/private-chats.js'
+import { createReadState, createUnreadCounter } from '#services/read-state.js'
 import { privateChatDiagnostic } from '#services/private-chat-diagnostics.js'
 import { demoPeople, demoEnabled } from '#services/demo.js'
 import { npubEncode } from 'libp2r2p/nip19'
@@ -14,9 +15,9 @@ import { eventToProfile, selectPreferredProfile, getProfile, refreshProfile } fr
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
-    retry$: 0, older$: { loading: false, error: null, hasOlder: false },
+    retry$: 0, older$: { loading: false, error: null, hasOlder: false }, newer$: { loading: false, error: null, hasNewer: false },
     // Inner events resolved from kind-9 references, keyed by event id.
-    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsState$: 'loading', conversations$: {}, summaries$: {}, signerState$: null, recovery$: 0,
+    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
     people$ () {
       return [...this.contacts$().map(contact => this.personFor(contact.pubkey)), ...demoPeople]
     },
@@ -29,7 +30,7 @@ export function useAccount () {
       const contact = this.contacts$().find(contact => contact.pubkey === id)
       const npub = npubEncode(id)
       const name = contact?.petname || profile.name?.trim() || profile.display_name?.trim() || `${npub.slice(0, 12)}…`
-      return { id, pubkey: id, profile, npub, nip05: profile.nip05 || '', name, shortName: name, saved: !!contact, pinned: !!contact?.pinned, unread: 0 }
+      return { id, pubkey: id, profile, npub, nip05: profile.nip05 || '', name, shortName: name, saved: !!contact, pinned: !!contact?.pinned, unread: this.unread$()[id] ?? 0 }
     },
     person$ () {
       const profile = this.profile$()
@@ -48,6 +49,7 @@ export function useInitAccount () {
   const queue = useMemo(() => ({ run: createChatWorkers(), foreground: null, opened: new Set() }))
   useInitPrivateChats(account, queue)
   useInitConversationSummaries(account)
+  useInitReadState(account)
   const runtime = useMemo(() => ({ chat: null, opened: false }))
   useInitConversationPrefetch(account, queue, runtime)
   account.openSelfConversation = () => {
@@ -69,6 +71,7 @@ export function useInitAccount () {
   }
   account.readFiles = options => runtime.chat?.readFiles(options) ?? Promise.resolve([])
   account.loadOlder = () => runtime.chat?.loadOlder() ?? Promise.resolve(false)
+  account.loadNewer = () => runtime.chat?.loadNewer() ?? Promise.resolve(false)
   account.recover = () => runtime.recover?.() ?? Promise.resolve(false)
   useTask(({ cleanup }) => {
     let closed = false
@@ -120,6 +123,7 @@ export function useInitAccount () {
               },
               onInitialLoad: () => { if (!closed) account.historyLoaded$(true) },
               onOlderState: account.older$,
+              onNewerState: account.newer$,
               onHistoryState: state => { if (!closed) account.historyState$(state) }
             })
           }
@@ -176,6 +180,79 @@ function useInitConversationSummaries (account) {
   })
 }
 
+// Read anchors are account-scoped: one subscription per known peer feeds both
+// the home badges and the anchored chat opens. Counts cap at the badge limit.
+function useInitReadState (account) {
+  const runtime = useMemo(() => ({ reads: null, counter: null, counts: new Map(), queue: null, version: 0 }))
+  account.ensureReadAnchor = peer => runtime.reads?.ensure(peer) ?? Promise.resolve(false)
+  account.readAnchor = peer => runtime.reads?.anchor(peer) ?? null
+  account.advanceReadAnchor = (peer, anchor) => runtime.reads?.advance(peer, anchor)
+  account.flushReadState = peer => runtime.reads?.flush(peer) ?? Promise.resolve()
+  useTask(({ track, cleanup }) => {
+    const owner = track(() => account.pubkey$())
+    if (!owner || demoEnabled) return
+    runtime.version++
+    const reads = createReadState({
+      pubkey: owner, signer: window.nostr, eventStore: window.napp.eventStore,
+      onChange: (peer, anchor) => account.readAnchors$(previous => ({ ...previous, [peer]: anchor })),
+      onError: error => console.warn('Could not persist read state', error)
+    })
+    runtime.reads = reads
+    runtime.counter = createUnreadCounter({ pubkey: owner, signer: window.nostr, eventStore: window.napp.eventStore })
+    runtime.queue = createChatWorkers(3)
+    runtime.counts = new Map()
+    cleanup(() => {
+      runtime.version++
+      runtime.reads = null; runtime.counter = null; runtime.queue = null; runtime.counts = new Map()
+      account.readAnchors$({}); account.unread$({})
+      reads.close()
+    })
+  })
+  useTask(({ track }) => {
+    const [owner, contacts] = track(() => [account.pubkey$(), account.contacts$()])
+    if (!owner || !runtime.reads) return
+    runtime.reads.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
+  })
+  useTask(({ track }) => {
+    const [owner, ready, contacts, summaries, anchors, conversations] = track(() => [
+      account.pubkey$(), account.ready$(), account.contacts$(), account.summaries$(), account.readAnchors$(), account.conversations$()
+    ])
+    if (!owner || !ready || demoEnabled || !runtime.counter || !runtime.queue) return
+    const version = runtime.version
+    const publish = () => {
+      const next = {}
+      for (const [peer, entry] of runtime.counts) if (entry.value > 0) next[peer] = entry.value
+      account.unread$(next)
+    }
+    const peers = new Set(contacts.map(contact => contact.pubkey).filter(peer => peer !== owner))
+    for (const peer of peers) {
+      const summary = summaries[peer]?.event
+      if (!summary) continue
+      const local = conversations[peer]?.messages?.at(-1)
+      const anchor = anchors[peer] ?? null
+      const key = `${anchor ? `${anchor.id}:${anchor.created_at}` : ''}|${summary.id ?? ''}|${local?.id ?? ''}`
+      if (runtime.counts.get(peer)?.key === key) continue
+      // Keep the previous badge while the exact count is recomputed.
+      runtime.counts.set(peer, { key, value: runtime.counts.get(peer)?.value ?? 0 })
+      const counter = runtime.counter
+      runtime.queue(() => counter.count(peer, anchor)).then(value => {
+        if (runtime.version !== version) return
+        const entry = runtime.counts.get(peer)
+        if (entry?.key !== key) return
+        runtime.counts.set(peer, { key, value })
+        publish()
+      }).catch(() => {})
+    }
+    let removed = false
+    for (const peer of [...runtime.counts.keys()]) {
+      if (peers.has(peer)) continue
+      runtime.counts.delete(peer)
+      removed = true
+    }
+    if (removed) publish()
+  })
+}
+
 function useInitConversationPrefetch (account, queue, self) {
   const runtime = useMemo(() => ({ prefetch: null }))
   account.focusConversation = peer => { queue.foreground = peer; queue.opened.add(peer); runtime.prefetch?.focus() }
@@ -202,7 +279,13 @@ function useInitConversationPrefetch (account, queue, self) {
         const stop = () => { if (!queue.opened.has(peer)) chat.pause() }
         signal.addEventListener('abort', stop, { once: true })
         try {
-          const loaded = await chat.ensureStarted(account.summaries$()[peer])
+          let anchor = null
+          if (peer !== owner) {
+            await account.ensureReadAnchor?.(peer)
+            if (signal.aborted) return false
+            anchor = account.readAnchor?.(peer) ?? null
+          }
+          const loaded = await chat.ensureStarted(account.summaries$()[peer], { anchor })
           if (loaded && !signal.aborted) await chat.prefetchReferences(signal)
           return loaded
         } finally { signal.removeEventListener('abort', stop) }
@@ -237,6 +320,7 @@ function useInitPrivateChats (account, queue) {
         onReference: (id, event) => patch(peer, { references: { ...account.conversations$()[peer]?.references, [id]: event } }),
         onHistoryState: historyState => patch(peer, { historyState }),
         onOlderState: older => patch(peer, { older }),
+        onNewerState: newer => patch(peer, { newer }),
         onInitialLoad: () => patch(peer, { historyLoaded: true })
       })
       runtime.chats.set(peer, chat)
@@ -250,7 +334,12 @@ function useInitPrivateChats (account, queue) {
     if (!chat) return Promise.resolve(false)
     account.focusConversation(peer)
     patch(peer, { error: null })
-    return chat.ensureStarted(account.summaries$()[peer])
+    return Promise.resolve()
+      .then(async () => {
+        await account.ensureReadAnchor?.(peer)
+        return chat.ensureStarted(account.summaries$()[peer], { anchor: account.readAnchor?.(peer) ?? null })
+      })
+      .catch(() => false)
   }
   account.releaseConversation = peer => {
     if (queue.opened.has(peer)) return
@@ -259,6 +348,12 @@ function useInitPrivateChats (account, queue) {
   }
   account.chatFor = peer => runtime.chats.get(peer)
   account.recoverContacts = () => runtime.contacts?.start() ?? Promise.resolve(false)
+  // Priority recovery is best-effort: an older library or a channel that has
+  // not been seen yet must never break navigation or sending.
+  account.prioritizeRange = (peer, options) => {
+    if (!/^[0-9a-f]{64}$/.test(peer || '')) return
+    try { runtime.transport?.prioritizeRange?.(peer, options)?.catch(() => {}) } catch {}
+  }
   account.setContact = async (peer, included) => {
     if (demoPeople.some(person => person.pubkey === peer)) return false
     if (!runtime.contacts) throw new Error('Account unavailable')
@@ -373,6 +468,7 @@ export function useConversation (id$, { open = false, active$ = () => true } = {
     error$ () { return this.self$() ? account.error$() : this.data$().error },
     ready$ () { return account.ready$() },
     older$ () { return this.self$() ? account.older$() : this.data$().older || { loading: false, hasOlder: false } },
+    newer$ () { return this.self$() ? account.newer$() : this.data$().newer || { loading: false, error: null, hasNewer: false } },
     send (...args) {
       if (this.self$()) return account.send(...args)
       if (account.contactsState$() !== 'loaded' || !account.personFor(this.peer$())?.saved) throw new Error('CHAT_UNAVAILABLE')
@@ -384,6 +480,7 @@ export function useConversation (id$, { open = false, active$ = () => true } = {
     createMediaReader (options) { return this.self$() ? account.createMediaReader(options) : account.chatFor(this.peer$()).createMediaReader(options) },
     readFiles (options) { return account.readFiles(options) },
     loadOlder () { return this.self$() ? account.loadOlder() : account.chatFor(this.peer$())?.loadOlder() },
+    loadNewer () { return this.self$() ? account.loadNewer() : account.chatFor(this.peer$())?.loadNewer() ?? Promise.resolve(false) },
     recover () { return this.self$() ? account.recover() : account.openConversation(this.peer$()) },
     retry$ () { this.recover() }
   }))

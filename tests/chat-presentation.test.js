@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { noteEncode, appEncode, nfileEncode, neventEncode } from 'libp2r2p/nip19'
 import { extractMedia } from 'libp2r2p/nip27'
 import { augmentedContentItems, chatQuoteModel, chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
+import { compareChatMessages, firstUnreadMessageId } from '#helpers/conversation-preview.js'
 import { finalizeEvent, getEventHash } from 'libp2r2p/event'
 import { createFileMetadata } from 'libp2r2p/nip94'
 import { parseChatContent } from '#helpers/chat-content.js'
@@ -60,6 +61,21 @@ test('day groups retain their identity when older messages arrive ahead of the c
   assert.equal(after[0].key, before[0].key)
   assert.equal(after[0].label, before[0].label)
   assert.deepEqual(after[0].messages.map(message => message.id), ['older', 'newer'])
+})
+
+test('the unread divider follows the first message newer than the anchor and disappears when read', () => {
+  const at = new Date(2026, 8, 13, 12).getTime() / 1000
+  const messages = chatTimeline([
+    { id: '0002', created_at: at, content: 'first', tags: [] },
+    { id: '0001', created_at: at, content: 'same-second newer', tags: [] },
+    { id: '0000', created_at: at + 1, content: 'later', tags: [] }
+  ], { locale: 'en' })
+  assert.equal(messages[0].id, '0002')
+  const anchor = { id: '0001', created_at: at }
+  assert.equal(firstUnreadMessageId(messages, anchor), '0000', 'same-second lower IDs are already read')
+  assert.equal(firstUnreadMessageId(messages, { id: '0000', created_at: at + 1 }), null, 'divider disappears once the anchor catches up')
+  assert.equal(firstUnreadMessageId(messages, null), null, 'a chat without an anchor shows no divider')
+  assert.equal(compareChatMessages({ id: '0001', created_at: at }, anchor), 0)
 })
 
 test('kind 9 references expand to quotes and attachments by URI position', () => {

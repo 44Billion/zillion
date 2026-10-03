@@ -80,6 +80,12 @@ The conversation list reads the latest local message for self and saved contacts
 without opening their histories. Media previews use caption or filename from
 local metadata, without downloading media. Active chats sort by that message's
 date and update on new messages and deletions, before any chat is visited.
+Unread badges are exact incoming-message counts above the synced read anchor,
+capped at 99+; the count stops reading after the badge limit and never counts
+self-chat or outgoing messages. Visible rows also request a recent-window
+recovery priority for their conversation. Read state is a personal copy per
+peer (`+zillion:read:<peer>`), so it follows paired devices through the
+launcher's normal sync.
 Contacts without messages stay in the contacts strip/directory; self-chat keeps
 its empty Notes shortcut. Opening a chat immediately reuses that loaded message
 and its attachment metadata while the earlier messages load, for both self and
@@ -201,6 +207,23 @@ space; otherwise media dimensions are prepared before presentation. Day
 separators retain their identity as earlier messages arrive. Bottom following
 also aligns fractional layout positions with scroll pixel rounding, keeping
 unchanged text bubbles from shifting by a pixel as history grows.
+
+Contact chats with a read anchor open at the first unread page instead of the
+newest page: the page that starts right after the anchor loads first, a
+translated "Unread messages" divider marks the first unread bubble, and the
+viewport keeps that divider at the top instead of following the bottom.
+Scrolling down loads ascending 25-message pages until the live frontier, while
+scrolling up keeps the existing older-page pagination. A visible bubble counts
+as read after 50% of it stays on screen for two seconds with the route active
+and the page visible, which advances the anchor. The divider itself stays frozen
+where it first rendered while the chat is open: it only disappears once a newer
+message became read and scrolling left the marker above the visible content
+area, collapsing its height smoothly to zero before removal instead of jumping
+the layout. The reader's own messages skip the dwell and count as read as soon
+as their publication is confirmed. Writes are coalesced and flushed when
+leaving the chat or hiding the page. The chat also asks the private messenger
+to prioritize the anchor window (and the home asks for the recent tail), so the
+needed range is recovered before the rest of the offline interval.
 
 The text area grows up to five lines, then scrolls internally. Sending durably queues the message before it
 clears the accepted draft and returns the field to one line. Enter inserts a

@@ -27,7 +27,7 @@ const storageFailure = (stage, saved) => Object.assign(new Error(`${stage} stora
 
 export function createSelfChat (options) { return createChat(options) }
 
-export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onSendError = () => {}, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, verifyFile = verifyLocalFile, workers = createChatWorkers() }) {
+export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onSendError = () => {}, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, onNewerState = () => {}, verifyFile = verifyLocalFile, workers = createChatWorkers() }) {
   const context = `dm:${peer}`
   const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference, workers })
   const catalog = createChatReferences({ pubkey, eventStore, signer, context: '' })
@@ -122,7 +122,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     catalogWrites.set(root, work)
     return work
   }
-  function start (snapshot) {
+  function start (snapshot, { anchor = null } = {}) {
     if (closed) return Promise.resolve(false)
     if (loading) return loading
     if (!started) {
@@ -198,9 +198,9 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
           eventStore, filter, retained, workers,
           accept: (wrapper, active) => accept(wrapper, filter, () => current() && active()),
           onMissing: id => remove([id]), onBatch: emit,
-          onState: onOlderState, onError: fail
+          onState: onOlderState, onNewerState, onError: fail
         })
-        const loaded = await history.start()
+        const loaded = await history.start({ anchor })
         if (!current() || !loaded) return false
         references.retryMisses()
         historyReady = true
@@ -473,15 +473,16 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   }
   return {
     start,
-    ensureStarted (snapshot) {
+    ensureStarted (snapshot, options) {
       if (closed) return Promise.resolve(false)
       if (historyReady) { references.retryMisses(); return Promise.resolve(true) }
-      return start(snapshot)
+      return start(snapshot, options)
     },
     pause,
     prefetchReferences,
     prefetchMedia: signal => prefetchChatMedia([...messages.values()], reference => references.peek(reference.id), { signal: AbortSignal.any([controller.signal, signal]) }),
     loadOlder: () => history?.loadOlder() ?? Promise.resolve(false),
+    loadNewer: () => history?.loadNewer() ?? Promise.resolve(false),
     send,
     deleteMessage,
     retry: transport ? id => preparations.has(id) && !preparations.get(id).accepted ? prepareSend(id) : transport.retry(id) : write,
