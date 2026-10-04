@@ -123,7 +123,7 @@ establish the cause of an earlier incident.
 
 ## Relay fallback
 
-Published libp2r2p 0.11.8 performs fallback inside PrivateMessenger,
+The published libp2r2p performs fallback inside PrivateMessenger,
 shared by text, quoted context, announcements and attachment chunks. For implicit
 single-recipient NIP-65 routing, it selects at most two recipient read relays per
 attempt and republishes the exact signed outer event to remaining candidates.
@@ -143,12 +143,16 @@ The outbox stays pending while alternatives are tried. Only final failures reach
 refusals appears only after eligible alternatives are exhausted. Offline work
 with remaining alternatives also stays pending and quiet; a temporary shared
 `onOnline` listener retries it without overriding signer/account unavailability.
+Sends attempted while the messenger is paused or otherwise unavailable
+(`PRIVATE_MESSENGER_PAUSED`, `CHAT_UNAVAILABLE`) stay pending as well and re-pump
+on a bounded 1–30s backoff, so they recover without a manual retry or an error
+toast.
 Cancellation and session close stop further fallback publications.
 
 The controlled browser scenario `tests/browser/send-feedback.browser.js` checks
 all five read relays fail before the toast, successful replacement without a toast,
 unchanged outer event IDs, the two-recipient-relay limit and inactive retained
-routes. Published libp2r2p 0.11.8 exposes `fallbackRelays` through both
+routes. The published libp2r2p exposes `fallbackRelays` through both
 the messenger and session constructors. Zillion sets it to
 `['wss://relay.44billion.net']` in `private-chats.js`. The same signed outer event
 is published only after eligible primary failures; no public recipient `p` tag
@@ -166,8 +170,8 @@ This does not add group conversations to Zillion.
 
 The browser scenario now also verifies fallback listening with a distinct owner
 read relay, quiet successful fallback publication, exhaustion including fallback
-before feedback, and unchanged public tags. Validation uses published
-libp2r2p 0.11.8 from npm, resolved in the production lockfile; no local archive
+before feedback, and unchanged public tags. Validation uses the published
+libp2r2p from npm, resolved in the production lockfile; no local archive
 or sibling source import is required.
 
 ## Recovery diagnostics

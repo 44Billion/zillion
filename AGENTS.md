@@ -964,7 +964,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.8`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.13`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1391,7 +1391,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   `isActive$` at notification time. Never infer eligibility from a pathname or
   from persisted `status: error`; returning to a route must not replay errors.
 - Root-owned account subscriptions forward preparation errors and the session's
-  `onSendError(error, { id, peer })` callback from published libp2r2p 0.11.8,
+  `onSendError(error, { id, peer })` callback from the published libp2r2p,
   resolved from npm in the lockfile. The ID identifies the main outbox item even
   for quote/file/chunk failures. Preserve
   native console diagnostics and keep send errors separate from history errors.
@@ -1407,7 +1407,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   controlled relay boundary to check active sends, explicit retry, retained
   inactive routes, Back, replacement history entries, locale changes and success.
 
-- Published libp2r2p 0.11.8 owns recipient relay replacement.
+- The published libp2r2p owns recipient relay replacement.
   Keep this policy out of Zillion: send/retry feedback consumes only final
   `onSendError` notifications, after eligible read alternatives are exhausted.
   Intermediate/offline attempts stay pending; account availability remains the
@@ -1416,14 +1416,14 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   exercises five refused relays, replacement success, unchanged outer IDs and
   at most two recipient relays per publication. Only relay/probe boundaries are
   controlled; signer, event-store and route behavior remain real. Validate against
-  published libp2r2p 0.11.8, resolved from npm in the production lockfile; do not
+  the published libp2r2p, resolved from npm in the production lockfile; do not
   substitute a local tarball or sibling source imports.
 
 - `private-chats.js` configures `fallbackRelays` with `wss://relay.44billion.net`
   (callers can override the list, including `[]`). Primary selection, classified
   retries, connectivity checks and fallback receive routing belong to libp2r2p.
   Do not fix `relays`/`sendRelays` or modify public NIP-65 metadata for this default.
-  Published libp2r2p 0.11.8 also supports explicit primary lists and
+  The published libp2r2p also supports explicit primary lists and
   multi-recipient automatic/`relayToReceivers` routing, preserving encrypted
   recipient subsets and requiring publication coverage for each member.
 - The send-feedback browser scenario gives the owner a NIP-65 read relay distinct
@@ -1431,5 +1431,5 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   relays before fallback publication, and checks that no public `p` tag is added.
   Fallback acceptance keeps the bubble successful and quiet; fallback refusal is
   required before relay-failure feedback. The real vault and event-store remain
-  active. Validation uses the published npm release 0.11.8 recorded in
+  active. Validation uses the published npm release recorded in
   `package-lock.json`, including its multi-recipient fallback support.

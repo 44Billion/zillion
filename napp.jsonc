@@ -4,7 +4,7 @@
   "self": [], // App identity pubkey, once defined; not the publisher pubkey.
   "icon": [], // nappup uses the icon declared in index.html.
   "name": [["Zillion"]],
-  "summary": [["Chat privado sobre Nostr", "pt"], ["Private chat over Nostr", "en"]],
+  "summary": [["Chat privado no Nostr", "pt"], ["Private chat over Nostr", "en"]],
   "country": [],
   "category": [["social", ["messenger"]]],
   "hashtag": [["chat", "Chat"], ["nostr", "Nostr"]]
