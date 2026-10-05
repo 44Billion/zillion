@@ -17,7 +17,12 @@ import '#shared/icons/icon-pencil.js'
 
 f('z-profile-route', ({ h, props }) => {
   const account = useAccount()
-  useTask(({ track }) => { const id = track(() => props.route$().params?.contactId); if (id !== 'user') account.loadPerson?.(id) })
+  useTask(({ track, cleanup }) => {
+    const id = track(() => props.route$().params?.contactId)
+    const controller = new AbortController()
+    if (id !== 'user') account.loadPerson?.(id, { signal: controller.signal })
+    cleanup(() => controller.abort())
+  })
   const person = props.route$().params?.contactId === 'user'
     ? account.person$()
     : account.personFor(props.route$().params?.contactId)

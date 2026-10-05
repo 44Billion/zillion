@@ -1,6 +1,6 @@
 import { isValidEvent } from 'libp2r2p/event'
 import { isOnline } from 'libp2r2p/network'
-import { getLatestEventsByPubkey, relayPool } from 'libp2r2p/relay'
+import { getLatestEventsByPubkey } from 'libp2r2p/relay'
 
 // Profile normalization is specific to the avatar's presentation contract.
 export function eventToProfile (event) {
@@ -38,13 +38,7 @@ export async function refreshProfile (pubkey, {
 } = {}) {
   if (!/^[0-9a-f]{64}$/.test(pubkey || '') || !await checkOnline({ signal })) return null
   const requestSignal = AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])])
-  const getEvents = (filter, relays, options = {}) => {
-    requestSignal.throwIfAborted()
-    return relayPool.getEvents(filter, relays, { ...options, signal: requestSignal })
-  }
-  const { byPubkey } = await queryLatest([pubkey], {
-    kinds: [0], _getEvents: getEvents, relayListOptions: { _getEvents: getEvents }
-  })
+  const { byPubkey } = await queryLatest([pubkey], { kinds: [0], signal: requestSignal })
   requestSignal.throwIfAborted()
   const event = byPubkey[pubkey]
   const profile = event?.pubkey === pubkey ? eventToProfile(event) : null

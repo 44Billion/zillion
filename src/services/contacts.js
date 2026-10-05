@@ -1,11 +1,10 @@
-import { getLatestEventsByPubkey, relayPool } from 'libp2r2p/relay'
+import { createRelayRead } from './relay-read.js'
 import { isOnline, onOnline } from 'libp2r2p/network'
 import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { isValidEvent } from 'libp2r2p/event'
 import { decryptPersonalCopy } from './chat-references.js'
 
 export const CONTACTS_DTAG = '+zillion:contacts'
-const CONTACTS_REFRESH_TIMEOUT_MS = 15000
 const CONTACTS_ONLINE_TIMEOUT_MS = 6000
 // Exponential backoff capped at 5 minutes.
 const CONTACTS_REFRESH_DELAYS = [1000, 2000, 4000, 8000, 16000, 32000, 64000, 128000, 256000, 5 * 60 * 1000]
@@ -68,7 +67,8 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
   let starting
   let loaded = false
   let remote
-  const requestEvents = _getEvents ?? ((filter, relays, options) => relayPool.getEvents(filter, relays, options))
+  const publicRead = createRelayRead({ pubkey: owner, kind: 3, getEvents: _getEvents, retryDelays: _retryDelays, retryEmpty: true })
+  let pendingPublicList
   const notify = () => onChange(contactMembership(lists, owner))
   function pause (ms, signal) {
     if (signal.aborted) return Promise.resolve()
@@ -113,33 +113,34 @@ export function createContacts ({ owner, signer, eventStore, onChange, onState =
   }
 
   async function refreshPublicList (version, signal) {
-    let attempt = 0
     while (!signal.aborted && !lists[0]) {
       if (version !== generation) return
-      try {
-        const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(CONTACTS_REFRESH_TIMEOUT_MS)])
-        const getEvents = (filter, relays, options = {}) => requestEvents(filter, relays, { ...options, signal: attemptSignal })
-        const { byPubkey } = await getLatestEventsByPubkey([owner], { kinds: [3], _getEvents: getEvents, relayListOptions: { _getEvents: getEvents } })
-        const event = byPubkey[owner]
-        if (version !== generation || signal.aborted) return
-        if (event?.kind === 3 && event.pubkey === owner && isValidEvent(event)) {
-          await eventStore.add(event)
-          return
-        }
-      } catch (error) {
-        if (version !== generation || signal.aborted) return
-        onError(error)
+      const delay = publicRead.nextAt - Date.now()
+      if (!pendingPublicList && !Number.isFinite(delay)) return
+      if (!pendingPublicList && delay > 0) { await pause(delay, signal); continue }
+      if (!pendingPublicList && await deviceOffline(signal)) {
+        if (!await waitForOnline(signal)) return
+        continue
       }
-      if (version !== generation || signal.aborted || lists[0]) return
-      const delay = _retryDelays.length ? _retryDelays[Math.min(attempt, _retryDelays.length - 1)] : 0
-      attempt++
+      if (signal.aborted || version !== generation || lists[0]) return
+      const result = pendingPublicList ? { byPubkey: { [owner]: pendingPublicList }, requests: [] } : await publicRead.query(signal)
+      if (version !== generation || signal.aborted) return
+      const event = result.byPubkey[owner]
+      if (event?.kind === 3 && event.pubkey === owner && isValidEvent(event)) {
+        pendingPublicList = event
+        // Storage failure is independent of relay success. Retain the signed
+        // event so explicit local recovery can retry the write without a fetch.
+        try { await eventStore.add(event); pendingPublicList = null } catch (error) { onError(error) }
+        return
+      }
       const offline = await deviceOffline(signal)
       if (version !== generation || signal.aborted || lists[0]) return
-      const backoff = pause(delay, signal).then(() => false)
-      if (!offline) await backoff
-      else if (await Promise.race([backoff, waitForOnline(signal)])) attempt = 0
+      publicRead.settle(result, { online: !offline })
+      if (result.error) onError(result.error)
+      if (offline && !await waitForOnline(signal)) return
     }
   }
+
   function start () {
     if (starting) return starting
     starting = open().finally(() => { starting = null })

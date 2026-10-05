@@ -10,7 +10,7 @@ import { npubEncode } from 'libp2r2p/nip19'
 import { onOnline } from 'libp2r2p/network'
 import { useGlobalStore, useMemo, useStore, useTask } from '#f'
 import { createSelfChat, createChat } from '#services/self-chat.js'
-import { eventToProfile, selectPreferredProfile, getProfile, refreshProfile } from '#helpers/nostr/queries.js'
+import { createProfiles, attachProfiles, observeProfile } from '#services/profiles.js'
 
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
@@ -47,6 +47,7 @@ export function useInitAccount () {
   account.reportSendError = (error, attempt) => { for (const listener of sendErrors) listener(error, attempt) }
   useTask(({ cleanup }) => cleanup(() => sendErrors.clear()))
   const queue = useMemo(() => ({ run: createChatWorkers(), foreground: null, opened: new Set() }))
+  useInitProfiles(account)
   useInitPrivateChats(account, queue)
   useInitConversationSummaries(account)
   useInitReadState(account)
@@ -75,23 +76,9 @@ export function useInitAccount () {
   account.recover = () => runtime.recover?.() ?? Promise.resolve(false)
   useTask(({ cleanup }) => {
     let closed = false
-    let profiles
     let identity = null
     let recovery
-    let profileVersion = 0
     const report = error => { if (!closed) account.error$(error.message || String(error)) }
-    const loadProfile = (pubkey, eventStore) => {
-      const version = ++profileVersion
-      profiles?.return().catch(() => {})
-      const current = () => !closed && profileVersion === version
-      const update = event => {
-        if (current() && event?.pubkey === pubkey) account.profile$(previous => selectPreferredProfile(previous, eventToProfile(event)))
-      }
-      const filter = { kinds: [0], authors: [pubkey], limit: 1 }
-      profiles = eventStore.subscribe(filter, { initial: true })
-      const stream = profiles
-      ;(async () => { for await (const item of stream) { if (!current()) return; if (item.type === 'event') update(item.event) } })().catch(() => {})
-    }
     runtime.recover = () => {
       if (closed) return Promise.resolve(false)
       if (recovery) return recovery
@@ -104,7 +91,6 @@ export function useInitAccount () {
           if (!/^[0-9a-f]{64}$/.test(pubkey || '')) throw new Error('Account unavailable')
           if (identity !== pubkey) {
             runtime.chat?.close(); runtime.chat = null
-            profileVersion++; profiles?.return().catch(() => {}); profiles = null
             identity = pubkey
             account.messages$([]); account.profile$(null); account.historyLoaded$(false); account.references$({})
           }
@@ -129,7 +115,6 @@ export function useInitAccount () {
           }
           runtime.chat.applyOutbox(account.outbox$())
           account.ready$(true)
-          loadProfile(pubkey, eventStore)
           return runtime.opened ? await runtime.chat.start(account.summaries$()[pubkey]) : true
         } catch (error) {
           if (!closed) { account.historyState$('unavailable'); account.ready$(true); report(error) }
@@ -141,7 +126,6 @@ export function useInitAccount () {
     cleanup(() => {
       closed = true
       runtime.chat?.close(); runtime.chat = null
-      profiles?.return().catch(() => {})
       runtime.recover = null
     })
   })
@@ -296,8 +280,44 @@ function useInitConversationPrefetch (account, queue, self) {
   })
 }
 
+function useInitProfiles (account) {
+  const retained = useMemo(() => new Map())
+  const runtime = useMemo(() => ({ service: null }))
+  account.loadPerson = (pubkey, { signal } = {}) => {
+    if (signal?.aborted) return Promise.resolve(null)
+    const interest = observeProfile(pubkey)
+    const release = () => { interest.release(); signal?.removeEventListener('abort', release) }
+    signal?.addEventListener('abort', release, { once: true })
+    if (signal?.aborted) release()
+    return signal ? interest.ready : interest.ready.finally(release)
+  }
+  useTask(({ track, cleanup }) => {
+    const owner = track(() => account.pubkey$())
+    if (!owner) return
+    const service = createProfiles({
+      owner, eventStore: window.napp.eventStore, remote: !demoEnabled,
+      onProfile: (pubkey, profile) => {
+        if (pubkey === owner) account.profile$(profile)
+        else account.directory$(previous => ({ ...previous, [pubkey]: profile }))
+      },
+      onError: error => console.warn('Could not refresh profile', error)
+    })
+    runtime.service = service
+    const detach = attachProfiles(service)
+    const own = service.retain(owner, { remote: false })
+    cleanup(() => { own.release(); detach(); service.close(); runtime.service = null; account.directory$({}) })
+  })
+  useTask(({ track }) => {
+    const peers = new Set(track(() => account.contacts$().map(contact => contact.pubkey)))
+    for (const pubkey of peers) if (!retained.has(pubkey)) retained.set(pubkey, observeProfile(pubkey))
+    for (const [pubkey, interest] of retained) if (!peers.has(pubkey)) { interest.release(); retained.delete(pubkey) }
+  })
+  useTask(({ track }) => { track(() => [account.recovery$(), account.retry$()]); runtime.service?.recoverLocal() })
+  useTask(({ cleanup }) => cleanup(() => { for (const interest of retained.values()) interest.release(); retained.clear() }))
+}
+
 function useInitPrivateChats (account, queue) {
-  const runtime = useMemo(() => ({ chats: new Map(), transport: null, contacts: null, outbox: [], profiles: new Map(), profileActive: 0, profileQueue: [], version: 0 }))
+  const runtime = useMemo(() => ({ chats: new Map(), transport: null, contacts: null, outbox: [] }))
   const patch = (peer, values) => account.conversations$(previous => ({ ...previous, [peer]: { ...previous[peer], ...values } }))
   account.delivery = () => { if (!runtime.transport) throw new Error('Account unavailable'); return runtime.transport }
   // Opening a chat warms the content-key lookup cache so the first send does
@@ -309,7 +329,6 @@ function useInitPrivateChats (account, queue) {
   account.ensureConversation = peer => {
     const owner = account.pubkey$()
     if (!owner || !/^[0-9a-f]{64}$/.test(peer || '') || peer === owner) return
-    account.loadPerson(peer)
     if (!runtime.chats.has(peer)) {
       const chat = createChat({
         pubkey: owner, peer, eventStore: window.napp.eventStore, signer: window.nostr, transport: runtime.transport,
@@ -364,24 +383,6 @@ function useInitPrivateChats (account, queue) {
     if (!runtime.contacts) throw new Error('Account unavailable')
     return runtime.contacts.setPin(peer, pinned)
   }
-  account.loadPerson = peer => {
-    if (!/^[0-9a-f]{64}$/.test(peer || '') || runtime.profiles.has(peer)) return runtime.profiles.get(peer)
-    const version = runtime.version
-    const update = profile => {
-      if (profile && version === runtime.version) account.directory$(previous => ({ ...previous, [peer]: selectPreferredProfile(previous[peer], profile) }))
-    }
-    const work = (async () => {
-      if (runtime.profileActive >= 4) await new Promise(resolve => runtime.profileQueue.push(resolve))
-      else runtime.profileActive++
-      try {
-        if (version !== runtime.version) return
-        update(await getProfile(peer))
-        if (version === runtime.version) update(await refreshProfile(peer))
-      } finally { const next = runtime.profileQueue.shift(); if (next) next(); else runtime.profileActive-- }
-    })().catch(() => {})
-    runtime.profiles.set(peer, work)
-    return work
-  }
   useTask(({ track, cleanup }) => {
     const owner = track(() => account.pubkey$())
     if (!owner || demoEnabled) return
@@ -404,10 +405,6 @@ function useInitPrivateChats (account, queue) {
         if (closed) return
         account.contacts$(contacts)
         runtime.transport.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
-        // Bounded profile work; shared promises prevent duplicate point lookups.
-        let index = 0
-        const load = async () => { while (index < contacts.length) { if (closed) break; await account.loadPerson(contacts[index++].pubkey) } }
-        for (let worker = 0; worker < 4; worker++) load()
       },
       onState: state => { if (!closed) account.contactsState$(state) },
       onError: error => { if (!closed) console.warn('Could not load contacts', error) }
@@ -447,8 +444,7 @@ function useInitPrivateChats (account, queue) {
       runtime.contacts?.close(); runtime.contacts = null
       runtime.transport?.close().catch(() => {}); runtime.transport = null
       for (const chat of runtime.chats.values()) chat.close()
-      runtime.version++
-      runtime.chats.clear(); runtime.profiles.clear(); runtime.outbox = []
+      runtime.chats.clear(); runtime.outbox = []
       account.contacts$([]); account.contactsState$('loading'); account.conversations$({})
     })
   })
@@ -484,6 +480,12 @@ export function useConversation (id$, { open = false, active$ = () => true } = {
     recover () { return this.self$() ? account.recover() : account.openConversation(this.peer$()) },
     retry$ () { this.recover() }
   }))
+  useTask(({ track, cleanup }) => {
+    const peer = track(() => active$() && view.peer$())
+    if (!peer || peer === account.pubkey$()) return
+    const interest = observeProfile(peer)
+    cleanup(interest.release)
+  })
   useTask(({ track }) => {
     const [peer, owner, ready, initialized, active] = track(() => [view.peer$(), account.pubkey$(), account.signerState$(), account.ready$(), active$()])
     if (open && active && peer && owner && initialized && ((ready?.connection === 'connected' && !ready.isLocked) || demoEnabled) && !demoPeople.some(person => person.id === peer)) {

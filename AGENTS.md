@@ -964,7 +964,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.13`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.14`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1433,3 +1433,37 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   required before relay-failure feedback. The real vault and event-store remain
   active. Validation uses the published npm release recorded in
   `package-lock.json`, including its multi-recipient fallback support.
+
+
+## Shared public profile recovery
+
+- `services/profiles.js` owns one coordinator per account, attached once by
+  `useInitProfiles`. Contacts reconcile retained interests; searches, routes and
+  avatars release their own interests. All consumers share local reads, signed
+  metadata and four remote slots. Local reads never wait for remote admission.
+- Keep native runtime state in the service, not reactive stores. Avatars use
+  `observeProfile`; never restore per-avatar relay requests, local queries or
+  connectivity listeners for metadata. `localOnly` and the owner's identity
+  cannot create remote work. One kind-0 event-store subscription distributes
+  local updates, including the owner's profile.
+- `relay-read.js` owns app read policy for profiles and the missing public contact
+  list. Consume public libp2r2p diagnostics/predicates; do not parse relay prose
+  or import internal library paths. Keep refusals scoped by phase and lookup,
+  and preserve partial/native diagnostics and shared absolute relay cooldowns.
+- Retry transient failures at 1, 2, 4... seconds capped at five minutes. A confirmed
+  offline failure spends no backoff step; wait for `onOnline` rather than adding
+  a connectivity polling loop. `retry_after` is already normalized by the library:
+  wait until max(local backoff deadline, relay retryAt), never sum or restart them.
+- Empty kind-0 lookups wait five minutes. Successful profiles revalidate on demand
+  or reconnection only after five minutes; a valid nameless object is success.
+  Missing kind-3 lists retain exponential empty-result recovery. Keep a fetched
+  kind-3 event after a storage failure so explicit recovery only repeats its write.
+- Do not cache a failed promise forever or reset backoff/refusals on avatar
+  remounts, contact pin changes or online notifications. Release only the departing
+  consumer's interest; root close aborts all work and rejects stale completions.
+  Relay success survives local storage failure. Profile ordering and original
+  event signatures remain authoritative; no migration or persisted retry state.
+- `profile-coordinator.test.js` and `relay-read.test.js` use controlled time and
+  connectivity. `profile-recovery.browser.js` exercises real launcher/vault
+  storage and app components, with only remote relay/probe/image boundaries
+  controlled, including rate-limit wire frames, name ordering and avatar recovery.

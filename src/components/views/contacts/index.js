@@ -62,7 +62,7 @@ f('z-contacts', ({ h, props }) => {
         const pubkey = query.npub ? npubDecode(query.npub) : /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query.text) ? (await queryProfile(query.text, { signal: controller.signal }))?.pubkey : null
         if (!pubkey || controller.signal.aborted) return
         view.foundId$(pubkey)
-        await account.loadPerson(pubkey)
+        await account.loadPerson(pubkey, { signal: controller.signal })
       } catch {}
     }, 300)
     cleanup(() => { clearTimeout(timer); controller.abort() })

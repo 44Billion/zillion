@@ -27,10 +27,10 @@ function fixture ({ owner, event, eventAfter = Infinity, isOnline = async () => 
     },
     onChange: () => {},
     onError: () => {},
-    _getEvents: async filter => {
-      if (!filter.kinds?.includes(3)) return { result: [] }
+    _getEvents: async (filter, relays) => {
+      if (!filter.kinds?.includes(3)) return { result: [], relays: relays.map(relay => ({ relay, status: 'eose' })) }
       queries++
-      return { result: queries >= eventAfter && event ? [{ event }] : [] }
+      return { result: queries >= eventAfter && event ? [{ event }] : [], relays: relays.map(relay => ({ relay, status: 'eose' })) }
     },
     _retryDelays: retryDelays,
     _isOnline: isOnline,
@@ -65,9 +65,10 @@ test('public list refresh stores a list found by a later attempt', async () => {
 test('public list refresh retries as soon as connectivity returns', async () => {
   const owner = pubkeyOf(generateSecretKey())
   let wake
+  let online = false
   const f = fixture({
     owner,
-    isOnline: async () => false,
+    isOnline: async () => online,
     onOnline: handler => {
       wake = handler
       return () => { if (wake === handler) wake = null }
@@ -75,8 +76,10 @@ test('public list refresh retries as soon as connectivity returns', async () => 
     retryDelays: [60000]
   })
   await f.contacts.start()
-  await until(() => f.queries() >= 3 && Boolean(wake))
+  await until(() => Boolean(wake))
+  assert.equal(f.queries(), 0)
   const before = f.queries()
+  online = true
   wake()
   await until(() => f.queries() > before)
   f.contacts.close()
@@ -119,6 +122,7 @@ function localFixture ({ publicList = null, override = null, decrypt } = {}) {
       query: async () => ({ results: [] }),
       addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true } } }
     },
+    _isOnline: async () => true,
     onChange: value => changes.push(value),
     onState: value => states.push(value),
     onError: error => errors.push(error),
@@ -297,4 +301,55 @@ test('legacy numeric labels read as unpinned contacts', async () => {
   await localStart(f)
   assert.deepEqual(f.changes.at(-1).map(contact => [contact.pubkey, contact.pinned]), [[f.peer, false]])
   f.contacts.close()
+})
+
+test('permanent relay refusals stop public-list retries across local restarts', async () => {
+  let queries = 0
+  const contacts = createContacts({
+    owner: pubkeyOf(generateSecretKey()), signer: { obfuscate: async () => 'coordinate' },
+    eventStore: { subscribe: async function * () { yield { type: 'eose' } }, add: async () => {} },
+    onChange: () => {}, _isOnline: async () => true, _retryDelays: [1],
+    _getEvents: async (filter, relays) => {
+      if (filter.kinds.includes(10002)) return { result: [], relays: relays.map(relay => ({ relay, status: 'eose' })) }
+      queries++
+      return { result: [], relays: relays.map(relay => ({ relay, status: 'error', error: Object.assign(new Error('blocked: private'), { category: 'relay' }) })) }
+    }
+  })
+  try {
+    await contacts.start()
+    await until(() => queries >= 3)
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const settled = queries
+    await contacts.start()
+    await new Promise(resolve => setTimeout(resolve, 20))
+    assert.equal(queries, settled)
+  } finally { contacts.close() }
+})
+
+test('a public-list storage failure retries its local write while offline without refetching', async () => {
+  const secret = generateSecretKey()
+  const event = finalizeEvent({ kind: 3, created_at: 1, tags: [], content: '' }, secret)
+  let queries = 0
+  let writes = 0
+  let online = true
+  const contacts = createContacts({
+    owner: event.pubkey, signer: { obfuscate: async () => 'coordinate' },
+    eventStore: {
+      subscribe: async function * () { yield { type: 'eose' } },
+      add: async value => { assert.equal(value.id, event.id); if (++writes === 1) { online = false; throw new Error('quota') } }
+    },
+    onChange: () => {}, onError: () => {}, _isOnline: async () => online,
+    _getEvents: async (filter, relays) => {
+      queries++
+      return { result: filter.kinds.includes(3) ? [{ event }] : [], relays: relays.map(relay => ({ relay, status: 'eose' })) }
+    }
+  })
+  try {
+    await contacts.start()
+    await until(() => writes === 1)
+    const fetched = queries
+    await contacts.start()
+    await until(() => writes === 2)
+    assert.equal(queries, fetched)
+  } finally { contacts.close() }
 })

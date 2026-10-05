@@ -1,4 +1,4 @@
-import { f, useSignal, useStore, useAsyncComputed, useTask } from '#f'
+import { f, useSignal, useStore, useTask } from '#f'
 import '#f/components/f-svg.js'
 import {
   getAvatarImageLoadStatus,
@@ -9,7 +9,8 @@ import {
 } from '#helpers/avatar.js'
 import '#shared/icons/icon-user-circle.js'
 import { cssVars } from '#assets/styles/theme.js'
-import { getProfile, refreshProfile, selectPreferredProfile } from '#helpers/nostr/queries.js'
+import { selectPreferredProfile } from '#helpers/nostr/queries.js'
+import { observeProfile } from '#services/profiles.js'
 import { onOnline } from 'libp2r2p/network'
 import avatarCache from '#services/avatar-cache.js'
 
@@ -41,29 +42,7 @@ f('a-avatar', ({ h, props }) => {
     cachedProfile$ () {
       return getCachedProfile()
     },
-    refreshedProfile$: useAsyncComputed(async ({ track, cleanup }) => {
-      let cancelled = false
-      cleanup(() => { cancelled = true })
-      const pk = track(() => pk$())
-      const providedProfile = track(() => props.profile$?.() ?? props.profile ?? null)
-      if (!pk) return providedProfile
-
-      const queriedProfile = await getProfile(pk).catch(error => {
-        console.error(`[avatar ${pk}] Failed to refresh profile:`, error)
-        return null
-      })
-      if (cancelled) return null
-      const freshProfile = selectPreferredProfile(providedProfile, queriedProfile)
-
-      const cachedProfile = getCachedProfile()
-      const preferredProfile = selectPreferredProfile(cachedProfile, freshProfile)
-      if (preferredProfile === freshProfile && isCacheableAvatarProfile(freshProfile)) {
-        cacheProfile(freshProfile)
-      } else if (preferredProfile === freshProfile && cachedProfile) {
-        removeCachedProfile()
-      }
-      return preferredProfile
-    }),
+    refreshedProfile$: null,
     profile$ () {
       return selectPreferredProfile(
         selectPreferredProfile(this.cachedProfile$(), this.providedProfile$()),
@@ -130,27 +109,22 @@ f('a-avatar', ({ h, props }) => {
     }
   }))
 
-  // Read local profiles immediately and refresh independently after connectivity recovers.
+  // Profile reads and refreshes belong to the root coordinator. Releasing an
+  // avatar never cancels a lookup still needed by a contact or another avatar.
   useTask(({ track, cleanup }) => {
     const pk = track(() => pk$())
-    if (!pk || props.localOnly) return
-    const controller = new AbortController()
-    let pending = false
-    const refresh = async () => {
-      if (pending || controller.signal.aborted) return
-      pending = true
-      try {
-        const profile = await refreshProfile(pk, { signal: controller.signal })
-        if (!controller.signal.aborted && profile) {
-          cacheProfile(selectPreferredProfile(getCachedProfile(), profile))
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) console.warn('Profile refresh failed', error)
-      } finally { pending = false }
-    }
-    const stop = onOnline(refresh)
-    refresh()
-    cleanup(() => { controller.abort(); stop() })
+    store.refreshedProfile$(null)
+    if (!pk) return
+    const interest = observeProfile(pk, {
+      remote: !props.localOnly,
+      onProfile: profile => {
+        store.refreshedProfile$(profile)
+        const preferred = selectPreferredProfile(getCachedProfile(), profile)
+        if (isCacheableAvatarProfile(preferred)) cacheProfile(preferred)
+        else removeCachedProfile()
+      }
+    })
+    cleanup(interest.release)
   })
 
   // Resolve cached bytes before attempting HTTP; stale tasks cannot replace a new avatar.

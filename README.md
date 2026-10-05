@@ -627,7 +627,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.11.13`
+This checkout consumes the public APIs from the published `libp2r2p@^0.11.14`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -770,3 +770,22 @@ historical and file-channel reads. The library also supports multi-recipient
 channels and explicit recipient maps; Zillion continues to use DM sessions.
 The published libp2r2p release is installed from npm and recorded in the
 production lockfile.
+
+
+### Shared profile recovery
+
+One account-owned profile coordinator serves contacts, searches, profile pages and
+avatars. It shares local reads and up to four remote lookups; local names remain
+available while network work waits. Missing profiles retry recoverable relay
+failures with exponential backoff from one second to five minutes, honoring the
+relay's optional `retry_after` without extending its absolute deadline. Offline
+work waits for the shared connectivity monitor and does not advance backoff.
+
+Successful empty lookups are revisited after five minutes. Successful profiles
+are revalidated only on new demand or reconnection after five minutes. Permanent
+refusals stop that relay/operation for the session; other eligible relays can
+still recover the profile. Original signed events are saved for offline use.
+Attempt timeouts preserve events already received; consumer cancellation releases
+only that consumer's interest. Unknown discovery failures are not retried.
+Subscriptions, pending requests and timers are released with their consumers and
+account. This requires the relay diagnostics in libp2r2p 0.11.14 or newer.
