@@ -627,7 +627,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.11.14`
+This checkout consumes the public APIs from the published `libp2r2p@^0.11.16`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -789,3 +789,12 @@ Attempt timeouts preserve events already received; consumer cancellation release
 only that consumer's interest. Unknown discovery failures are not retried.
 Subscriptions, pending requests and timers are released with their consumers and
 account. This requires the relay diagnostics in libp2r2p 0.11.14 or newer.
+
+The coordinated 0.11.16 release also stops definitive live-read refusals while
+recovering transient failures with offline-aware backoff and relay cooldowns.
+The account profile coordinator and contact presentation retain their own policy.
+
+The installed library also accepts optional Nostr `retry_at` Unix seconds,
+avoiding a renewed relative cooldown after delayed bridge delivery. Profile,
+contact and messaging recovery keep their existing backoff policy and standard
+WebSocket events; relay origin/policy claims are ignored.

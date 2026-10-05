@@ -964,7 +964,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.14`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.16`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1437,6 +1437,10 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 
 ## Shared public profile recovery
 
+- The coordinated 0.11.16 library owns failure-aware live-reader recovery.
+  Dependency-only upgrades must preserve this account profile policy and contact
+  UI, and pass profile/contact browser regressions against the installed release.
+
 - `services/profiles.js` owns one coordinator per account, attached once by
   `useInitProfiles`. Contacts reconcile retained interests; searches, routes and
   avatars release their own interests. All consumers share local reads, signed
@@ -1452,7 +1456,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   and preserve partial/native diagnostics and shared absolute relay cooldowns.
 - Retry transient failures at 1, 2, 4... seconds capped at five minutes. A confirmed
   offline failure spends no backoff step; wait for `onOnline` rather than adding
-  a connectivity polling loop. `retry_after` is already normalized by the library:
+  a connectivity polling loop. `retry_at`/`retry_after` are normalized by the library:
   wait until max(local backoff deadline, relay retryAt), never sum or restart them.
 - Empty kind-0 lookups wait five minutes. Successful profiles revalidate on demand
   or reconnection only after five minutes; a valid nameless object is success.
@@ -1467,3 +1471,8 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   connectivity. `profile-recovery.browser.js` exercises real launcher/vault
   storage and app components, with only remote relay/probe/image boundaries
   controlled, including rate-limit wire frames, name ordering and avatar recovery.
+
+- Keep recovery based on public native failure diagnostics and absolute `retryAt`.
+  Optional Nostr temporal advice does not establish origin or retry eligibility.
+  Do not add per-avatar transport work, custom WebSocket metadata or app-level
+  parsing for the launcher extension.
