@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { createI18n } from 'thenameisf/i18n'
 import locales from '../src/i18n/locales.json' with { type: 'json' }
 import toastLocales from '../src/components/shared/toast-locales.json' with { type: 'json' }
+import accountLocales from '../src/components/hooks/account-notice-locales.json' with { type: 'json' }
 import chat from '../src/components/views/chat/fixtures/messages.json' with { type: 'json' }
 import home from '../src/components/views/home/fixtures/home.json' with { type: 'json' }
 
@@ -15,10 +16,12 @@ test('all catalogs cover launcher locales and preview strings, including unread 
   })
   const t = i18n.getT(locales)
   const toast = i18n.getT(toastLocales)
+  const account = i18n.getT(accountLocales)
   for (const locale of supportedLocales) {
     i18n.setLocale(locale)
     for (const key of Object.keys(locales)) assert.ok(t(key, { count: 3 }).length > 0)
     for (const key of Object.keys(toastLocales)) assert.ok(toast(key).length > 0)
+    for (const key of Object.keys(accountLocales)) assert.ok(account(key).length > 0)
     for (const message of [...chat.messages, ...chat.selfMessages]) {
       assert.ok(locales[message.text][locale])
       if (message.preview) assert.ok(locales[message.preview][locale])

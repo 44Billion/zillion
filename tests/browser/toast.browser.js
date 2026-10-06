@@ -13,8 +13,8 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   try {
-    const files = await compile()
-    const options = buildOptions({ development: true, futureFeatures: true, onEnd: extra => files.push(...extra.filter(file => file.name !== '.well-known/napp.json')) })
+    const files = await compile({ demo: true })
+    const options = buildOptions({ demo: true, development: true, futureFeatures: true, onEnd: extra => files.push(...extra.filter(file => file.name !== '.well-known/napp.json')) })
     options.entryPoints = [{ in: 'tests/browser/toast-fixture.js', out: '__tests__/toast-fixture' }]
     options.entryNames = '[dir]/[name]'
     await esbuild.build(options)
@@ -115,7 +115,24 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
     await delay(4200)
     assert.equal(await evaluate('Boolean(document.querySelector(".toast-card"))'), true, 'leaving keyboard focus extends expiry')
     await browser.until(() => evaluate('!document.querySelector(".toast-card")'), 'callback error expires after focus leaves', 5000)
-    await evaluate('__toastTest.info("Unmount")')
+    await evaluate("__toastTest.persistent=__toastTest.show({key:'account-test',persistent:true,dismissible:false,type:'warning',message:'Unlock'})")
+    await browser.until(() => evaluate("document.querySelector('.toast-card[data-persistent] .toast-message')?.textContent==='Unlock'"), 'protected persistent notice')
+    await evaluate("window.persistentCard=document.querySelector('.toast-card[data-persistent]')")
+    assert.equal(await evaluate("Boolean(persistentCard.querySelector('.toast-close'))"), false)
+    await evaluate('__toastTest.success("Transient beside notice")')
+    await browser.until(() => evaluate("document.querySelector('.toast-card:not([data-persistent]) .toast-message')?.textContent==='Transient beside notice'"), 'transient and persistent notices coexist')
+    assert.equal(await evaluate('document.querySelectorAll(".toast-card").length'), 2)
+    assert.ok(await evaluate("document.querySelector('.toast-card:not([data-persistent])').getBoundingClientRect().top>=persistentCard.getBoundingClientRect().bottom"), 'cards never overlap')
+    await browser.until(() => evaluate("!document.querySelector('.toast-card:not([data-persistent])')"), 'transient expiry leaves permanent notice', 6000)
+    assert.equal(await evaluate("document.querySelector('.toast-card[data-persistent]')===persistentCard"), true)
+    await evaluate('__toastTest.close()')
+    assert.equal(await evaluate("Boolean(document.querySelector('.toast-card[data-persistent]'))"), true, 'global close cannot remove persistent notice')
+    await evaluate('__toastTest.persistent.update({message:"Enable signing"})')
+    await browser.until(() => evaluate("persistentCard.querySelector('.toast-message').textContent==='Enable signing'"), 'scoped message update')
+    assert.equal(await evaluate("document.querySelector('.toast-card[data-persistent]')===persistentCard"), true, 'updates retain DOM identity')
+    await evaluate('__toastTest.info("Keep transient");__toastTest.persistent.close()')
+    await browser.until(() => evaluate("!document.querySelector('.toast-card[data-persistent]') && document.querySelector('.toast-card:not([data-persistent]) .toast-message')?.textContent==='Keep transient'"), 'owner close preserves transient messages')
+    await evaluate('__toastTest.show({key:"cleanup",persistent:true,dismissible:false,message:"Unmount protected"});__toastTest.info("Unmount")')
     await browser.until(() => evaluate('Boolean(document.querySelector(".toast-card"))'), 'toast before unmount')
     await evaluate('__toastTest.view.mounted$(false)')
     await browser.until(() => evaluate('!document.querySelector("z-app")'), 'root unmount')
@@ -138,9 +155,8 @@ test('reactive toast follows the real launcher locale, preserves queue behavior 
           && rect.width > rect.height && rect.right <= window.innerWidth;
       })()`), true, 'retry uses theme colors and keeps its compact rectangular shape')
     }
-    const previousRetry = await evaluate('__toastTest.account.retry$()')
     await evaluate('document.querySelector(".retry-btn").click()')
-    await browser.until(() => evaluate(`__toastTest.account.retry$() === ${previousRetry + 1}`), 'retry requests another load')
+    await browser.until(() => evaluate('__toastTest.account.error$() !== "Test loading failure"'), 'retry starts a fresh local read')
     const appErrors = browser.logs.filter(log => log.method === 'Runtime.exceptionThrown' && log.sessionId === appSession)
     assert.deepEqual(appErrors, [])
   } catch (error) {

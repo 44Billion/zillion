@@ -52,6 +52,13 @@ Animated local images play inside confirmed message bubbles as well as the
 media viewer. Compact previews remain still, and leaving the chat releases its
 image sources. Remote upload services remain outside this delivery; peer attachments use the private channel.
 
+Locked or read-only accounts show a persistent, translated credential-vault
+instruction to unlock the account or import its private key/bunker URL.
+The notice has no close button or expiry and disappears automatically when the
+account is confirmed available; unlock also resumes existing data recovery.
+Other toasts remain independent. Unknown startup is silent, and internet or
+individual permission failures do not generate an account warning.
+
 The encrypted outbox also uses `libp2r2p/idb-queue`, with a unique event-ID index
 and `evictionPolicy: 'reject'` so pending messages are never evicted for capacity.
 Atomic conditional checkpoints prevent cancelled messages from reappearing.

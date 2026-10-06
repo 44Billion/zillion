@@ -188,6 +188,38 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   text callbacks, accessibility behavior, and duplicate identity rules.
   Bind bubbling focus events with `@focusin`/`@focusout` listeners; their `on...`
   forms can become stringified HTML attributes instead of native handlers.
+- `show({ key, persistent: true, dismissible: false, ... })` returns an owner
+  handle with `update`/`close`. Persistent cards are separate from the transient
+  queue and have no expiry timers or manual close button when protected. Global
+  close and ordinary expiry cannot remove them; scoped close cannot erase other
+  messages. Keyed replacement/host teardown invalidate obsolete handles. Keep
+  stable DOM identity and translated callbacks, one host and a bounded column
+  stack. Default queue deduplication, navigation and 4s/8s timing stay unchanged.
+
+## Account availability notice
+
+- `useAccountNotice`, mounted once by `z-app`, observes existing
+  `account.signerState$`/`pubkey$` without another availability query/subscription.
+  Only a connected, allowed snapshot for the current primary identity with
+  `isLocked === true` or `isReadOnly === true` creates a notice. Read-only takes
+  priority; messages briefly instruct unlocking or importing the account's
+  private key/bunker URL into the credential vault. Match the launcher's localized
+  credential-vault terminology; do not suggest a nonexistent write-mode toggle.
+- Initial unknown state is silent. Later null/unknown flags do not remove a
+  known warning. Only confirmed `isLocked === false` and `isReadOnly === false`
+  on a connected/allowed snapshot close it. Owner change and root teardown clear
+  the old scoped notice; stale snapshots/handles must not affect another owner.
+  Reset stale signer snapshots when account observation starts/ends, and keep
+  demonstration builds free of real-account warnings.
+- Internet connectivity, bridge/access failures and per-operation permissions
+  are outside this notice policy. Never infer account restrictions from their
+  errors or gate offline reads on internet access. Keep existing unlock recovery
+  and per-operation authorization intact; do not request signing to probe state.
+- `account-notice-locales.json` covers all launcher locales. Controlled notice
+  tests cover unknown startup, repeated states, read-only/lock transitions,
+  owner fencing, scoped close and stale handles. Guarded browser regressions
+  verify real read-only/locked snapshots, unlock without reload, live translation,
+  no manual/automatic expiry and coexistence with the ordinary toast queue.
 
 ## Home layout preview
 

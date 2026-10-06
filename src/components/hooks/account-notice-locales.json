@@ -1,0 +1,28 @@
+{
+  "Unlock your account in the credential vault to load contacts and chats.": {
+    "en": "Unlock your account in the credential vault to load contacts and chats.",
+    "fr": "Déverrouillez votre compte dans le coffre d’identifiants pour charger vos contacts et conversations.",
+    "it": "Sblocca il tuo account nel vault delle credenziali per caricare contatti e chat.",
+    "de": "Entsperre dein Konto im Anmeldedatentresor, um Kontakte und Chats zu laden.",
+    "es": "Desbloquea tu cuenta en la bóveda de credenciales para cargar contactos y conversaciones.",
+    "pt-BR": "Desbloqueie sua conta no cofre de credenciais para carregar contatos e conversas.",
+    "ru": "Разблокируйте аккаунт в хранилище учётных данных, чтобы загрузить контакты и чаты.",
+    "zh-CN": "在凭据保管库中解锁账户以加载联系人和聊天。",
+    "zh-TW": "在憑證保管庫中解鎖帳戶以載入聯絡人和聊天。",
+    "ja": "連絡先とチャットを読み込むには、認証情報保管庫でアカウントのロックを解除してください。",
+    "ko": "연락처와 채팅을 불러오려면 자격 증명 보관소에서 계정 잠금을 해제하세요."
+  },
+  "Import the private key or bunker URL for this account into the credential vault.": {
+    "en": "Import the private key or bunker URL for this account into the credential vault.",
+    "fr": "Importez la clé privée ou l’URL bunker de ce compte dans le coffre d’identifiants.",
+    "it": "Importa la chiave privata o l’URL bunker di questo account nel vault delle credenziali.",
+    "de": "Importiere den privaten Schlüssel oder die Bunker-URL dieses Kontos in den Anmeldedatentresor.",
+    "es": "Importa la clave privada o la URL bunker de esta cuenta en la bóveda de credenciales.",
+    "pt-BR": "Importe a chave privada ou URL de bunker desta conta no cofre de credenciais.",
+    "ru": "Импортируйте закрытый ключ или URL bunker этого аккаунта в хранилище учётных данных.",
+    "zh-CN": "将此账户的私钥或 bunker URL 导入凭据保管库。",
+    "zh-TW": "將此帳戶的私鑰或 bunker URL 匯入憑證保管庫。",
+    "ja": "このアカウントの秘密鍵または bunker URL を認証情報保管庫にインポートしてください。",
+    "ko": "이 계정의 개인 키 또는 bunker URL을 자격 증명 보관소로 가져오세요."
+  }
+}

@@ -9,6 +9,7 @@ import '#shared/toast.js'
 import '#shared/dialog.js'
 import './router.js'
 import { useInitAccount } from '#hooks/use-account.js'
+import { useAccountNotice } from '#hooks/use-account-notice.js'
 
 const style = document.createElement('style')
 style.textContent = themeCss + globalCss
@@ -17,6 +18,7 @@ document.head.append(style)
 f('z-app', ({ h }) => {
   useInitI18n()
   useInitAccount()
+  useAccountNotice()
   useTask(({ cleanup }) => cleanup(startTemporaryOutputMaintenance()))
   useTask(({ track }) => {
     const description = track(() => t('Zillion — private conversations'))

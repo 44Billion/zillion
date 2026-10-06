@@ -2,7 +2,7 @@ const OPEN_ANIM_MS = 200
 const SWAP_FADE_MS = 120
 
 export default /* css */`
-  z-toast .toast-card {
+  z-toast .toast-stack {
     position: fixed;
     top: calc(12px + env(safe-area-inset-top));
     left: 0;
@@ -11,8 +11,20 @@ export default /* css */`
     width: calc(100% - 24px - env(safe-area-inset-left) - env(safe-area-inset-right));
     max-width: calc(var(--z-mobile-width) - 24px);
     max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
     overflow: auto;
     z-index: 9999;
+    pointer-events: none;
+  }
+  z-toast .toast-card {
+    position: relative;
+    flex: none;
+    width: 100%;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    overflow: auto;
+    pointer-events: auto;
     box-sizing: border-box;
     background-color: var(--z-surface);
     color: var(--z-text);

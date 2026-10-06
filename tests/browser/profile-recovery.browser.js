@@ -92,11 +92,14 @@ test('shared profiles recover and avatars pulse only before their first presenta
     const url = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app frame')
     const origin = new URL(url).origin
     const evaluate = expression => browser.evaluate(expression, origin)
+    await browser.until(() => evaluate("profileRecovery.account.signerState$()?.isLocked===true && document.querySelector('.toast-card[data-persistent] .toast-message')?.textContent.includes('Unlock your account')"), 'locked startup shows account action')
+    assert.equal(await evaluate("Boolean(document.querySelector('.toast-card[data-persistent] .toast-close'))"), false)
     await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("lock-overlay .lock-unlock"))', vaultOrigin), 'vault unlock UI')
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("vault-lock-button") && !document.querySelector("vault-lock-button").hidden)', vaultOrigin), 'unlocked vault')
     await browser.until(() => evaluate('profileRecovery.account.contactsState$() === "loaded"'), 'initial local contacts')
+    await browser.until(() => evaluate("!document.querySelector('.toast-card[data-persistent]')"), 'unlock removes the account warning without a reload')
     const secrets = [generateSecretKey(), generateSecretKey(), generateSecretKey(), generateSecretKey()]
     const peers = secrets.map(getPublicKey)
     const profiles = secrets.map((secret, index) => finalizeEvent({

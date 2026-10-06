@@ -2,6 +2,8 @@ import { f, toSignal, useStore, useTask } from '#f'
 import { getT } from '#i18n/index.js'
 import locales from './toast-locales.json'
 import styles from './toast-styles.js'
+import { createPersistentToasts, normalizeToast } from '#helpers/persistent-toasts.js'
+import '#f/components/f-to-signals.js'
 import './icons/icon-x.js'
 import './icons/icon-chevron-down.js'
 import './icons/icon-circle-check.js'
@@ -10,18 +12,16 @@ import './icons/icon-alert-triangle.js'
 import './icons/icon-info-circle.js'
 
 const t = getT(locales)
-const TYPES = new Set(['success', 'error', 'warning', 'info'])
 // Shared for the app's lifetime; the mounted host owns timers and teardown.
 const session$ = toSignal(null)
+const notices$ = toSignal([])
+const notices = createPersistentToasts({ onChange: notices$ })
 let nextId = 0
 const resolveText = value => String((typeof value === 'function' ? value() : value) ?? '')
 
 export function show (entry) {
-  const normalized = {
-    type: TYPES.has(entry?.type) ? entry.type : 'info',
-    message: entry?.message ?? '',
-    longMessage: entry?.longMessage ?? ''
-  }
+  if (entry?.persistent === true) return notices.show(entry)
+  const normalized = normalizeToast(entry)
   const previous = session$.peek()
   const current = previous && !previous.closing ? previous : { id: ++nextId, queue: [], revision: 0 }
   const queue = current.queue.filter(item => item.type !== normalized.type || item.message !== normalized.message || item.longMessage !== normalized.longMessage)
@@ -47,12 +47,29 @@ function navigate (offset) {
 }
 
 f('z-toast', ({ h }) => {
-  useTask(({ cleanup }) => cleanup(() => session$(null)))
+  useTask(({ cleanup }) => cleanup(() => { session$(null); notices.clear() }))
   const session = session$()
   return h`
     <style>${styles}</style>
-    ${session ? h({ key: session.id })`<z-toast-message props=${{ session$ }} />` : null}
+    <div class='toast-stack'>
+      <span hidden></span>
+      ${notices$().map(notice => h({ key: `notice:${notice.id}` })`<f-to-signals props=${{
+        from: { notice }, render: ({ h, props }) => h`<z-toast-persistent props=${{ notice$: props.notice$ }} />`
+      }} />`)}
+      ${session ? h({ key: `session:${session.id}` })`<z-toast-message props=${{ session$ }} />` : null}
+    </div>
   `
+})
+
+f('z-toast-persistent', ({ h, props }) => {
+  const view = useStore(() => ({
+    session$ () {
+      const notice = props.notice$()
+      return { id: `persistent-${notice.id}`, queue: [notice], index: 0, revision: notice.revision, closing: false, persistent: true }
+    },
+    dismiss () { notices.dismiss(props.notice$().id) }
+  }))
+  return h`<z-toast-message props=${{ session$: view.session$, onClose: view.dismiss }} />`
 })
 
 f('z-toast-message', ({ h, props }) => {
@@ -115,7 +132,7 @@ f('z-toast-message', ({ h, props }) => {
         if (session$.peek()?.id === session.id) session$(null)
       }, 250)
       cleanup(() => clearTimeout(timer))
-    } else if (!paused) {
+    } else if (!paused && !session.persistent) {
       const timer = setTimeout(close, duration)
       cleanup(() => clearTimeout(timer))
     }
@@ -135,7 +152,7 @@ f('z-toast-message', ({ h, props }) => {
   }[entry.type]()
   return h`
     <section class=${`toast-card ${session.closing ? 'is-closing' : view.open$() ? 'is-open' : ''} ${view.swapping$() ? 'is-swapping' : ''}`}
-      data-type=${entry.type} ?data-has-long=${Boolean(longMessage)} ?data-expanded=${view.expanded$()} ?data-multi=${session.queue.length > 1}
+      data-type=${entry.type} ?data-persistent=${session.persistent === true} ?data-has-long=${Boolean(longMessage)} ?data-expanded=${view.expanded$()} ?data-multi=${session.queue.length > 1}
       onpointerdown=${view.pause} onpointerup=${view.release} onpointercancel=${view.release} onpointerleave=${view.release}
       @focusin=${view.focus} @focusout=${view.blur}>
       <div class="toast-row">
@@ -149,9 +166,11 @@ f('z-toast-message', ({ h, props }) => {
           </button>
           <div class="toast-long-text" id=${`toast-details-${session.id}`}>${longMessage}</div>
         </div>
-        <button type="button" class="toast-btn toast-close" aria-label=${t('Close')} onclick=${close}>
-          <span aria-hidden="true"><icon-x props=${{ size: '16px', weight: 'regular' }} /></span>
-        </button>
+        ${entry.dismissible !== false
+          ? h`<button type="button" class="toast-btn toast-close" aria-label=${t('Close')} onclick=${props.onClose ?? close}>
+              <span aria-hidden="true"><icon-x props=${{ size: '16px', weight: 'regular' }} /></span>
+            </button>`
+          : null}
       </div>
       <div class="toast-nav toast-fader">
         <button type="button" class="toast-btn toast-nav-prev" aria-label=${t('Previous')} ?disabled=${session.index === 0} onclick=${() => navigate(-1)}>

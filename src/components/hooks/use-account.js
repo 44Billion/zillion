@@ -411,6 +411,7 @@ function useInitPrivateChats (account, queue) {
     const owner = track(() => account.pubkey$())
     if (!owner || demoEnabled) return
     let closed = false
+    account.signerState$(null)
     account.contactsState$('loading')
     runtime.transport = createPrivateChats({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
@@ -468,6 +469,7 @@ function useInitPrivateChats (account, queue) {
     cleanup(() => {
       closed = true
       stopState(); stopOnline()
+      account.signerState$(null)
       runtime.contacts?.close(); runtime.contacts = null
       runtime.transport?.close().catch(() => {}); runtime.transport = null
       for (const chat of runtime.chats.values()) chat.close()
