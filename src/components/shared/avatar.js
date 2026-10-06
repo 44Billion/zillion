@@ -12,9 +12,8 @@ import '#shared/icons/icon-user-circle.js'
 import { cssVars } from '#assets/styles/theme.js'
 import { selectPreferredProfile } from '#helpers/nostr/queries.js'
 import { observeProfile } from '#services/profiles.js'
-import { onOnline } from 'libp2r2p/network'
-import avatarCache from '#services/avatar-cache.js'
-import { createAvatarPresentation } from '#services/avatar-presentation.js'
+import { observeAvatar } from '#services/avatars.js'
+import { useAccount } from '#hooks/use-account.js'
 import { abortable } from '#helpers/media-dimensions.js'
 
 const AVATAR_PICTURE_TIMEOUT_MS = 15000
@@ -41,7 +40,7 @@ f('z-avatar-candidate', ({ h, props }) => {
       try {
         await abortable(image.decode(), controller.signal)
         if (!controller.signal.aborted && getAvatarImageLoadStatus(image, candidate.src) === 'loaded') {
-          props.present(candidate)
+          props.present(candidate, image)
           cleanupImage()
         }
       } catch { fail() }
@@ -67,6 +66,8 @@ f('z-avatar-candidate', ({ h, props }) => {
 
 // wrap it with a div setting width/height, border-radius and background-color
 f('a-avatar', ({ h, props }) => {
+  const account = useAccount()
+  const runtime = useMemo(() => ({ anonymous: crypto.randomUUID(), interest: null }))
   const fallbackPk$ = useSignal(props.pk)
   const pk$ = props.pk$ ?? fallbackPk$
   const memory$ = useSignal(null)
@@ -85,8 +86,14 @@ f('a-avatar', ({ h, props }) => {
   const removeCachedProfile = () => cache$()?.remove?.()
   const store = useStore(() => ({
     pk$,
-    resolvedPicture$: null,
-    visual$: { pk: pk$(), initial: !!pk$(), displayed: null },
+    canvasElement$: null,
+    nativeFailure$: null,
+    key$ () { return this.pk$() || `anonymous:${runtime.anonymous}` },
+    sharedState$ () { return account.avatarStates$()[this.key$()] },
+    visual$ () {
+      this.sharedState$()
+      return account.avatarSnapshot?.(this.key$()) ?? { initial: !!this.pk$() || !!this.picture$(), displayed: null, candidate: null }
+    },
     profileState$: { pk: pk$(), pending: !!pk$() },
     providedProfile$ () {
       return forIdentity(props.profile$?.() ?? props.profile ?? null)
@@ -112,19 +119,24 @@ f('a-avatar', ({ h, props }) => {
       const picture = this.profile$()?.picture
       return isValidAvatarPicture(picture) ? picture : null
     },
-    candidate$ () {
-      const resolved = this.resolvedPicture$()
-      return resolved?.pk === this.pk$() && resolved.url === this.picture$() && resolved.src
-        ? resolved
-        : null
+    candidate$ () { return this.visual$().candidate },
+    initial$ () { return this.visual$().initial },
+    displayed$ () { return this.visual$().displayed },
+    confirm (candidate, image) {
+      this.nativeFailure$(null)
+      account.confirmAvatar?.(candidate.pk, candidate, image)
     },
-    initial$ () {
-      const visual = this.visual$()
-      return visual.pk === this.pk$() ? visual.initial : !!this.pk$()
+    reject (candidate) {
+      if (!isDataAvatarPicture(candidate.src)) this.nativeFailure$({ key: candidate.pk, src: candidate.src })
+      account.rejectAvatar?.(candidate.pk, candidate)
     },
-    displayed$ () {
-      const visual = this.visual$()
-      return visual.pk === this.pk$() ? visual.displayed : null
+    rejectDisplayed (event) {
+      const src = this.displayed$()?.src
+      if (src && !isDataAvatarPicture(src) && event.currentTarget.getAttribute('src') === src) this.nativeFailure$({ key: this.key$(), src })
+    },
+    useCanvas$ () {
+      const failed = this.nativeFailure$()
+      return failed?.key === this.key$() && failed.src === this.displayed$()?.src
     },
     svg$ () {
       const seed = pk$()
@@ -147,10 +159,6 @@ f('a-avatar', ({ h, props }) => {
       ]
     }
   }))
-
-  const presentation = useMemo(() => createAvatarPresentation({ onChange: store.visual$ }))
-  useTask(({ track }) => { presentation.start(track(() => pk$())) })
-  useTask(({ cleanup }) => cleanup(() => presentation.close()))
 
   // Local-only consumers observe existing contact work without starting relay IO.
   useTask(({ track, cleanup }) => {
@@ -175,40 +183,35 @@ f('a-avatar', ({ h, props }) => {
     cleanup(() => { released = true; interest.release() })
   })
 
-  useTask(({ track }) => {
-    presentation.update(track(() => ({ pk: pk$(), picture: store.picture$(), pending: store.profileLoading$() })))
+  const options = () => ({
+    url: store.picture$(), pending: store.profileLoading$(),
+    version: store.profile$()?.meta?.events?.find(event => event.kind === 0)
   })
-
-  // Cached bytes and HTTP preparation continue after the initial visual deadline.
   useTask(({ track, cleanup }) => {
-    const { pk, url } = track(() => ({ pk: pk$(), url: store.picture$() }))
-    const controller = new AbortController()
-    let pending = false
-    const resolve = async () => {
-      if (!url || pending || controller.signal.aborted) return
-      if (store.visual$().pk === pk && store.displayed$()?.url === url) return
-      pending = true
-      try {
-        const image = await avatarCache.resolveImage(url, { signal: controller.signal })
-        if (!controller.signal.aborted) {
-          store.resolvedPicture$({ pk, url, src: image?.source ?? null, id: (store.resolvedPicture$()?.id ?? 0) + 1 })
-          if (!image) presentation.reject({ pk, url })
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) {
-          presentation.reject({ pk, url })
-          console.warn('Could not prepare avatar picture', error)
-        }
-      } finally { pending = false }
-    }
-    const stop = url && !isDataAvatarPicture(url) ? onOnline(resolve) : () => {}
-    resolve()
-    cleanup(() => { controller.abort(); stop() })
+    const key = track(() => store.key$())
+    runtime.interest = observeAvatar(key, options())
+    cleanup(() => { runtime.interest?.release(); runtime.interest = null })
   })
+  useTask(({ track }) => { runtime.interest?.update(track(options)) })
+
+  // A cross-origin photo may have decoded without exposing readable bytes.
+  // If a new DOM load fails, draw its already loaded pixels without exporting
+  // a tainted canvas or claiming that the URL is a persistent offline cache.
+  useTask(({ track }) => {
+    const { key, canvas, fallback } = track(() => ({ key: store.key$(), canvas: store.canvasElement$(), fallback: store.useCanvas$() }))
+    if (!canvas || !fallback) return
+    const image = account.avatarDrawable?.(key)
+    if (!image?.naturalWidth || !image.naturalHeight) return
+    const size = Math.max(1, Math.ceil((canvas.clientWidth || canvas.parentElement.clientWidth || 48) * (devicePixelRatio || 1)))
+    canvas.width = size; canvas.height = size
+    const scale = Math.max(size / image.naturalWidth, size / image.naturalHeight)
+    canvas.getContext('2d').drawImage(image, (size - image.naturalWidth * scale) / 2, (size - image.naturalHeight * scale) / 2, image.naturalWidth * scale, image.naturalHeight * scale)
+  }, { after: 'rendering' })
 
   const displayed = store.displayed$()
   const candidate = store.candidate$()
   const initial = store.initial$()
+  const canvas = store.useCanvas$()
   const fallback = !store.pk$() || !store.svg$()
     ? h`<icon-user-circle props=${{ weight: 'regular', ...props, style$: store.svgStyle$ }} />`
     : h`<f-svg props=${{ ...props, style$: store.svgStyle$, svg: store.svg$() }} />`
@@ -231,11 +234,12 @@ f('a-avatar', ({ h, props }) => {
     <span class='animate-background' aria-hidden='true' style=${`display: ${initial ? 'block' : 'none'};`} />
     <span class='avatar-fallback' style=${`display: ${!initial && !displayed ? 'block' : 'none'}; width: 100%; height: 100%;`}>${fallback}</span>
     <img class='avatar-picture' src=${displayed?.src ?? null}
-      alt=${props.alt$?.() ?? props.alt ?? ''} decoding='async' referrerpolicy='no-referrer'
-      style=${`display: ${displayed ? 'block' : 'none'}; width: 100%; height: 100%; object-fit: cover;`} />
+      alt=${props.alt$?.() ?? props.alt ?? ''} decoding='async' referrerpolicy='no-referrer' onerror=${store.rejectDisplayed}
+      style=${`display: ${displayed && !canvas ? 'block' : 'none'}; width: 100%; height: 100%; object-fit: cover;`} />
+    <canvas ref=${store.canvasElement$} aria-hidden='true' style=${`display: ${canvas ? 'block' : 'none'}; width: 100%; height: 100%;`} />
     ${candidate
       ? [h({ key: candidate.id })`<z-avatar-candidate props=${{
-          candidate, present: presentation.present, reject: presentation.reject
+          candidate, present: store.confirm, reject: store.reject
         }} />`]
       : []}
   </span>`

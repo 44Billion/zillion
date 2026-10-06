@@ -43,7 +43,7 @@ avatars pulse only during their initial profile/image preparation, for at most
 the existing presentation until the replacement decodes, without another pulse;
 failed replacements keep the previous photo, while explicit removal shows the
 fallback. HTTPS images need a successful
-CORS download to be reliably available offline. Avatars have a dedicated 16 MiB
+CORS download to be reliably available offline. Avatars have a dedicated 32 MiB
 FIFO cache; chat images, previews and thumbnails share a separate 64 MiB FIFO
 cache. Both store decoded dimensions. Conversation media cannot evict avatars
 from their reserved budget. External videos render online and remain links offline. Local attachments,
@@ -822,6 +822,12 @@ throughout. After that one startup sort, alphabetical ordering stays live and
 returning to home does not restart the gate. Profile cache writes preserve public
 signed kind-0 events, report both rejected promises and `ok: false` results, and
 never occupy remote-query slots or delay ordering.
+Avatar presentation is shared across home, contact search/listing and profiles:
+already prepared photos and pending URL lookups are reused, and a failed update
+keeps the last valid photo on every screen. Four shared preparations run at once;
+local cache reads remain independent. Contact-directory avatars mount only near
+the viewport, while all names stay available for search and sorting. Idle image
+sources have their own bounded memory cache; active views retain their photos.
 The strip starts at the left edge while contacts load and reorder. Native snap
 activates on the first manual scroll, avoiding an automatic jump that follows
 the initially visible self-chat to the end of the growing list. Touch, wheel and

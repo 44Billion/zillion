@@ -177,10 +177,10 @@ test('shared profiles recover and avatars pulse only before their first presenta
     })()`)
     const stage = "document.querySelector('#avatar-lifecycle .avatar-presentation')?.dataset.avatarState"
     const source = "document.querySelector('#avatar-lifecycle .avatar-picture')?.getAttribute('src')"
-    await browser.until(() => evaluate(`${stage} === 'loading'`), 'own avatar initial pulse')
+    await browser.until(() => evaluate(`${stage} === 'fallback'`), 'own avatar reuses its initial fallback without another pulse')
     await browser.until(() => imageWaiters.has('initial-photo.png'), 'initial image fetch')
     releaseImage('initial-photo.png')
-    await browser.until(() => evaluate(`${stage} === 'photo'`), 'pulse to decoded own photo')
+    await browser.until(() => evaluate(`${stage} === 'photo'`), 'shared fallback to decoded own photo')
     const firstSource = await evaluate(source)
     await evaluate('avatarStates.length=0')
     await evaluate(`window.napp.eventStore.add(${JSON.stringify(ownProfile(imageUrl('new-photo.png')))})`)
@@ -277,6 +277,11 @@ test('shared profiles recover and avatars pulse only before their first presenta
     const finalOverride = await evaluate('profileRecovery.readContactsOverride()')
     assert.equal(finalOverride.tags.some(tag => tag[0] === 'p' && tag[1] === pubkey), false)
   } catch (error) {
+    for (const context of browser?.contexts.values() ?? []) {
+      if (/^http:\/\/[0-9]+[.]localhost:10000$/.test(context.origin) && context.auxData?.isDefault) {
+        console.log('Profile recovery diagnostic:', await browser.evaluate('({ contacts:profileRecovery.account.contactsState$(), signer:profileRecovery.account.signerState$(), error:profileRecovery.account.error$(), ready:profileRecovery.account.ready$(), avatars:Object.keys(profileRecovery.account.avatarStates$()).length })', context.origin).catch(() => null))
+      }
+    }
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/profile-recovery'))
     throw error
   } finally {

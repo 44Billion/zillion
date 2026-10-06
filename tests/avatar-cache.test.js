@@ -5,7 +5,7 @@ import { createQueue } from 'libp2r2p/idb-queue'
 import { createMediaCache } from '#services/media-cache.js'
 import { createAvatarCache } from '#services/avatar-cache.js'
 
-test('avatar and media caches open separate databases with 16 and 64 MiB budgets', async () => {
+test('avatar and media caches open separate databases with 32 and 64 MiB budgets', async () => {
   const indexedDB = new IDBFactory()
   const opened = []
   const openQueue = options => { opened.push(options); return createQueue({ ...options, indexedDB }) }
@@ -15,7 +15,7 @@ test('avatar and media caches open separate databases with 16 and 64 MiB budgets
     await avatars.get('https://example.com/picture.png')
     await media.get('https://example.com/picture.png')
     assert.deepEqual(opened.map(({ prefix, maxBytes, evictionPolicy }) => ({ prefix, maxBytes, evictionPolicy })), [
-      { prefix: 'zillion:avatars:v1', maxBytes: 16 * 1024 * 1024, evictionPolicy: 'fifo' },
+      { prefix: 'zillion:avatars:v1', maxBytes: 32 * 1024 * 1024, evictionPolicy: 'fifo' },
       { prefix: 'zillion:media:v1', maxBytes: 64 * 1024 * 1024, evictionPolicy: 'fifo' }
     ])
   } finally { await avatars.close(); await media.close() }

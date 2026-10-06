@@ -12,11 +12,11 @@ export function createAvatarPresentation ({ onChange, timeout = AVATAR_INITIAL_T
     state.initial = false
   }
   return {
-    start (pk) {
+    start (pk, seed) {
       clearTimeout(timer)
-      state = { pk, picture: null, initial: !!pk, displayed: null }
+      state = { pk, picture: seed?.picture ?? null, initial: seed?.initial ?? !!pk, displayed: seed?.displayed ?? null }
       emit()
-      if (pk && !closed) timer = setTimeout(() => { finish(); emit() }, timeout)
+      if (state.initial && !closed) timer = setTimeout(() => { finish(); emit() }, timeout)
     },
     update ({ pk, picture, pending }) {
       if (closed || state?.pk !== pk) return

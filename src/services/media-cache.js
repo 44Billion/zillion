@@ -62,7 +62,7 @@ export function createMediaCache ({
     } catch { return null }
   }
 
-  async function resolveImage (url, { signal } = {}) {
+  async function resolveImage (url, { signal, cached } = {}) {
     if (!isValidAvatarPicture(url)) return null
     const requestSignal = preparationSignal(signal)
     const decode = async source => {
@@ -73,8 +73,8 @@ export function createMediaCache ({
     try {
       requestSignal.throwIfAborted()
       if (isDataAvatarPicture(url)) return await decode(url)
-      const cached = await abortable(get(url), requestSignal)
-      if (cached) return cached
+      const local = cached === undefined ? await abortable(get(url), requestSignal) : cached
+      if (local) return local
       if (!await abortable(checkOnline({ signal: requestSignal }), requestSignal)) return null
       let dataUrl
       try {

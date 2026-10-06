@@ -122,9 +122,9 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   never persisted. Preparation (including cache reads) has a 15-second deadline.
   There is no legacy-record migration; use a clean disposable cache for testing.
 - `src/services/avatar-cache.js` reuses `createMediaCache` with an independent
-  16 MiB FIFO queue in `zillion:avatars:v1:idb-queue`. Every `a-avatar` resolves
+  32 MiB FIFO queue in `zillion:avatars:v1:idb-queue`. Every `a-avatar` resolves
   pictures through this instance. Chat images, preview images/icons and reply
-  thumbnails keep the existing 64 MiB media queue (80 MiB total logical budget).
+  thumbnails keep the existing 64 MiB media queue (96 MiB total logical budget).
   Both queues share the record/decoding contract and 4 MiB download limit;
   eviction and clearing are independent, including when URLs are identical.
   Do not migrate avatar bytes from the old shared cache or fall back to it.
@@ -1561,8 +1561,8 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 
 ## Initial avatar presentation
 
-- `services/avatar-presentation.js` owns one initial visual budget per mounted
-  pubkey: at most ten seconds across profile and image preparation, with no
+- `services/avatar-presentation.js` owns one initial visual budget per account
+  avatar identity: at most ten seconds across profile and image preparation, with no
   minimum delay. Keep the existing opacity pulse until a decoded photo or a
   definitive fallback, never using empty profile object truthiness as readiness.
   The visual timeout does not cancel shared metadata IO or image preparation.
@@ -1571,6 +1571,32 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   failures keep it, but explicit picture removal switches to DiceBear. A late
   photo replaces DiceBear without animation. Pubkey changes reset the visual
   generation and must reject stale callbacks; unmount clears timers/tasks.
+- `services/avatars.js` owns one image coordinator per account, initialized by
+  `useInitAvatars` in the stable root. `account.avatarStates$` publishes only
+  serializable visual state/URLs/resource tokens. Source strings, controllers,
+  promises, maps and native drawables live in the raw service, outside stores.
+  Consumers retain/update/release interest, never instantiate another service.
+- Share local reads and preparations by URL, with four preparation slots. Cache
+  reads bypass occupied remote slots; the internal `cached` resolve option avoids
+  reading the same row twice after a miss. One account-owned online listener
+  resumes failed sources. Releasing one consumer preserves work for others;
+  the last release aborts unwanted work and stops its initial timer. Remounts
+  preserve the original deadline and already completed fallback/photo state.
+- Keep the last valid photo by identity while a replacement prepares/fails.
+  Metadata timestamp/lowest-id ordering fences stale consumers; explicit removal
+  clears all presentations. Already confirmed readable bytes render immediately
+  on another screen without a new shimmer or cache/network read. Source tokens
+  include the service generation, so old confirmations cannot update a new account.
+- Idle sources use LRU with an estimated 32 MiB budget (source characters plus
+  decoded dimensions) and at most 256 idle descriptors. Active views pin the
+  sources they already need, including the old photo during replacement. This
+  is not a hard limit on all browser RAM/active DOM resources. Teardown clears
+  resources, queues, timers and listeners; it never deletes the persistent cache.
+- Contact-directory rows use native `useTask({ when: 'visible' })` with the
+  route's `scrollRoot$` and `152px 0px` margin, mounting avatars once near the
+  viewport. Names, search and ordering remain fully reactive for every row.
+  Home keeps its existing horizontal visibility deferral. Demo identities use
+  their person id when no pubkey exists, avoiding collisions between portraits.
 - Candidates use the existing avatar byte cache and an invisible DOM image.
   Confirm load/decode even for cached data URLs before replacing the displayed
   source. Key each candidate by its preparation attempt so queued events from
@@ -1579,8 +1605,17 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   no-identity icon. The owner remains local-only; no per-avatar metadata queries
   or store subscriptions. Signed remote metadata still survives storage failure
   in shared memory, without personal copies or extra relay queries.
+- A native CORS fallback keeps its already decoded drawable for live reuse. If
+  another native DOM load fails, draw the last known pixels in a local canvas;
+  never export/persist a tainted canvas or equate a URL with offline bytes. That
+  fallback is a still last-known photo; normal native loads retain their behavior.
 - Controlled presentation/coordinator tests cover the ten-second budget,
   first-outcome readiness, local-only observation, retries, stale results and
   teardown. The protected profile-recovery browser fixture covers real contact
   and own-profile transitions with held metadata/HTTP bytes, replacement failure,
   explicit removal and late success without renewed pulse.
+- `avatars.test.js` covers deduplication, local-read admission, cancellation,
+  idle budgets, stale generations/metadata and native drawables. The guarded
+  `shared-avatars.browser.js` reproduces real FIFO eviction with the remote
+  image server unavailable, confirms home/directory reuse without extra kind-0
+  or HTTP reads, and tests viewport deferral, retained navigation and native CORS.

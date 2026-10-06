@@ -13,13 +13,15 @@ import { createSelfChat, createChat } from '#services/self-chat.js'
 import { createProfiles, attachProfiles, observeProfile } from '#services/profiles.js'
 import { createContactOrder } from '#services/contact-order.js'
 import { profileName } from '#helpers/profile-presentation.js'
+import avatarCache from '#services/avatar-cache.js'
+import { createAvatars, attachAvatars } from '#services/avatars.js'
 
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0, older$: { loading: false, error: null, hasOlder: false }, newer$: { loading: false, error: null, hasNewer: false },
     // Inner events resolved from kind-9 references, keyed by event id.
-    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsOwner$: null, selfPinned$: false, contactOrder$: { ids: [], alphabetical: false }, contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
+    outbox$: [], references$: {}, directory$: {}, avatarStates$: {}, contacts$: [], contactsOwner$: null, selfPinned$: false, contactOrder$: { ids: [], alphabetical: false }, contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
     people$ () {
       return [...this.contacts$().map(contact => this.personFor(contact.pubkey)), ...demoPeople]
     },
@@ -49,6 +51,7 @@ export function useInitAccount () {
   account.reportSendError = (error, attempt) => { for (const listener of sendErrors) listener(error, attempt) }
   useTask(({ cleanup }) => cleanup(() => sendErrors.clear()))
   const queue = useMemo(() => ({ run: createChatWorkers(), foreground: null, opened: new Set() }))
+  useInitAvatars(account)
   useInitProfiles(account)
   useInitPrivateChats(account, queue)
   useInitConversationSummaries(account)
@@ -279,6 +282,33 @@ function useInitConversationPrefetch (account, queue, self) {
     })
     runtime.prefetch = prefetch
     cleanup(() => { prefetch.close(); runtime.prefetch = null; queue.opened.clear(); queue.foreground = null })
+  })
+}
+
+function useInitAvatars (account) {
+  const runtime = useMemo(() => ({ service: null }))
+  account.avatarSnapshot = key => runtime.service?.snapshot(key) ?? null
+  account.avatarDrawable = key => runtime.service?.drawable(key) ?? null
+  account.confirmAvatar = (key, candidate, image) => runtime.service?.confirm(key, candidate, image)
+  account.rejectAvatar = (key, candidate) => runtime.service?.reject(key, candidate)
+  useTask(({ track, cleanup }) => {
+    const owner = track(() => account.pubkey$())
+    if (!owner && !demoEnabled) return
+    const service = createAvatars({
+      cache: avatarCache,
+      onState: (key, state) => {
+        if (runtime.service !== service) return
+        account.avatarStates$(previous => {
+          const next = { ...previous }
+          if (state) next[key] = state
+          else delete next[key]
+          return next
+        })
+      }
+    })
+    runtime.service = service
+    const detach = attachAvatars(service)
+    cleanup(() => { detach(); service.close(); runtime.service = null; account.avatarStates$({}) })
   })
 }
 

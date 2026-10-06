@@ -120,7 +120,7 @@ f('z-contacts', ({ h, props }) => {
             <span hidden></span>
             ${view.rows$().map(({ person, heading }) => h({ key: person.id })`<li>
               ${heading ? h`<h2 class="letter">${heading}</h2>` : null}
-              <f-to-signals props=${{ from: { person }, render: ({ h, props }) => h`<z-contact-row props=${{ person$: props.person$ }} />` }} />
+              <f-to-signals props=${{ from: { person }, render: ({ h, props }) => h`<z-contact-row props=${{ person$: props.person$, scrollRoot$: page.scrollRoot$ }} />` }} />
             </li>`)}
           </ul>
         `
@@ -131,7 +131,7 @@ f('z-contacts', ({ h, props }) => {
         </div>
         <ul aria-label=${t('Person found')}>
           <span hidden></span>
-          ${view.found$().map(person => h({ key: `found:${person.id}` })`<li><f-to-signals props=${{ from: { person }, render: ({ h, props }) => h`<z-contact-row props=${{ person$: props.person$ }} />` }} /></li>`)}
+          ${view.found$().map(person => h({ key: `found:${person.id}` })`<li><f-to-signals props=${{ from: { person }, render: ({ h, props }) => h`<z-contact-row props=${{ person$: props.person$, scrollRoot$: page.scrollRoot$ }} />` }} /></li>`)}
         </ul>
         ${!searching && view.add$() ? h`<div class="empty-state"><span class="empty-symbol" aria-hidden="true"><icon-user-plus props=${{ size: '34px' }} /></span><h2>${t('Find someone')}</h2><p>${t('Paste an identifier to see their profile.')}</p></div>` : null}
       </div>
