@@ -12,6 +12,7 @@ export function privateChatDiagnostic (error, owner) {
     if (depth >= 8) return { truncated: 'depth' }
     seen.add(value)
     const result = pick(value, scalarFields)
+    if (Array.isArray(value.pauseReasons)) result.pauseReasons = value.pauseReasons.filter(reason => typeof reason === 'string')
     if (typeof value.reason === 'string') result.reason = value.reason
     if (value.cause !== undefined) result.cause = summarize(value.cause, depth + 1)
     if (Array.isArray(value.errors)) result.errors = value.errors.map(item => summarize(item, depth + 1))

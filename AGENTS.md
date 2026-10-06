@@ -1003,7 +1003,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.16`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.17`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1487,7 +1487,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 
 ## Shared public profile recovery
 
-- The coordinated 0.11.16 library owns failure-aware live-reader recovery.
+- The coordinated 0.11.17 library owns failure-aware live-reader recovery.
   Dependency-only upgrades must preserve this account profile policy and contact
   UI, and pass profile/contact browser regressions against the installed release.
 
@@ -1619,3 +1619,13 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   `shared-avatars.browser.js` reproduces real FIFO eviction with the remote
   image server unavailable, confirms home/directory reuse without extra kind-0
   or HTTP reads, and tests viewport deferral, retained navigation and native CORS.
+
+## Messenger pause diagnostics
+
+- Consume libp2r2p's session-owned pause recovery, not an app retry loop. Preserve
+  `pauseReasons` in copyable console diagnostics and nested causes, never outbox
+  metadata. Root account availability remains authoritative for signer access.
+- Remote work parks during observed pauses and wakes immediately on release.
+  `session-storage` is distinct from internal messenger storage/capacity pauses;
+  retry the actual save and ACK before release. Self-chat/personal writes remain
+  independent, and historical recovery does not gate text publication.

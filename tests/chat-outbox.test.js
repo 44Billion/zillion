@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { withMessengerState } from './helpers/messenger-state.js'
 import assert from 'node:assert/strict'
 import { IDBFactory } from 'fake-indexeddb'
 import { createQueue } from 'libp2r2p/idb-queue'
@@ -100,7 +101,7 @@ test('coordinator reopens the real encrypted outbox and retries only unfinished 
     let storageClosed = false
     const transport = createPrivateChats({
       recoveryStorage: null,
-      owner, signer, Messenger: async () => messenger,
+      owner, signer, Messenger: async options => withMessengerState(messenger, options),
       FileTransfer: () => ({ observe () {} }),
       openDownloads: options => createChatOutbox({ ...options, indexedDB, namespace: 'downloads' }),
       eventStore: { query: async () => ({ results: [] }), addPersonalCopy: async value => { writes.push(value); return { result: { ok: true } } } },

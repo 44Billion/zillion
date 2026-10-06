@@ -642,7 +642,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.11.16`
+This checkout consumes the public APIs from the published `libp2r2p@^0.11.17`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -832,3 +832,7 @@ The strip starts at the left edge while contacts load and reorder. Native snap
 activates on the first manual scroll, avoiding an automatic jump that follows
 the initially visible self-chat to the end of the growing list. Touch, wheel and
 keyboard scrolling remain available; retained navigation preserves their position.
+
+Private sends now wait on observed messenger pause reasons and wake when recovery
+completes. Network and inbox persistence recovery do not require a new account
+state transition; self-chat and local personal copies stay independent.

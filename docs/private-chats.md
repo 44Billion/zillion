@@ -143,10 +143,19 @@ The outbox stays pending while alternatives are tried. Only final failures reach
 refusals appears only after eligible alternatives are exhausted. Offline work
 with remaining alternatives also stays pending and quiet; a temporary shared
 `onOnline` listener retries it without overriding signer/account unavailability.
-Sends attempted while the messenger is paused or otherwise unavailable
-(`PRIVATE_MESSENGER_PAUSED`, `CHAT_UNAVAILABLE`) stay pending as well and re-pump
-on a bounded 1–30s backoff, so they recover without a manual retry or an error
-toast.
+Pause-aware delivery recovery requires libp2r2p 0.11.17 or newer.
+Sends attempted while the messenger is paused stay pending without a send-error
+toast. The session observes `readStatus`/`onStateChanged`, parks remote publication
+and wakes immediately when the relevant pause is released; it does not repeatedly
+publish against a known pause. Personal saves and self-chat remain local.
+Internally observed network pauses share connectivity monitoring and recover even
+without another native online event. Retryable watch failures recover by channel.
+Session inbox persistence uses `session-storage`, retries the actual reservation,
+and releases after save/ACK, leaving independent storage/account pauses intact.
+Operational recovery uses 1..30s exponential backoff with 20% jitter; offline waits
+do not advance it. Historical scans/presence are not prerequisites for text sends.
+Paused diagnostics include a copied `pauseReasons` array on the error and cause;
+no error object or diagnostic is persisted in the outbox.
 Cancellation and session close stop further fallback publications.
 
 The controlled browser scenario `tests/browser/send-feedback.browser.js` checks
@@ -182,7 +191,8 @@ a timeout, early closure or another incomplete outcome keeps the interval pendin
 even when other relays returned messages. Successfully ingested messages remain
 available. The first watch can scan seven days, so an error near Send need not
 belong to that send. Rewatch/resume and relay-list changes can retry pending ranges;
-there is no dedicated periodic retry for failed historical reads.
+the library also schedules bounded recovery for pending historical ranges,
+without treating incomplete scans as confirmed coverage.
 
 The account callback includes a copyable JSON diagnostic in the console message,
 with `owner` distinguishing simultaneous instances. It explicitly serializes

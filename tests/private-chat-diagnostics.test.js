@@ -58,3 +58,12 @@ test('subscription diagnostics expose the relay URL and operation alongside nati
   assert.equal(output.cause.message, native.message)
   assert.equal(output.cause.category, native.category)
 })
+
+test('paused diagnostics preserve cause and safe reason snapshots without persisting payloads', () => {
+  const cause = Object.assign(new Error('PRIVATE_MESSENGER_PAUSED'), { pauseReasons: ['network', 'session-storage'], event: { content: 'secret-body' } })
+  const error = Object.assign(new Error(cause.message, { cause }), { pauseReasons: [...cause.pauseReasons] })
+  const result = privateChatDiagnostic(error, 'owner')
+  assert.deepEqual(result.pauseReasons, ['network', 'session-storage'])
+  assert.deepEqual(result.cause.pauseReasons, result.pauseReasons)
+  assert.doesNotMatch(JSON.stringify(result), /secret-body/)
+})

@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
+import { readFile } from 'node:fs/promises'
 import esbuild from 'esbuild'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { finalizeEvent } from 'libp2r2p/event'
@@ -14,9 +15,17 @@ test('send failures show actionable toasts only for the originating active chat'
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
+  let offlineProbes = false
   try {
     let files
     const options = buildOptions({ sourceMaps: false, onEnd: result => { files = result } })
+    options.plugins.push({
+      name: 'pause-observation', setup (build) {
+        build.onLoad({ filter: /private-messenger\/index\.js$/ }, async args => ({
+          contents: (await readFile(args.path, 'utf8')).replace('this.initialized = false', 'this.initialized = false; (window.pauseTestMessengers ||= []).push(this)'), loader: 'js'
+        }))
+      }
+    })
     options.entryPoints[0] = { in: 'tests/browser/fixtures/send-feedback-entry.js', out: 'app' }
     await esbuild.build(options)
     const html = files.find(file => file.name === 'index.html')
@@ -26,6 +35,7 @@ test('send failures show actionable toasts only for the originating active chat'
       intercept: request => {
         const { hostname } = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(hostname)) return null
+        if (offlineProbes && ['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(hostname)) return false
         if (['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(hostname)) return { responseCode: 204, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '' }
         return false
       }
@@ -182,8 +192,33 @@ test('send failures show actionable toasts only for the originating active chat'
     const success = await send('Successful send stays quiet')
     await browser.until(async () => (await messages()).find(message => message.id === success)?.status === 'saved', 'accepted send')
     assert.equal(await toast(), '')
-    console.log('All read and configured fallback relays exhausted before toast; fallback success preserves pending bubble, outer ID and private tags; route guards, locale and successful sends verified')
+    // Start the pause regression with a clean outbox; earlier cases intentionally
+    // leave failed publications that a reconnect may retry before this message.
+    await evaluate(`Promise.all(['${second}', '${third}', '${fourth}'].map(id => sendTest.account.delivery().cancel(id)))`)
+    // Only remote probes are controlled. The native offline event, account,
+    // messenger, encrypted outbox and event-store/vault bridges remain real.
+    offlineProbes = true
+    await evaluate("window.dispatchEvent(new Event('offline'))")
+    const paused = await send('Pending during network pause')
+    await browser.until(() => evaluate(`sendTest.account.outbox$().some(entry => entry.id === '${paused}' && entry.failed && entry.status === 'pending')`), 'paused outbox entry')
+    const pausedCount = await evaluate('dmTest.publicationBatches.length')
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    assert.equal(await evaluate('dmTest.publicationBatches.length'), pausedCount, 'a known pause does not republish blindly')
+    await push('/chat/user')
+    await evaluate("sendTest.account.send('Self chat stays local while paused')")
+    await browser.until(() => evaluate("sendTest.account.messages$().some(message => message.content === 'Self chat stays local while paused' && message.status === 'saved')"), 'self-chat persists during network pause')
+    offlineProbes = false
+    // No second native online event: the shared monitor must recover on its own.
+    await push(`/chat/${peer}`)
+    await browser.until(async () => (await messages()).find(message => message.id === paused)?.status === 'saved', 'automatic network-pause recovery', 25000)
+    assert.equal(await toast(), '')
+    console.log('Send feedback, native network pause, local self-chat and recovery without a second online event verified')
   } catch (error) {
+    for (const context of browser?.contexts.values() || []) {
+      if (/^http:\/\/[0-9]+\.localhost:10000$/.test(context.origin)) {
+        console.error('Pause state', await browser.evaluate('({ status: window.pauseTestMessengers?.map(value => value.readStatus()), signer: window.sendTest?.account.signerState$(), outbox: window.sendTest?.account.outbox$().map(({ status, failed }) => ({ status, failed })), batches: window.dmTest?.publicationBatches?.length })', context.origin).catch(() => null))
+      }
+    }
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/send-feedback'))
     throw error
   } finally {

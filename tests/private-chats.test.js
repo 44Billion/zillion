@@ -1,4 +1,5 @@
 import { test } from 'node:test'
+import { withMessengerState } from './helpers/messenger-state.js'
 import assert from 'node:assert/strict'
 import { IDBFactory } from 'fake-indexeddb'
 import { getEventHash } from 'libp2r2p/event'
@@ -39,7 +40,7 @@ function fixture ({ beforeOpen = async () => {}, fileAuthorize = async () => {},
     }),
     openDownloads: async () => ({ list: async () => [], put: downloadPut, remove: downloadRemove, close: async () => {} }),
     owner: primary, signer, eventStore: { query, addPersonalCopy: async (...args) => { writes.push(args); return save(...args) } },
-    Messenger: async options => { callbacks = options; return messenger },
+    Messenger: async options => { callbacks = options; return withMessengerState(messenger, options) },
     openOutbox: async () => { await beforeOpen(); return { list: async () => [...records.values()].map(value => structuredClone(value)), put: async entry => { records.set(entry.id, structuredClone(entry)) }, remove: async id => records.delete(id), close () {} } },
     onOutbox: list => states.push(structuredClone(list)), onError: error => errors.push(error), onSendError: (error, attempt) => sendErrors.push({ error, attempt }),
     ...sessionOptions
@@ -130,7 +131,7 @@ test('inbox persists hearsay attributed to owner before ack and retains failed s
   await f.open()
   const inner = { ...event, id: getEventHash(event) }
   const row = f.receive({ channelPubkey: `channel:${peer}`, senderPubkey: peer, provenance: 'hearsay', event: inner })
-  await until(() => f.pauses.has('storage'))
+  await until(() => f.pauses.has('session-storage'))
   assert.equal(row.acked, undefined)
   assert.equal(row.reserved, false)
   fail = false
