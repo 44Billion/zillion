@@ -3,13 +3,15 @@ import { profileLightning, profileBitcoinAddress } from './profile-payments.js'
 
 const text = value => typeof value === 'string' ? value.trim() : ''
 
+export const profileName = profile => text(profile?.name) || text(profile?.display_name)
+
 export function profileDetails (person) {
   const metadata = person.profile ?? person
   const npub = /^[0-9a-f]{64}$/i.test(person.pubkey ?? '') ? npubEncode(person.pubkey) : text(person.npub)
   const nip05 = text(metadata.nip05)
   const identifier = nip05 || npub
   return {
-    name: text(metadata.name) || text(metadata.display_name),
+    name: profileName(metadata),
     displayName: text(metadata.display_name), username: text(metadata.name),
     nip05, npub, identifier,
     lightning: profileLightning(metadata), bitcoin: profileBitcoinAddress(person),

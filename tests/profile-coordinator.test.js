@@ -28,7 +28,7 @@ function fixture (t, { query, local = [], persist, timeout } = {}) {
     eventStore: {
       query: async filter => { state.reads.push(filter.authors[0]); return { results: local.filter(event => event.pubkey === filter.authors[0]) } },
       subscribe: () => { state.subscriptions++; return stream },
-      add: async event => { state.saved.push(event); if (persist) await persist(event) }
+      add: async event => { state.saved.push(event); if (persist) return await persist(event) }
     },
     onProfile: (pubkey, profile) => state.updates.push({ pubkey, profile }),
     onError: error => state.errors.push(error),
@@ -211,3 +211,64 @@ test('an unknown relay error never enters automatic retry', async t => {
   await f.advance(600000); f.online(true); await flush()
   assert.equal(f.calls.length, 1)
 })
+
+test('ordering readiness uses cache immediately while remote freshness remains pending', async t => {
+  const gate = Promise.withResolvers()
+  const f = fixture(t, { local: [event(0)], query: () => gate.promise })
+  const interest = f.service.retain(peers[0])
+  let loaded = false
+  interest.ready.then(() => { loaded = true })
+  const profile = await interest.initialReady
+  assert.equal(profile.name, 'Alice')
+  await flush()
+  assert.equal(loaded, false)
+  assert.equal(f.calls.length, 1)
+  gate.resolve(response(peers[0], event(0)))
+  await interest.ready
+})
+
+test('slow persistence occupies no network slot and does not delay either readiness promise', async t => {
+  const writes = []
+  const f = fixture(t, { persist: () => { const write = Promise.withResolvers(); writes.push(write); return write.promise } })
+  const interests = peers.slice(0, 6).map(peer => f.service.retain(peer))
+  await Promise.all(interests.map(interest => interest.initialReady))
+  await Promise.all(interests.map(interest => interest.ready))
+  await flush()
+  assert.equal(f.calls.length, 6)
+  assert.equal(f.saved.length, 6)
+  assert.equal(f.errors.length, 0)
+  for (const write of writes) write.resolve({ ok: true })
+})
+
+test('quota result refusal is reported as storage failure without discarding a profile or retrying relays', async t => {
+  const refusal = { ok: false, code: 'quota', message: 'Cache quota exceeded', stored: false }
+  const f = fixture(t, { persist: () => refusal })
+  const interest = f.service.retain(peers[0])
+  assert.equal((await interest.initialReady).name, 'Alice')
+  await flush()
+  assert.equal(f.errors[0].code, 'quota')
+  assert.equal(f.errors[0].cause, refusal)
+  await f.advance(600000)
+  assert.equal(f.calls.length, 1)
+})
+
+test('initial ordering readiness resolves on offline and failed first attempts', async t => {
+  const f = fixture(t, { query: pubkey => response(pubkey, null, temporary()) })
+  f.online(false)
+  const offline = f.service.retain(peers[0])
+  assert.equal(await offline.initialReady, null)
+  f.online(true)
+  await flush()
+  const failed = f.service.retain(peers[1])
+  assert.equal(await failed.initialReady, null)
+  assert.equal(f.calls.length, 2)
+})
+
+for (const [label, profile] of [['empty', null], ['invalid', event(0, [])], ['nameless', event(0, {})]]) {
+  test(`initial ordering readiness accepts a ${label} first lookup as complete`, async t => {
+    const f = fixture(t, { query: pubkey => response(pubkey, profile) })
+    const value = await f.service.retain(peers[0]).initialReady
+    if (label === 'nameless') assert.equal(value.meta.events[0].id, profile.id)
+    else assert.equal(value, null)
+  })
+}

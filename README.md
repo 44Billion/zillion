@@ -798,3 +798,12 @@ The installed library also accepts optional Nostr `retry_at` Unix seconds,
 avoiding a renewed relative cooldown after delayed bridge delivery. Profile,
 contact and messaging recovery keep their existing backoff policy and standard
 WebSocket events; relay origin/policy claims are ignored.
+
+The home contact strip keeps arrival order within the pinned/unpinned groups
+while its first nonempty contact batch resolves profile readiness, for at most
+30 seconds. Cached profiles and petnames count immediately; a failed, empty or
+offline first lookup also completes readiness. Names/avatars remain reactive
+throughout. After that one startup sort, alphabetical ordering stays live and
+returning to home does not restart the gate. Profile cache writes preserve public
+signed kind-0 events, report both rejected promises and `ok: false` results, and
+never occupy remote-query slots or delay ordering.

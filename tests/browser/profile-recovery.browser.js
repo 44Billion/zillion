@@ -69,21 +69,28 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("vault-lock-button") && !document.querySelector("vault-lock-button").hidden)', vaultOrigin), 'unlocked vault')
     await browser.until(() => evaluate('profileRecovery.account.contactsState$() === "loaded"'), 'initial local contacts')
-    const secrets = [generateSecretKey(), generateSecretKey(), generateSecretKey()]
+    const secrets = [generateSecretKey(), generateSecretKey(), generateSecretKey(), generateSecretKey()]
     const peers = secrets.map(getPublicKey)
     const profiles = secrets.map((secret, index) => finalizeEvent({
       kind: 0, created_at: Math.floor(Date.now() / 1000), tags: [],
-      content: JSON.stringify({ name: ['Aaron', 'Mona', 'Pinned'][index], picture: 'https://profile-images.example/avatar.png' })
+      content: JSON.stringify({ name: ['Aaron', 'Mona', 'Pinned', 'Zoe'][index], picture: 'https://profile-images.example/avatar.png' })
     }, secret))
-    await evaluate(`profileRecovery.state.peer = '${peers[0]}'; profileRecovery.state.profiles = ${JSON.stringify(profiles)}; profileRecovery.state.releaseAt = Date.now() + 12000`)
+    await evaluate(`profileRecovery.state.peer = '${peers[0]}'; profileRecovery.state.profiles = ${JSON.stringify(profiles)}; profileRecovery.state.releaseAt = Date.now() + 12000; profileRecovery.state.holdPeers=['${peers[3]}']`)
     for (const secret of secrets.slice(1)) {
       const list = finalizeEvent({ kind: 10002, created_at: profiles[0].created_at, tags: [['r', 'wss://healthy-profiles.example']], content: '' }, secret)
       await evaluate(`dmTest.events.set('${list.id}', ${JSON.stringify(list)})`)
     }
-    for (const peer of peers) await evaluate(`profileRecovery.account.setContact('${peer}', true)`)
-    await evaluate(`profileRecovery.account.setPinned('${peers[2]}', true)`)
+    for (const profile of profiles.slice(1, 3)) await evaluate(`window.napp.eventStore.add(${JSON.stringify(profile)})`)
+    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:30000,created_at:${profiles[0].created_at},tags:[['d','+zillion:contacts'],['p','${peers[0]}'],['p','${peers[1]}'],['p','${peers[2]}','','','p'],['p','${peers[3]}']],content:''},{context:''})`)
     const selector = `.contact-item[data-contact-id="${peers[0]}"]`
     await browser.until(() => evaluate(`document.querySelector('${selector} .contact-name')?.textContent.startsWith('npub1')`), 'missing profile fallback')
+    await browser.until(() => evaluate(`profileRecovery.state.held.length>0 && profileRecovery.account.directory$()['${peers[1]}']?.name==='Mona'`), 'partial names with a pending first lookup')
+    const arrivalOrder = await evaluate('Array.from(document.querySelectorAll(\'.route-page[data-active=true] .contact-item\')).map(item => item.dataset.contactId)')
+    assert.equal(arrivalOrder[0], peers[2], 'pins are first even during startup')
+    assert.ok(arrivalOrder.indexOf(peers[0]) < arrivalOrder.indexOf(peers[1]), 'cached names do not move avatars before the remaining first lookup settles')
+    assert.equal(await evaluate('profileRecovery.account.contactOrder$().alphabetical'), false)
+    await evaluate('profileRecovery.state.holdPeers=[];profileRecovery.state.held.splice(0).forEach(reply=>reply())')
+    await browser.until(() => evaluate('profileRecovery.account.contactOrder$().alphabetical'), 'failed first lookup releases the initial cohort')
     const before = await evaluate(`profileRecovery.state.requests.filter(request => request.pubkey === '${peers[0]}').length`)
     assert.ok(before > 0)
     // Mount two independent remote-capable avatars for the same pending peer.
@@ -113,6 +120,22 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
     await evaluate('document.querySelector("#duplicate-avatars").remove()')
     await evaluate(`profileRecovery.account.loadPerson('${peers[0]}')`)
     assert.equal(await evaluate(`profileRecovery.state.requests.filter(request => request.pubkey === '${peers[0]}').length`), count)
+    const allCached = await evaluate(`window.napp.eventStore.query({kinds:[0],authors:${JSON.stringify(peers)}})`)
+    assert.deepEqual(new Set(allCached.results.map(event => event.id)), new Set(profiles.map(event => event.id)), 'cache contains original public signed kind-0 events')
+    let appContext
+    for (const context of [...browser.contexts.values()].filter(context => context.origin === origin && context.auxData?.isDefault)) {
+      const result = await browser.send('Runtime.evaluate', { expression: 'Boolean(window.profileRecovery)', contextId: context.id, returnByValue: true }, context.sessionId)
+      if (result.result.value) { appContext = context; break }
+    }
+    assert.ok(appContext)
+    await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: 'globalThis.__profileRecoveryHoldAll=true' }, appContext.sessionId)
+    // Reload through the parent's iframe URL, retaining the trusted bridge marker.
+    await browser.evaluate(`(() => {const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>frame.src.startsWith('${origin}'));frame.setAttribute('src',frame.src)})()`)
+    await browser.until(() => evaluate(`globalThis.__profileRecoveryHoldAll && window.profileRecovery?.account.contactOrder$().alphabetical && profileRecovery.account.directory$()['${peers[0]}']?.name==='Aaron'`), 'cached startup sorts without remote completion', 30000)
+    await browser.until(() => evaluate('profileRecovery.state.held.length>0'), 'cached remote refresh still pending')
+    await evaluate('testNavigation.pushState(null,"","/contacts")')
+    await evaluate('testNavigation.pushState(null,"","/")')
+    assert.equal(await evaluate('profileRecovery.account.contactOrder$().alphabetical'), true, 'route navigation does not restart the gate')
   } catch (error) {
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/profile-recovery'))
     throw error

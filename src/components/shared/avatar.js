@@ -43,6 +43,7 @@ f('a-avatar', ({ h, props }) => {
       return getCachedProfile()
     },
     refreshedProfile$: null,
+    profileLoading$: false,
     profile$ () {
       return selectPreferredProfile(
         selectPreferredProfile(this.cachedProfile$(), this.providedProfile$()),
@@ -114,7 +115,9 @@ f('a-avatar', ({ h, props }) => {
   useTask(({ track, cleanup }) => {
     const pk = track(() => pk$())
     store.refreshedProfile$(null)
+    store.profileLoading$(!!pk)
     if (!pk) return
+    let released = false
     const interest = observeProfile(pk, {
       remote: !props.localOnly,
       onProfile: profile => {
@@ -124,7 +127,8 @@ f('a-avatar', ({ h, props }) => {
         else removeCachedProfile()
       }
     })
-    cleanup(interest.release)
+    interest.initialReady.then(() => { if (!released) store.profileLoading$(false) })
+    cleanup(() => { released = true; interest.release() })
   })
 
   // Resolve cached bytes before attempting HTTP; stale tasks cannot replace a new avatar.
@@ -176,7 +180,7 @@ f('a-avatar', ({ h, props }) => {
     else if (status === 'failed') store.rejectPicture({ currentTarget: image })
   }, { after: 'rendering' })
 
-  if (!store.profile$() && store.refreshedProfile$.promise$().isLoading) {
+  if (!store.profile$() && store.profileLoading$()) {
     return h`<div
       style=${`
         width: 100%;

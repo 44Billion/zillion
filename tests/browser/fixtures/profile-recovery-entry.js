@@ -7,7 +7,7 @@ import { RelayPool, relayPool } from 'libp2r2p/relay'
 
 installPrivateChatFixture()
 const originalGetEvents = relayPool.getEvents.bind(relayPool)
-const state = { peer: null, profiles: [], requests: [], frames: [], releaseAt: 0 }
+const state = { peer: null, profiles: [], requests: [], frames: [], releaseAt: 0, holdPeers: [], held: [] }
 const pool = new RelayPool({
   WebSocket: class ProfileRelaySocket {
     constructor (url) {
@@ -24,12 +24,17 @@ const pool = new RelayPool({
       state.requests.push({ pubkey, relay: this.url, at: Date.now() })
       queueMicrotask(() => {
         const send = value => this.onmessage?.({ data: JSON.stringify(value) })
+        const reply = () => {
+          if (this.readyState !== 1) return
+          for (const event of state.profiles) if (event.pubkey === pubkey) send(['EVENT', id, event])
+          send(['EOSE', id])
+        }
+        if (state.holdPeers.includes(pubkey) || globalThis.__profileRecoveryHoldAll) { state.held.push(reply); return }
         if (pubkey === state.peer && Date.now() < state.releaseAt) {
           send(['CLOSED', id, 'rate-limited: profile fixture', { retry_after: Math.ceil((state.releaseAt - Date.now()) / 1000) }])
           return
         }
-        for (const event of state.profiles) if (event.pubkey === pubkey) send(['EVENT', id, event])
-        send(['EOSE', id])
+        reply()
       })
     }
 

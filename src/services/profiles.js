@@ -25,6 +25,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     entry.profile = preferred
     onProfile(entry.pubkey, preferred)
     for (const consumer of entry.consumers) consumer.onProfile?.(preferred)
+    entry.initial.resolve(preferred)
   }
   function check () {
     if (!probe) {
@@ -55,7 +56,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       }
       if (!await check()) {
         offline = true
-        for (const entry of pending) entry.ready.resolve(entry.profile)
+        for (const entry of pending) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
         return
       }
       if (lifetime.signal.aborted) return
@@ -74,11 +75,14 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
   }
   async function run (entry, controller) {
     const signal = AbortSignal.any([lifetime.signal, controller.signal])
+    let received
     try {
       const result = await entry.read.query(signal)
       signal.throwIfAborted()
       const event = result.byPubkey?.[entry.pubkey]
       const profile = event?.pubkey === entry.pubkey ? eventToProfile(event) : null
+      if (profile) update(entry, profile)
+      entry.initial.resolve(entry.profile)
       const online = profile ? true : await check()
       signal.throwIfAborted()
       entry.read.settle(result, { found: !!profile, online })
@@ -86,25 +90,33 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       if (!online) offline = true
       if (profile) {
         entry.refreshedAt = now()
-        update(entry, profile)
-        // Persistence failure never discards received metadata or retries a
-        // successful network lookup. Keep the original signed event intact.
-        try { await eventStore.add(event) } catch (error) { if (!signal.aborted) onError(error) }
+        received = event
       }
     } catch (error) {
       if (!signal.aborted) { entry.state = 'stopped'; onError(error) }
     } finally {
       if (entry.controller === controller) entry.controller = null
       active--
+      entry.initial.resolve(entry.profile)
       entry.ready.resolve(entry.profile)
       schedule()
+    }
+    // Release network admission/readiness before storage, retaining the original
+    // signed event. Storage refusal never changes relay success or schedules IO.
+    if (received && !signal.aborted) {
+      try {
+        const result = await eventStore.add(received)
+        if (result?.ok === false && !signal.aborted) {
+          onError(Object.assign(new Error(result.message || 'Could not persist profile event', { cause: result }), { code: result.code }))
+        }
+      } catch (error) { if (!signal.aborted) onError(error) }
     }
   }
   function entryFor (pubkey) {
     if (entries.has(pubkey)) return entries.get(pubkey)
     const entry = {
       pubkey, profile: null, consumers: new Set(), state: 'pending', localDone: false,
-      refreshedAt: -Infinity, ready: Promise.withResolvers(), controller: null,
+      refreshedAt: -Infinity, ready: Promise.withResolvers(), initial: Promise.withResolvers(), controller: null,
       read: createRelayRead({ pubkey, kind: 0, now, retryDelays, cooldowns, queryLatest, getEvents, timeout })
     }
     entries.set(pubkey, entry)
@@ -117,7 +129,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       .catch(error => { entry.localFailed = true; if (current(entry)) onError(error) })
       .finally(() => {
         entry.localDone = true
-        if (!interested(entry) || offline) entry.ready.resolve(entry.profile)
+        if (!interested(entry) || offline) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
         schedule()
       })
   }
@@ -160,17 +172,18 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       for (const entry of entries.values()) if (entry.localFailed && entry.consumers.size) readLocal(entry)
     },
     retain (pubkey, { remote = true, onProfile } = {}) {
-      if (!hex(pubkey) || lifetime.signal.aborted) return { ready: Promise.resolve(null), release () {} }
+      if (!hex(pubkey) || lifetime.signal.aborted) return { ready: Promise.resolve(null), initialReady: Promise.resolve(null), release () {} }
       const entry = entryFor(pubkey)
       const consumer = { remote, onProfile }
       entry.consumers.add(consumer)
-      if (offline && entry.localDone) entry.ready.resolve(entry.profile)
+      if (offline && entry.localDone) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
       if (entry.profile) onProfile?.(entry.profile)
       if (entry.state === 'success' && now() - entry.refreshedAt >= REFRESH_MS) entry.state = 'pending'
       schedule()
       const released = Promise.withResolvers()
       return {
         ready: Promise.race([released.promise, remote && pubkey !== owner ? entry.ready.promise : entry.local.then(() => entry.profile)]),
+        initialReady: Promise.race([released.promise, remote && pubkey !== owner ? entry.initial.promise : entry.local.then(() => entry.profile)]),
         release () {
           released.resolve(null)
           entry.consumers.delete(consumer)
@@ -182,7 +195,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     close () {
       lifetime.abort(); stopOnline(); clearTimeout(timer)
       stream?.return().catch(() => {})
-      for (const entry of entries.values()) { entry.controller?.abort(); entry.ready.resolve(entry.profile); entry.consumers.clear() }
+      for (const entry of entries.values()) { entry.controller?.abort(); entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile); entry.consumers.clear() }
       entries.clear(); cooldowns.clear()
     }
   }
@@ -203,15 +216,17 @@ export function attachProfiles (service) {
 }
 export function observeProfile (pubkey, options = {}) {
   const initial = Promise.withResolvers()
+  const ordering = Promise.withResolvers()
   const binding = {
     handle: null,
     attach () {
       this.handle?.release()
       this.handle = profiles?.retain(pubkey, options)
       this.handle?.ready.then(initial.resolve)
+      this.handle?.initialReady.then(ordering.resolve)
     }
   }
   bindings.add(binding); binding.attach()
-  const release = () => { bindings.delete(binding); binding.handle?.release(); binding.handle = null; initial.resolve(null) }
-  return { ready: initial.promise, release }
+  const release = () => { bindings.delete(binding); binding.handle?.release(); binding.handle = null; initial.resolve(null); ordering.resolve(null) }
+  return { ready: initial.promise, initialReady: ordering.promise, release }
 }

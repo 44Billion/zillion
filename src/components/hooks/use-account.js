@@ -11,13 +11,15 @@ import { onOnline } from 'libp2r2p/network'
 import { useGlobalStore, useMemo, useStore, useTask } from '#f'
 import { createSelfChat, createChat } from '#services/self-chat.js'
 import { createProfiles, attachProfiles, observeProfile } from '#services/profiles.js'
+import { createContactOrder } from '#services/contact-order.js'
+import { profileName } from '#helpers/profile-presentation.js'
 
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0, older$: { loading: false, error: null, hasOlder: false }, newer$: { loading: false, error: null, hasNewer: false },
     // Inner events resolved from kind-9 references, keyed by event id.
-    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
+    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsOwner$: null, contactOrder$: { ids: [], alphabetical: false }, contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
     people$ () {
       return [...this.contacts$().map(contact => this.personFor(contact.pubkey)), ...demoPeople]
     },
@@ -29,12 +31,12 @@ export function useAccount () {
       const profile = this.directory$()[id] || {}
       const contact = this.contacts$().find(contact => contact.pubkey === id)
       const npub = npubEncode(id)
-      const name = contact?.petname || profile.name?.trim() || profile.display_name?.trim() || `${npub.slice(0, 12)}…`
+      const name = contact?.petname || profileName(profile) || `${npub.slice(0, 12)}…`
       return { id, pubkey: id, profile, npub, nip05: profile.nip05 || '', name, shortName: name, saved: !!contact, pinned: !!contact?.pinned, unread: this.unread$()[id] ?? 0 }
     },
     person$ () {
       const profile = this.profile$()
-      return { id: 'user', self: true, pubkey: this.pubkey$(), profile: profile ?? {}, name: profile?.name?.trim() || profile?.display_name?.trim() || '', shortName: profile?.name?.trim() || profile?.display_name?.trim() || '', pinned: false, unread: 0 }
+      return { id: 'user', self: true, pubkey: this.pubkey$(), profile: profile ?? {}, name: profileName(profile), shortName: profileName(profile), pinned: false, unread: 0 }
     }
   }))
 }
@@ -282,7 +284,7 @@ function useInitConversationPrefetch (account, queue, self) {
 
 function useInitProfiles (account) {
   const retained = useMemo(() => new Map())
-  const runtime = useMemo(() => ({ service: null }))
+  const runtime = useMemo(() => ({ service: null, order: null }))
   account.loadPerson = (pubkey, { signal } = {}) => {
     if (signal?.aborted) return Promise.resolve(null)
     const interest = observeProfile(pubkey)
@@ -294,6 +296,7 @@ function useInitProfiles (account) {
   useTask(({ track, cleanup }) => {
     const owner = track(() => account.pubkey$())
     if (!owner) return
+    account.contactOrder$({ ids: [], alphabetical: false })
     const service = createProfiles({
       owner, eventStore: window.napp.eventStore, remote: !demoEnabled,
       onProfile: (pubkey, profile) => {
@@ -303,14 +306,28 @@ function useInitProfiles (account) {
       onError: error => console.warn('Could not refresh profile', error)
     })
     runtime.service = service
+    const order = createContactOrder({
+      initialReady: pubkey => retained.get(pubkey)?.initialReady,
+      onChange: state => { if (runtime.order === order) account.contactOrder$(state) }
+    })
+    runtime.order = order
     const detach = attachProfiles(service)
     const own = service.retain(owner, { remote: false })
-    cleanup(() => { own.release(); detach(); service.close(); runtime.service = null; account.directory$({}) })
+    cleanup(() => {
+      order.close(); runtime.order = null
+      for (const interest of retained.values()) interest.release()
+      retained.clear()
+      own.release(); detach(); service.close(); runtime.service = null
+      account.directory$({}); account.contactOrder$({ ids: [], alphabetical: false })
+    })
   })
   useTask(({ track }) => {
-    const peers = new Set(track(() => account.contacts$().map(contact => contact.pubkey)))
+    const [owner, contactsOwner, contacts, state] = track(() => [account.pubkey$(), account.contactsOwner$(), account.contacts$(), account.contactsState$()])
+    const members = owner && contactsOwner === owner ? contacts : []
+    const peers = new Set(members.map(contact => contact.pubkey))
     for (const pubkey of peers) if (!retained.has(pubkey)) retained.set(pubkey, observeProfile(pubkey))
     for (const [pubkey, interest] of retained) if (!peers.has(pubkey)) { interest.release(); retained.delete(pubkey) }
+    runtime.order?.reconcile(members, { start: state === 'loaded' })
   })
   useTask(({ track }) => { track(() => [account.recovery$(), account.retry$()]); runtime.service?.recoverLocal() })
   useTask(({ cleanup }) => cleanup(() => { for (const interest of retained.values()) interest.release(); retained.clear() }))
@@ -403,6 +420,7 @@ function useInitPrivateChats (account, queue) {
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
       onChange: contacts => {
         if (closed) return
+        account.contactsOwner$(owner)
         account.contacts$(contacts)
         runtime.transport.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
       },
@@ -445,7 +463,7 @@ function useInitPrivateChats (account, queue) {
       runtime.transport?.close().catch(() => {}); runtime.transport = null
       for (const chat of runtime.chats.values()) chat.close()
       runtime.chats.clear(); runtime.outbox = []
-      account.contacts$([]); account.contactsState$('loading'); account.conversations$({})
+      account.contacts$([]); account.contactsOwner$(null); account.contactsState$('loading'); account.conversations$({})
     })
   })
 }

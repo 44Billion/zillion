@@ -6,6 +6,7 @@ import '#f/components/f-to-signals.js'
 import data from './fixtures/home.json'
 import { demoEnabled } from '#services/demo.js'
 import { useAccount } from '#hooks/use-account.js'
+import { orderHomeContacts } from '#services/contact-order.js'
 import { useConversationPrefetch } from './hooks/use-conversation-prefetch.js'
 import { useHeaderCollapse } from './hooks/use-header-collapse.js'
 import './header.js'
@@ -20,7 +21,7 @@ f('z-home', ({ h }) => {
     contactsRef$: null,
     user$: account.person$,
     contacts$ () {
-      return [...account.people$().filter(person => person.saved !== false), account.person$()].toSorted((a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name, 'en')).map(contact => ({
+      return orderHomeContacts([...account.people$().filter(person => person.saved !== false), account.person$()], demoEnabled ? { alphabetical: true } : account.contactOrder$()).map(contact => ({
         ...contact,
         unread: demoEnabled ? (data.conversations.find(conversation => conversation.contactId === contact.id)?.unread ?? 0) : contact.unread
       }))

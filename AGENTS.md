@@ -1476,3 +1476,29 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   Optional Nostr temporal advice does not establish origin or retry eligibility.
   Do not add per-avatar transport work, custom WebSocket metadata or app-level
   parsing for the launcher extension.
+
+## Initial home contact order
+
+- `services/contact-order.js` owns an account-scoped arrival ledger and a single
+  startup cohort from the first nonempty, locally loaded contact list. Retain
+  pinned priority; name/avatar changes do not move contacts until every initial
+  member is ready or the absolute 30s deadline expires. Then use the existing
+  name priority and English comparison dynamically. Demo ordering stays immediate.
+- `profiles.js` exposes `initialReady` separately from ordinary `ready`: memory
+  or valid local metadata resolves it before remote refresh; the first query
+  outcome/offline also resolves it regardless of success or usable name. Reuse
+  existing retained interests/local reads, never start strip-owned profile IO.
+- Contact removals and petnames release pending members; additions do not extend
+  the cohort. Route remounts do not reset the gate. Account teardown clears timers,
+  retained interests and stale completions. `contactsOwner$` fences membership
+  while the account generation changes. Keep native maps/promises out of stores.
+- Avatar loading uses a primitive `profileLoading$` driven by shared initial
+  readiness; never access the removed per-avatar async-computed promise API.
+- Release the four remote slots and ordinary readiness before profile persistence.
+  Check `eventStore.add` results for `ok: false`, preserving message/code/cause.
+  Keep received metadata in memory after storage refusal; do not retry its relay
+  query or convert public signed kind-0 events into personal copies.
+- Controlled coordinator/order tests cover cache, timeout, empty/error/offline,
+  nameless metadata, persistence delay/quota, additions/removals and teardown.
+  The protected profile-recovery browser scenario covers stable arrival order,
+  later reactive sorting, original cache events, reload and retained navigation.

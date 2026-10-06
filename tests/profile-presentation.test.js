@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { npubEncode } from 'libp2r2p/nip19'
-import { profileDetails } from '../src/helpers/profile-presentation.js'
+import { profileDetails, profileName } from '../src/helpers/profile-presentation.js'
 
 test('profile metadata prefers name and preserves a full shareable identity', () => {
   const pubkey = 'a'.repeat(64)
@@ -29,4 +29,10 @@ test('missing or malformed metadata stays absent and npub is shortened only for 
   }
   assert.equal(profileDetails({ self: true, profile: {} }).identifier, '')
   assert.equal(profileDetails({ profile: { display_name: ' ', name: 'username' } }).name, 'username')
+})
+
+test('ordering names ignore non-text metadata and retain the existing name priority', () => {
+  assert.equal(profileName({ name: 42, display_name: '  Display  ' }), 'Display')
+  assert.equal(profileName({ name: {}, display_name: [] }), '')
+  assert.equal(profileName({ name: '  User  ', display_name: 'Display' }), 'User')
 })
