@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { finalizeEvent } from 'libp2r2p/event'
 import { generateSecretKey } from 'libp2r2p/key'
-import { createContacts } from '#services/contacts.js'
+import { createContacts, contactMembership, contactSelfPinned } from '#services/contacts.js'
 
 const until = async predicate => {
   for (let n = 0; n < 200; n++) {
@@ -85,12 +85,13 @@ test('public list refresh retries as soon as connectivity returns', async () => 
   f.contacts.close()
 })
 
-function localFixture ({ publicList = null, override = null, decrypt } = {}) {
+function localFixture ({ publicList = null, override = null, decrypt, save } = {}) {
   const secret = generateSecretKey()
   const owner = pubkeyOf(secret)
   const peer = pubkeyOf(generateSecretKey())
   const states = []
   const changes = []
+  const selfPins = []
   const errors = []
   const streams = []
   const writes = []
@@ -111,19 +112,19 @@ function localFixture ({ publicList = null, override = null, decrypt } = {}) {
           async return () { closed = true; waiter?.({ done: true }); return { done: true } }
         }
         streams.push(stream)
-        if (filter.kinds[0] === 3 && publicList) stream.push({ type: 'event', event: finalizeEvent({ kind: 3, created_at: 1, tags: publicList(peer), content: '' }, secret) })
+        if (filter.kinds[0] === 3 && publicList) stream.push({ type: 'event', event: finalizeEvent({ kind: 3, created_at: 1, tags: publicList(peer, owner), content: '' }, secret) })
         if (filter['#k']?.[0] === '30000' && override) {
-          const inner = { kind: 30000, created_at: 2, tags: [['d', '+zillion:contacts'], ...override(peer)], content: '' }
+          const inner = { kind: 30000, created_at: 2, tags: [['d', '+zillion:contacts'], ...override(peer, owner)], content: '' }
           stream.push({ type: 'event', event: finalizeEvent({ kind: 1006, created_at: 2, tags: [['c', ''], ['k', '30000'], ['v', '1']], content: JSON.stringify(inner) }, secret) })
         }
         return stream
       },
       add: async () => {},
       query: async () => ({ results: [] }),
-      addPersonalCopy: async (event, options) => { writes.push({ event, options }); return { result: { ok: true } } }
+      addPersonalCopy: async (event, options) => { writes.push({ event, options }); return save ? save(event, options) : { result: { ok: true } } }
     },
     _isOnline: async () => true,
-    onChange: value => changes.push(value),
+    onChange: (value, { selfPinned }) => { changes.push(value); selfPins.push(selfPinned) },
     onState: value => states.push(value),
     onError: error => errors.push(error),
     _getEvents: (filter, relays, { signal }) => {
@@ -131,7 +132,7 @@ function localFixture ({ publicList = null, override = null, decrypt } = {}) {
       return signal.aborted ? Promise.resolve({ result: [] }) : new Promise(resolve => signal.addEventListener('abort', () => resolve({ result: [] }), { once: true }))
     }
   })
-  return { contacts, states, changes, errors, streams, writes, peer, remoteRequests: () => remoteRequests }
+  return { contacts, states, changes, selfPins, errors, streams, writes, owner, peer, remoteRequests: () => remoteRequests }
 }
 
 async function localStart (f) {
@@ -352,4 +353,86 @@ test('a public-list storage failure retries its local write while offline withou
     await until(() => writes === 2)
     assert.equal(queries, fetched)
   } finally { contacts.close() }
+})
+
+test('self pin is private preference only and never grants peer membership', () => {
+  const owner = 'a'.repeat(64)
+  const peer = 'b'.repeat(64)
+  const list = tags => ({ pubkey: owner, tags })
+  for (const [label, pinned] of [['p', true], ['xp', true], ['rp', false], ['', false], ['0', false], ['~u=p', false]]) {
+    const lists = [list([['p', owner]]), list([['p', owner, '', '', 'p']]), list([['d', '+zillion:contacts'], ['p', owner, '', '', label], ['p', peer, '', '', 'p']])]
+    assert.equal(contactSelfPinned(lists, owner), pinned)
+    assert.deepEqual(contactMembership(lists, owner).map(contact => contact.pubkey), [peer])
+  }
+  assert.equal(contactSelfPinned([list([['p', owner, '', '', 'p']]), null, null], owner), false, 'kind 3 cannot set self pin')
+  assert.equal(contactSelfPinned([null, null, { pubkey: peer, tags: [['p', owner, '', '', 'p']] }], owner), false, 'another author cannot set self pin')
+})
+
+test('self pin writes a canonical entry; unpin omits it while retaining peers and self availability', async () => {
+  const f = localFixture({ publicList: peer => [['p', peer]], override: peer => [['p', peer, 'wss://peer.example', 'Peer', 'p', '~u=1;o=x']] })
+  try {
+    await localStart(f)
+    assert.equal(f.selfPins.at(-1), false)
+    await f.contacts.setPin(f.owner, true)
+    assert.deepEqual(f.writes[0].event.tags.at(-1), ['p', f.owner, '', '', 'p'])
+    assert.equal(f.writes[0].options.context, '')
+    assert.equal(f.selfPins.at(-1), true)
+    assert.deepEqual(f.changes.at(-1).map(contact => contact.pubkey), [f.peer])
+    await f.contacts.setPin(f.owner, false)
+    assert.deepEqual(f.writes[1].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, 'wss://peer.example', 'Peer', 'p', '~u=1;o=x']])
+    assert.equal(f.selfPins.at(-1), false)
+    assert.deepEqual(f.changes.at(-1).map(contact => [contact.pubkey, contact.pinned]), [[f.peer, true]])
+    await f.contacts.setPin(f.owner, false)
+    assert.equal(f.writes.length, 2, 'unpinning an absent self entry is a noop')
+    await assert.rejects(f.contacts.set(f.owner, true), /INVALID_CONTACT/)
+    await assert.rejects(f.contacts.set(f.owner, false), /INVALID_CONTACT/)
+  } finally { f.contacts.close() }
+})
+
+test('self unpin removes its entry even when the public snapshot is unknown', async () => {
+  const f = localFixture({ override: (peer, owner) => [['p', owner, '', '', 'p']] })
+  try {
+    await localStart(f)
+    assert.equal(f.selfPins.at(-1), true)
+    assert.deepEqual(f.changes.at(-1), [])
+    await f.contacts.setPin(f.owner, false)
+    assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts']])
+    assert.equal(f.selfPins.at(-1), false)
+  } finally { f.contacts.close() }
+})
+
+test('self unpin cleans a redundant non-pinned entry and refused storage never changes pin state', async () => {
+  let refuse = false
+  const f = localFixture({ publicList: () => [], override: (peer, owner) => [['p', owner, '', '', 'r']], save: () => ({ result: { ok: !refuse } }) })
+  try {
+    await localStart(f)
+    await f.contacts.setPin(f.owner, false)
+    assert.deepEqual(f.writes[0].event.tags, [['d', '+zillion:contacts']])
+    refuse = true
+    await assert.rejects(f.contacts.setPin(f.owner, true), /CONTACT_STORAGE_FAILED/)
+    assert.equal(f.selfPins.at(-1), false)
+    assert.deepEqual(f.changes.at(-1), [])
+  } finally { f.contacts.close() }
+})
+
+test('self and peer pin edits share the write queue and preserve each other', async () => {
+  const f = localFixture({ publicList: peer => [['p', peer, 'wss://peer.example', 'Peer']] })
+  try {
+    await localStart(f)
+    await Promise.all([f.contacts.setPin(f.owner, true), f.contacts.setPin(f.peer, true), f.contacts.setPin(f.owner, false)])
+    assert.equal(f.writes.length, 3)
+    assert.deepEqual(f.writes[2].event.tags, [['d', '+zillion:contacts'], ['p', f.peer, 'wss://peer.example', 'Peer', 'p']])
+    assert.deepEqual(f.selfPins, [false, true, true, false])
+    assert.deepEqual(f.changes.at(-1).map(contact => [contact.pubkey, contact.pinned]), [[f.peer, true]])
+  } finally { f.contacts.close() }
+})
+
+test('refused self unpin preserves the existing pin until a write succeeds', async () => {
+  const f = localFixture({ publicList: () => [], override: (peer, owner) => [['p', owner, '', '', 'p']], save: () => ({ result: { ok: false } }) })
+  try {
+    await localStart(f)
+    await assert.rejects(f.contacts.setPin(f.owner, false), /CONTACT_STORAGE_FAILED/)
+    assert.equal(f.selfPins.at(-1), true)
+    assert.deepEqual(f.changes.at(-1), [])
+  } finally { f.contacts.close() }
 })

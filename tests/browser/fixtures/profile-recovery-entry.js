@@ -4,6 +4,8 @@ import './route-driver.js'
 import { f, useStore } from '#f'
 import { useAccount } from '#hooks/use-account.js'
 import { RelayPool, relayPool } from 'libp2r2p/relay'
+import { PERSONAL_COPY } from 'libp2r2p/kind'
+import { decryptPersonalCopy } from '#services/chat-references.js'
 
 installPrivateChatFixture()
 const originalGetEvents = relayPool.getEvents.bind(relayPool)
@@ -51,9 +53,17 @@ f('z-profile-recovery-avatar', ({ h }) => {
   return h`<div style='width:44px;height:44px'><a-avatar props=${{ pk$: avatar.pk$, profile$: avatar.profile$, localOnly: true }} /></div>`
 })
 f('z-profile-recovery-fixture', ({ h }) => {
+  const account = useAccount()
   window.profileRecovery = {
     state,
-    account: useAccount(),
+    account,
+    async readContactsOverride () {
+      const pubkey = account.pubkey$()
+      const context = await window.nostr.obfuscate('', String(PERSONAL_COPY), '')
+      const coordinate = await window.nostr.obfuscate(`${context}:30000:${pubkey}:+zillion:contacts`, String(PERSONAL_COPY), '.coordinate')
+      const { results } = await window.napp.eventStore.query({ kinds: [PERSONAL_COPY], authors: [pubkey], '#c': [context], '#k': ['30000'], '#v': ['0', '1'], '#d': [coordinate], limit: 1 })
+      return results[0] ? decryptPersonalCopy(results[0], { pubkey, signer: window.nostr, encodedContext: context }) : null
+    },
     mountAvatars: host => { host.innerHTML = '<z-profile-recovery-avatars></z-profile-recovery-avatars>' },
     mountAvatar: (host, options) => { state.avatarOptions = options; host.innerHTML = '<z-profile-recovery-avatar></z-profile-recovery-avatar>' }
   }

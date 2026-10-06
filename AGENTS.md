@@ -205,7 +205,14 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   including pinned ones, scroll; only More stays outside the scroller. Share
   unread counts with their conversations through `z-unread-badge`.
 - Use native horizontal scroll snap for touch inertia and whole-contact wheel
-  destinations; respect reduced motion. The header is sticky and a separate
+  destinations; respect reduced motion. Start with snap disabled and enable it
+  on the first manual movement or a wheel/arrow destination away from zero.
+  Initial insertions and alphabetization must keep the left edge visible;
+  otherwise the browser follows the keyed self item toward the end. Resize
+  preserves zero before manual scrolling and whole-contact position afterward.
+  Retained Back/Forward keeps the same scroller and manual snap state. Clean up
+  the scroll listener with the existing input listeners and ResizeObserver.
+  The header is sticky and a separate
   sticky divider preserves the contact strip's bottom edge below it. After the
   divider reaches the header, the next 96px of scroll synchronously shrink its
   padding and square logo. The minimum is 48px including the divider, plus the
@@ -1149,6 +1156,14 @@ needed; empty folders mark the initial structure.
   list needs no startup relay discovery. Contact reads run independently of
   transport setup; recovery starts self/peer history reads concurrently, and
   network reconnects must not unnecessarily restart local contact subscriptions.
+- `createContacts.onChange(contacts, { selfPinned })` reports the private self pin
+  separately from external membership; public/private kind-3 follows never set it.
+  Account `selfPinned$` feeds the implicit own person and is fenced by
+  `contactsOwner$`, reset on account teardown. Never insert owner into `contacts$`,
+  profile interests, directory rows or `setPeers`. Profile pin toggles use the
+  same serialized private-list writes for self and peers, updating after commit;
+  storage refusal keeps the previous presentation. Self unpin omits its entry
+  even while the public list is unknown; preserve other entries and CRDT metadata.
 
 See [private chats](docs/private-chats.md) for delivery, storage and lifecycle
 contracts. The root inbox is restricted to the instance owner and their effective
@@ -1200,9 +1215,12 @@ requires the companion update. See `docs/private-chats.md` for that boundary.
   merges state letters (`r` removes and wins over `p`; `p` pins; absent, empty
   or unknown letters mean an unpinned contact; letter order never matters),
   CRDT decorations are ignored, removing clears pin and compacts the entry when
-  the peer is not followed, and noncontacts cannot pin. Self and demo
-  profiles keep pin simulation local to each retained profile component; self
-  cannot add/remove itself. Every edit also compacts removed entries that
+  the peer is not followed, and noncontacts cannot pin. The primary user is the
+  exception: self membership is always implicit. Persist its pin in this same
+  private list as `['p', owner, '', '', 'p']`; unpin omits the entry, never writes
+  an empty pin or `r`. The store records the CRDT removal. Self still cannot be
+  added/removed as a contact. Demo profiles and demo-build self keep local pin
+  simulation. Every edit also compacts removed entries that
   neither the public nor the private kind-3 snapshot follows; while the public
   snapshot is unknown, keep every override. Retained Back/Forward preserves simulation and edit
   drafts; eviction/reload discards them. Key self views by owner to prevent drafts

@@ -34,12 +34,12 @@ export function createContacts (options) {
   boot.failContacts = () => options.onState('unavailable')
   boot.releaseContacts = () => {
     held = false
-    if (snapshot) options.onChange(snapshot)
+    if (snapshot) options.onChange(...snapshot)
     if (state) options.onState(state)
   }
   const service = contacts({
     ...options,
-    onChange: value => { snapshot = value; if (!held) options.onChange(value) },
+    onChange: (...value) => { snapshot = value; if (!held) options.onChange(...value) },
     onState: value => {
       state = value
       if (value === 'loaded') { boot.contactReads++; boot.contactsMs = performance.now() - boot.started }

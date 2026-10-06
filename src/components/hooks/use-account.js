@@ -19,7 +19,7 @@ export function useAccount () {
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0, older$: { loading: false, error: null, hasOlder: false }, newer$: { loading: false, error: null, hasNewer: false },
     // Inner events resolved from kind-9 references, keyed by event id.
-    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsOwner$: null, contactOrder$: { ids: [], alphabetical: false }, contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
+    outbox$: [], references$: {}, directory$: {}, contacts$: [], contactsOwner$: null, selfPinned$: false, contactOrder$: { ids: [], alphabetical: false }, contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
     people$ () {
       return [...this.contacts$().map(contact => this.personFor(contact.pubkey)), ...demoPeople]
     },
@@ -36,7 +36,7 @@ export function useAccount () {
     },
     person$ () {
       const profile = this.profile$()
-      return { id: 'user', self: true, pubkey: this.pubkey$(), profile: profile ?? {}, name: profileName(profile), shortName: profileName(profile), pinned: false, unread: 0 }
+      return { id: 'user', self: true, pubkey: this.pubkey$(), profile: profile ?? {}, name: profileName(profile), shortName: profileName(profile), pinned: this.contactsOwner$() === this.pubkey$() && this.selfPinned$(), unread: 0 }
     }
   }))
 }
@@ -425,9 +425,10 @@ function useInitPrivateChats (account, queue) {
     })
     runtime.contacts = createContacts({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
-      onChange: contacts => {
+      onChange: (contacts, { selfPinned }) => {
         if (closed) return
         account.prepareContactProfiles(owner, contacts)
+        account.selfPinned$(selfPinned)
         account.contactsOwner$(owner)
         account.contacts$(contacts)
         runtime.transport.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
@@ -471,7 +472,7 @@ function useInitPrivateChats (account, queue) {
       runtime.transport?.close().catch(() => {}); runtime.transport = null
       for (const chat of runtime.chats.values()) chat.close()
       runtime.chats.clear(); runtime.outbox = []
-      account.contacts$([]); account.contactsOwner$(null); account.contactsState$('loading'); account.conversations$({})
+      account.contacts$([]); account.contactsOwner$(null); account.selfPinned$(false); account.contactsState$('loading'); account.conversations$({})
     })
   })
 }

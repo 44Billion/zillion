@@ -19,11 +19,18 @@ f('z-home-contacts', ({ h, props }) => {
     let target = null
     let lastWheelAt = -Infinity
     let lastDirection = 0
+    let manuallyScrolled = false
+    const enableSnap = () => {
+      if (manuallyScrolled) return
+      manuallyScrolled = true
+      list.style.scrollSnapType = 'x mandatory'
+    }
+    const scroll = () => { if (list.scrollLeft > 1) enableSnap() }
     const reset = () => { target = null }
     const resize = () => {
       const width = strip.clientWidth - 36
       if (width <= 0) return
-      const index = Math.round(list.scrollLeft / step)
+      const index = manuallyScrolled ? Math.round(list.scrollLeft / step) : 0
       const slots = Math.max(2, Math.floor(width / 56))
       step = width / slots
       view.slots$(slots)
@@ -34,6 +41,7 @@ f('z-home-contacts', ({ h, props }) => {
     }
     const move = index => {
       target = Math.max(0, Math.min(index * step, list.scrollWidth - list.clientWidth))
+      if (target > 1) enableSnap()
       list.scrollTo({ left: target, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth' })
     }
     const wheel = event => {
@@ -64,12 +72,14 @@ f('z-home-contacts', ({ h, props }) => {
     list.addEventListener('wheel', wheel, { passive: false })
     list.addEventListener('keydown', keydown)
     list.addEventListener('pointerdown', reset, { passive: true })
+    list.addEventListener('scroll', scroll, { passive: true })
     list.addEventListener('scrollend', reset)
     cleanup(() => {
       observer.disconnect()
       list.removeEventListener('wheel', wheel)
       list.removeEventListener('keydown', keydown)
       list.removeEventListener('pointerdown', reset)
+      list.removeEventListener('scroll', scroll)
       list.removeEventListener('scrollend', reset)
     })
   }, { after: 'rendering' })
@@ -84,7 +94,9 @@ f('z-home-contacts', ({ h, props }) => {
             flex: 1; min-width: 0; display: grid; grid-auto-flow: column;
             grid-auto-columns: var(--contact-step, 56px);
             overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain;
-            scroll-snap-type: x mandatory;
+            /* Enable snap on the first manual scroll, so initial insertions
+               cannot preserve self at the far end of the growing list. */
+            scroll-snap-type: none;
           }
           .contact-list::-webkit-scrollbar { display: none; }
           .contact-list:focus-visible { outline: 2px solid var(--z-accent-text); outline-offset: 2px; }

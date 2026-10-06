@@ -134,6 +134,10 @@ builds persist only to the private override list, compacting removed entries
 that no known kind-3 list follows after each edit. Pinned contacts
 persist in the same override and lead the home strip; the profile editor
 remains a preview.
+The primary user can pin self-chat there too: the private list contains its
+entry only while pinned, and unpinning removes it. Self-chat stays available
+and is never added to the external contact/channel list. Pin controls share
+the persisted state across profile, home and reloads.
 
 ## Profile preview
 
@@ -811,3 +815,7 @@ throughout. After that one startup sort, alphabetical ordering stays live and
 returning to home does not restart the gate. Profile cache writes preserve public
 signed kind-0 events, report both rejected promises and `ok: false` results, and
 never occupy remote-query slots or delay ordering.
+The strip starts at the left edge while contacts load and reorder. Native snap
+activates on the first manual scroll, avoiding an automatic jump that follows
+the initially visible self-chat to the end of the growing list. Touch, wheel and
+keyboard scrolling remain available; retained navigation preserves their position.

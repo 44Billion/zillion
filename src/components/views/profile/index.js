@@ -3,6 +3,7 @@ import '#f/components/f-to-signals.js'
 import { t } from '#i18n/messages.js'
 import { useAccount } from '#hooks/use-account.js'
 import { profileDetails } from '#helpers/profile-presentation.js'
+import { demoEnabled } from '#services/demo.js'
 import { error } from '#shared/toast.js'
 import { fixtureCover } from './fixtures/index.js'
 import { profileStyles } from './styles.js'
@@ -41,7 +42,7 @@ f('z-profile', ({ h, props }) => {
     simulatedPinned$: !!(props.person$().pinned && (props.person$().self || props.person$().demo)),
     pinned$ () {
       const person = props.person$()
-      return person.self || person.demo ? this.simulatedPinned$() : !!person.pinned && person.saved !== false
+      return (person.self && demoEnabled) || person.demo ? this.simulatedPinned$() : !!person.pinned && person.saved !== false
     },
     details$ () { return profileDetails(props.person$()) },
     title$ () { return t(props.person$().self ? 'My profile' : 'Profile') },
@@ -65,7 +66,7 @@ f('z-profile', ({ h, props }) => {
       const pinned = !this.pinned$()
       this.pinBusy$(true)
       try {
-        if (props.person$().self || props.person$().demo) this.simulatedPinned$(pinned)
+        if ((props.person$().self && demoEnabled) || props.person$().demo) this.simulatedPinned$(pinned)
         else await account.setPinned(props.person$().pubkey, pinned)
       } catch { error(() => t('Could not update contacts')) } finally { this.pinBusy$(false) }
     }
