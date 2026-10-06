@@ -18,6 +18,20 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
   let streamFailed = false
   const interested = entry => remote && entry.pubkey !== owner && [...entry.consumers].some(consumer => consumer.remote)
   const current = entry => !lifetime.signal.aborted && entries.get(entry.pubkey) === entry
+  function notifyInitial (entry) {
+    if (!current(entry)) return
+    const pending = !entry.profile && !entry.initialSettled && (!entry.localDone || (interested(entry) && !offline))
+    for (const consumer of entry.consumers) {
+      if (consumer.pending === pending) continue
+      consumer.pending = pending
+      consumer.onInitialState?.({ pending })
+    }
+  }
+  function finishInitial (entry) {
+    entry.initialSettled = true
+    entry.initial.resolve(entry.profile)
+    notifyInitial(entry)
+  }
   function update (entry, profile) {
     if (!profile || !current(entry)) return
     const preferred = selectPreferredProfile(entry.profile, profile)
@@ -25,7 +39,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     entry.profile = preferred
     onProfile(entry.pubkey, preferred)
     for (const consumer of entry.consumers) consumer.onProfile?.(preferred)
-    entry.initial.resolve(preferred)
+    finishInitial(entry)
   }
   function check () {
     if (!probe) {
@@ -56,7 +70,9 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       }
       if (!await check()) {
         offline = true
-        for (const entry of pending) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
+        for (const entry of entries.values()) {
+          if (entry.localDone) { entry.ready.resolve(entry.profile); finishInitial(entry) }
+        }
         return
       }
       if (lifetime.signal.aborted) return
@@ -82,7 +98,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       const event = result.byPubkey?.[entry.pubkey]
       const profile = event?.pubkey === entry.pubkey ? eventToProfile(event) : null
       if (profile) update(entry, profile)
-      entry.initial.resolve(entry.profile)
+      finishInitial(entry)
       const online = profile ? true : await check()
       signal.throwIfAborted()
       entry.read.settle(result, { found: !!profile, online })
@@ -97,7 +113,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     } finally {
       if (entry.controller === controller) entry.controller = null
       active--
-      entry.initial.resolve(entry.profile)
+      finishInitial(entry)
       entry.ready.resolve(entry.profile)
       schedule()
     }
@@ -115,7 +131,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
   function entryFor (pubkey) {
     if (entries.has(pubkey)) return entries.get(pubkey)
     const entry = {
-      pubkey, profile: null, consumers: new Set(), state: 'pending', localDone: false,
+      pubkey, profile: null, consumers: new Set(), state: 'pending', localDone: false, initialSettled: false,
       refreshedAt: -Infinity, ready: Promise.withResolvers(), initial: Promise.withResolvers(), controller: null,
       read: createRelayRead({ pubkey, kind: 0, now, retryDelays, cooldowns, queryLatest, getEvents, timeout })
     }
@@ -130,6 +146,8 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       .finally(() => {
         entry.localDone = true
         if (!interested(entry) || offline) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
+        if (offline) finishInitial(entry)
+        else notifyInitial(entry)
         schedule()
       })
   }
@@ -171,13 +189,17 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       if (streamFailed) openLocalStream()
       for (const entry of entries.values()) if (entry.localFailed && entry.consumers.size) readLocal(entry)
     },
-    retain (pubkey, { remote = true, onProfile } = {}) {
-      if (!hex(pubkey) || lifetime.signal.aborted) return { ready: Promise.resolve(null), initialReady: Promise.resolve(null), release () {} }
+    retain (pubkey, { remote = true, onProfile, onInitialState } = {}) {
+      if (!hex(pubkey) || lifetime.signal.aborted) {
+        onInitialState?.({ pending: false })
+        return { ready: Promise.resolve(null), initialReady: Promise.resolve(null), release () {} }
+      }
       const entry = entryFor(pubkey)
-      const consumer = { remote, onProfile }
+      const consumer = { remote, onProfile, onInitialState }
       entry.consumers.add(consumer)
-      if (offline && entry.localDone) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
+      if (offline && entry.localDone) { entry.ready.resolve(entry.profile); finishInitial(entry) }
       if (entry.profile) onProfile?.(entry.profile)
+      notifyInitial(entry)
       if (entry.state === 'success' && now() - entry.refreshedAt >= REFRESH_MS) entry.state = 'pending'
       schedule()
       const released = Promise.withResolvers()
@@ -188,6 +210,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
           released.resolve(null)
           entry.consumers.delete(consumer)
           if (!interested(entry)) entry.controller?.abort()
+          notifyInitial(entry)
           schedule()
         }
       }
@@ -222,6 +245,7 @@ export function observeProfile (pubkey, options = {}) {
     attach () {
       this.handle?.release()
       this.handle = profiles?.retain(pubkey, options)
+      if (!this.handle) options.onInitialState?.({ pending: hex(pubkey) })
       this.handle?.ready.then(initial.resolve)
       this.handle?.initialReady.then(ordering.resolve)
     }

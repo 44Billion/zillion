@@ -1,7 +1,7 @@
 import { installPrivateChatFixture } from '../private-chat-fixture.js'
 import '#components/app.js'
 import './route-driver.js'
-import { f } from '#f'
+import { f, useStore } from '#f'
 import { useAccount } from '#hooks/use-account.js'
 import { RelayPool, relayPool } from 'libp2r2p/relay'
 
@@ -45,7 +45,17 @@ relayPool.getEvents = (filter, relays, options) => filter.kinds?.includes(0)
   ? pool.getEvents(filter, relays, options)
   : originalGetEvents(filter, relays, options)
 f('z-profile-recovery-avatars', ({ h }) => h`<div><a-avatar props=${{ pk: state.peer }} /><a-avatar props=${{ pk: state.peer }} /></div>`)
+f('z-profile-recovery-avatar', ({ h }) => {
+  const avatar = useStore(() => ({ pk$: state.avatarOptions.pk, profile$: state.avatarOptions.profile ?? {} }))
+  window.profileRecovery.avatar = avatar
+  return h`<div style='width:44px;height:44px'><a-avatar props=${{ pk$: avatar.pk$, profile$: avatar.profile$, localOnly: true }} /></div>`
+})
 f('z-profile-recovery-fixture', ({ h }) => {
-  window.profileRecovery = { state, account: useAccount(), mountAvatars: host => { host.innerHTML = '<z-profile-recovery-avatars></z-profile-recovery-avatars>' } }
+  window.profileRecovery = {
+    state,
+    account: useAccount(),
+    mountAvatars: host => { host.innerHTML = '<z-profile-recovery-avatars></z-profile-recovery-avatars>' },
+    mountAvatar: (host, options) => { state.avatarOptions = options; host.innerHTML = '<z-profile-recovery-avatar></z-profile-recovery-avatar>' }
+  }
   return h`<z-app />`
 })

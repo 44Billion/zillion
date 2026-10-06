@@ -10,10 +10,28 @@ import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
 import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 
-test('shared profiles recover rate limits and reorder contacts without a reload', { timeout: 120000 }, async () => {
+test('shared profiles recover and avatars pulse only before their first presentation', { timeout: 180000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
+  const imageWaiters = new Map()
+  const imageRequests = []
+  const blockedImages = new Set(['initial-photo.png', 'new-photo.png', 'late-photo.png', 'budget-photo.png', 'obsolete-photo.png'])
+  const imageResponse = { responseCode: 200, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'image/png' }], body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4VQAAAAASUVORK5CYII=' }
+  const responseForImage = name => {
+    if (!['new-photo.png', 'late-photo.png'].includes(name)) return imageResponse
+    const size = name === 'new-photo.png' ? 2 : 3
+    return {
+      ...imageResponse,
+      responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'image/svg+xml' }],
+      body: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}"><rect width="100%" height="100%" fill="red"/></svg>`).toString('base64')
+    }
+  }
+  const releaseImage = name => {
+    blockedImages.delete(name)
+    for (const reply of imageWaiters.get(name) ?? []) reply(responseForImage(name))
+    imageWaiters.delete(name)
+  }
   try {
     let files
     const options = buildOptions({ sourceMaps: false, onEnd: result => { files = result } })
@@ -27,7 +45,17 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
         const { hostname } = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(hostname)) return null
         if (['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(hostname)) return { responseCode: 204, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '' }
-        if (hostname === 'profile-images.example') return { responseCode: 200, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'image/png' }], body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4VQAAAAASUVORK5CYII=' }
+        if (hostname === 'profile-images.example') {
+          const name = new URL(request.url).pathname.slice(1)
+          imageRequests.push(name)
+          if (name === 'broken.png') return { ...imageResponse, body: Buffer.from('invalid image bytes').toString('base64') }
+          if (blockedImages.has(name)) {
+            return new Promise(resolve => {
+              imageWaiters.set(name, [...(imageWaiters.get(name) ?? []), resolve])
+            })
+          }
+          return responseForImage(name)
+        }
         return false
       }
     })
@@ -89,6 +117,8 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
     assert.equal(arrivalOrder[0], peers[2], 'pins are first even during startup')
     assert.ok(arrivalOrder.indexOf(peers[0]) < arrivalOrder.indexOf(peers[1]), 'cached names do not move avatars before the remaining first lookup settles')
     assert.equal(await evaluate('profileRecovery.account.contactOrder$().alphabetical'), false)
+    const heldAvatar = `.contact-item[data-contact-id="${peers[3]}"] .avatar-presentation`
+    await browser.until(() => evaluate(`document.querySelector('${heldAvatar}')?.dataset.avatarState === 'loading'`), 'local-only contact waits for shared first lookup')
     await evaluate('profileRecovery.state.holdPeers=[];profileRecovery.state.held.splice(0).forEach(reply=>reply())')
     await browser.until(() => evaluate('profileRecovery.account.contactOrder$().alphabetical'), 'failed first lookup releases the initial cohort')
     const before = await evaluate(`profileRecovery.state.requests.filter(request => request.pubkey === '${peers[0]}').length`)
@@ -100,6 +130,10 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
       document.body.append(host); profileRecovery.mountAvatars(host, '${peers[0]}');
     })()`)
     await browser.until(() => evaluate(`profileRecovery.account.directory$()['${peers[1]}']?.name === 'Mona'`), 'other profiles remain available')
+    await browser.until(() => evaluate(`(() => {
+      const ids=Array.from(document.querySelectorAll('.route-page[data-active=true] .contact-item')).map(item=>item.dataset.contactId);
+      return ids.indexOf('${peers[0]}') > ids.indexOf('${peers[1]}');
+    })()`), 'alphabetical DOM update after initial readiness')
     const initialOrder = await evaluate('Array.from(document.querySelectorAll(\'.route-page[data-active=true] .contact-item\')).map(item => item.dataset.contactId)')
     assert.ok(initialOrder.indexOf(peers[0]) > initialOrder.indexOf(peers[1]))
     await browser.until(() => evaluate(`document.querySelector('${selector} .contact-name')?.textContent === 'Aaron'`), 'automatic profile recovery', 30000)
@@ -113,7 +147,7 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
       const requests = attempts.filter(attempt => attempt.relay === relay)
       assert.equal(requests.filter(attempt => attempt.at < releaseAt).length, 1, 'one initial query per relay during cooldown')
     }
-    await browser.until(() => evaluate(`Array.from(document.querySelectorAll('${selector} img')).some(image => image.naturalWidth > 0)`), 'recovered avatar bytes')
+    await browser.until(() => evaluate(`document.querySelector('${selector} .avatar-presentation')?.dataset.avatarState === 'photo' && document.querySelector('${selector} .avatar-picture')?.naturalWidth > 0`), 'recovered avatar bytes')
     const cached = await evaluate(`window.napp.eventStore.query({ kinds: [0], authors: ['${peers[0]}'] })`)
     assert.equal(cached.results[0].id, profiles[0].id)
     const count = attempts.length
@@ -122,6 +156,76 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
     assert.equal(await evaluate(`profileRecovery.state.requests.filter(request => request.pubkey === '${peers[0]}').length`), count)
     const allCached = await evaluate(`window.napp.eventStore.query({kinds:[0],authors:${JSON.stringify(peers)}})`)
     assert.deepEqual(new Set(allCached.results.map(event => event.id)), new Set(profiles.map(event => event.id)), 'cache contains original public signed kind-0 events')
+
+    // Exercise the real component and event-store stream with delayed HTTP bytes.
+    let ownTimestamp = profiles[0].created_at + 1
+    const ownProfile = picture => finalizeEvent({ kind: 0, created_at: ownTimestamp++, tags: [], content: JSON.stringify(picture ? { picture } : {}) }, secret)
+    const imageUrl = name => `https://profile-images.example/${name}`
+    await evaluate(`window.napp.eventStore.add(${JSON.stringify(ownProfile(imageUrl('initial-photo.png')))})`)
+    await evaluate(`(() => {
+      const host = document.createElement('div'); host.id = 'avatar-lifecycle'; document.body.append(host);
+      profileRecovery.mountAvatar(host, {pk:'${pubkey}'});
+      window.avatarStates=[];
+      window.avatarObserver=new MutationObserver(() => {
+        const value=host.querySelector('.avatar-presentation')?.dataset.avatarState;
+        if(value) avatarStates.push(value);
+      });
+      avatarObserver.observe(host,{subtree:true,attributes:true,childList:true});
+    })()`)
+    const stage = "document.querySelector('#avatar-lifecycle .avatar-presentation')?.dataset.avatarState"
+    const source = "document.querySelector('#avatar-lifecycle .avatar-picture')?.getAttribute('src')"
+    await browser.until(() => evaluate(`${stage} === 'loading'`), 'own avatar initial pulse')
+    await browser.until(() => imageWaiters.has('initial-photo.png'), 'initial image fetch')
+    releaseImage('initial-photo.png')
+    await browser.until(() => evaluate(`${stage} === 'photo'`), 'pulse to decoded own photo')
+    const firstSource = await evaluate(source)
+    await evaluate('avatarStates.length=0')
+    await evaluate(`window.napp.eventStore.add(${JSON.stringify(ownProfile(imageUrl('new-photo.png')))})`)
+    await browser.until(() => imageWaiters.has('new-photo.png'), 'replacement fetch')
+    assert.equal(await evaluate(stage), 'photo')
+    assert.equal(await evaluate(source), firstSource, 'old photo stays visible while replacement prepares')
+    releaseImage('new-photo.png')
+    await browser.until(() => evaluate(`profileRecovery.account.profile$()?.picture.endsWith('/new-photo.png') && ${stage} === 'photo'`), 'new own metadata')
+    await browser.until(() => evaluate("document.querySelector('#avatar-lifecycle .avatar-picture')?.naturalWidth === 2"), 'replacement decoded and presented')
+    const secondSource = await evaluate(source)
+    assert.notEqual(secondSource, firstSource)
+    await evaluate(`window.napp.eventStore.add(${JSON.stringify(ownProfile(imageUrl('broken.png')))})`)
+    await browser.until(() => imageRequests.includes('broken.png'), 'broken candidate requested')
+    await browser.until(() => evaluate("profileRecovery.account.profile$()?.picture.endsWith('/broken.png')"), 'broken candidate metadata')
+    assert.equal(await evaluate(stage), 'photo', 'failed replacement retains a photo')
+    assert.equal(await evaluate(source), secondSource)
+    await evaluate(`window.napp.eventStore.add(${JSON.stringify(ownProfile(null))})`)
+    await browser.until(() => evaluate(`${stage} === 'fallback'`), 'explicit photo removal')
+    await evaluate(`window.napp.eventStore.add(${JSON.stringify(ownProfile(imageUrl('late-photo.png')))})`)
+    await browser.until(() => imageWaiters.has('late-photo.png'), 'late photo fetch')
+    assert.equal(await evaluate(stage), 'fallback', 'fallback remains while the late image loads')
+    releaseImage('late-photo.png')
+    await browser.until(() => evaluate(`${stage} === 'photo'`), 'fallback to photo without another pulse')
+    assert.equal(await evaluate("avatarStates.includes('loading')"), false, 'profile updates never reopen the pulse')
+    assert.equal(await evaluate(`profileRecovery.state.requests.filter(request => request.pubkey === '${pubkey}').length`), 0, 'own avatars never fetch relay profiles')
+    const cachedImageRequests = imageRequests.length
+    await evaluate(`profileRecovery.mountAvatar(document.querySelector('#avatar-lifecycle'), {pk:'${pubkey}'})`)
+    await browser.until(() => evaluate(`${stage} === 'photo'`), 'cached photo is ready without an artificial minimum delay')
+    assert.equal(imageRequests.length, cachedImageRequests, 'cached photo requires no HTTP download')
+
+    const budgetPeer = getPublicKey(generateSecretKey())
+    await evaluate(`profileRecovery.mountAvatar(document.querySelector('#avatar-lifecycle'), {pk:'${budgetPeer}',profile:{picture:'${imageUrl('budget-photo.png')}'}})`)
+    await browser.until(() => evaluate(`${stage} === 'loading'`), 'initial image budget starts')
+    await browser.until(() => imageWaiters.has('budget-photo.png'), 'budget image request')
+    await browser.until(() => evaluate(`${stage} === 'fallback'`), 'ten-second visual budget expires', 15000)
+    await evaluate('avatarStates.length=0')
+    releaseImage('budget-photo.png')
+    await browser.until(() => evaluate(`${stage} === 'photo'`), 'late image completes after the visual deadline')
+    assert.equal(await evaluate("avatarStates.includes('loading')"), false)
+    assert.equal(await evaluate(`profileRecovery.state.requests.filter(request => request.pubkey === '${budgetPeer}').length`), 0, 'local-only avatar initiates no relay query')
+    await evaluate(`profileRecovery.mountAvatar(document.querySelector('#avatar-lifecycle'), {pk:'${budgetPeer}',profile:{picture:'${imageUrl('obsolete-photo.png')}'}})`)
+    await browser.until(() => imageWaiters.has('obsolete-photo.png'), 'obsolete image request')
+    await evaluate(`profileRecovery.avatar.pk$('${pubkey}'); profileRecovery.avatar.profile$({})`)
+    await browser.until(() => evaluate(`${stage} === 'photo' && document.querySelector('#avatar-lifecycle .avatar-picture')?.naturalWidth === 3`), 'new identity uses its own cached photo')
+    const identitySource = await evaluate(source)
+    releaseImage('obsolete-photo.png')
+    assert.equal(await evaluate(source), identitySource, 'old identity cannot replace the new photo')
+    await evaluate('avatarObserver.disconnect(); document.querySelector("#avatar-lifecycle").remove()')
     let appContext
     for (const context of [...browser.contexts.values()].filter(context => context.origin === origin && context.auxData?.isDefault)) {
       const result = await browser.send('Runtime.evaluate', { expression: 'Boolean(window.profileRecovery)', contextId: context.id, returnByValue: true }, context.sessionId)
@@ -140,6 +244,7 @@ test('shared profiles recover rate limits and reorder contacts without a reload'
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/profile-recovery'))
     throw error
   } finally {
+    for (const name of [...imageWaiters.keys()]) releaseImage(name)
     clearInterval(permissions)
     await browser?.close()
     await runtime.close()

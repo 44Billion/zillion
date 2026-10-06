@@ -5,6 +5,13 @@ const style = new Style(avataaars)
 const MAX_CACHED_DATA_URL_BYTES = 16 * 1024
 const MAX_CACHED_PROFILE_BYTES = 32 * 1024
 
+// An empty view placeholder is not metadata. Signed empty kind-0 content is.
+export function isKnownAvatarProfile (profile) {
+  if (!profile || typeof profile !== 'object' || Array.isArray(profile)) return false
+  return profile.meta?.events?.some(event => event?.kind === 0) ||
+    Object.entries(profile).some(([key, value]) => key !== 'meta' && value !== undefined)
+}
+
 export const getSvgAvatar = function (seed = crypto.randomUUID()) {
   return new Avatar(style, {
     borderRadius: 50,

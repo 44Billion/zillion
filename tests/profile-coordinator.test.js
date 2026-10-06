@@ -272,3 +272,66 @@ for (const [label, profile] of [['empty', null], ['invalid', event(0, [])], ['na
     else assert.equal(value, null)
   })
 }
+
+test('local-only avatars observe the contact first attempt without extending network ownership', async t => {
+  const gate = Promise.withResolvers()
+  const f = fixture(t, { query: () => gate.promise })
+  const contact = f.service.retain(peers[0])
+  const states = []
+  const avatar = f.service.retain(peers[0], { remote: false, onInitialState: state => states.push(state.pending) })
+  assert.deepEqual(states, [true], 'initial state is notified synchronously')
+  await flush()
+  assert.deepEqual(states, [true], 'a local miss does not hide an existing contact query')
+  assert.equal(f.reads.length, 1)
+  assert.equal(f.calls.length, 1)
+  assert.equal(await avatar.initialReady, null, 'the local-only promise contract stays local')
+  contact.release()
+  assert.equal(f.calls[0].options.signal.aborted, true, 'the avatar owns no remote work')
+  assert.deepEqual(states, [true, false])
+  gate.resolve(response(peers[0], event()))
+  avatar.release()
+})
+
+test('first visual readiness settles on transient failure and stays settled through retries', async t => {
+  const gate = Promise.withResolvers()
+  const f = fixture(t, { query: (pubkey, options, state) => state.calls.length === 1 ? response(pubkey, null, temporary()) : gate.promise })
+  const states = []
+  f.service.retain(peers[0], { onInitialState: state => states.push(state.pending) })
+  await flush()
+  assert.deepEqual(states, [true, false])
+  await f.advance(1000)
+  f.service.retain(peers[0], { remote: false, onInitialState: state => states.push(state.pending) })
+  assert.deepEqual(states, [true, false, false])
+  gate.resolve(response(peers[0], event()))
+  await flush()
+  assert.deepEqual(states, [true, false, false])
+})
+
+test('known profiles settle visual readiness before remote refresh and slow storage', async t => {
+  const gate = Promise.withResolvers()
+  const f = fixture(t, { local: [event(0, {})], query: () => gate.promise })
+  const states = []
+  f.service.retain(peers[0], { remote: false, onInitialState: state => states.push(state.pending) })
+  f.service.retain(peers[0])
+  await flush()
+  assert.deepEqual(states, [true, false], 'even a nameless profile with no picture is known')
+  assert.equal(f.calls.length, 1)
+  gate.resolve(response(peers[0], event()))
+})
+
+for (const outcome of ['empty', 'invalid', 'error', 'offline', 'local-only', 'own']) {
+  test(`visual readiness ends on ${outcome} without starting independent avatar work`, async t => {
+    const f = fixture(t, { query: pubkey => outcome === 'error' ? Promise.reject(new Error('failure')) : response(pubkey, outcome === 'invalid' ? event(0, []) : null) })
+    if (outcome === 'offline') f.online(false)
+    const pubkey = outcome === 'own' ? peers[8] : peers[0]
+    const states = []
+    const avatar = f.service.retain(pubkey, { remote: outcome !== 'local-only', onInitialState: state => states.push(state.pending) })
+    await avatar.initialReady
+    await flush()
+    assert.deepEqual(states, [true, false])
+    assert.equal(f.calls.length, ['offline', 'local-only', 'own'].includes(outcome) ? 0 : 1)
+    avatar.release()
+    await f.advance(300000)
+    assert.deepEqual(states, [true, false], 'released callbacks are never invoked again')
+  })
+}

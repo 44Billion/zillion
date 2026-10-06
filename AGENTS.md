@@ -1492,8 +1492,14 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   the cohort. Route remounts do not reset the gate. Account teardown clears timers,
   retained interests and stale completions. `contactsOwner$` fences membership
   while the account generation changes. Keep native maps/promises out of stores.
-- Avatar loading uses a primitive `profileLoading$` driven by shared initial
-  readiness; never access the removed per-avatar async-computed promise API.
+- `retain`/`observeProfile` accept internal `onInitialState({ pending })`, notified
+  immediately and on changes. Local-only avatars observe contact-owned first
+  lookups without retaining remote work. Known metadata, a first query outcome
+  or offline settles the initial state; retries/revalidation never reopen it.
+  Preserve the separate local-only `ready`/`initialReady` promise contracts.
+- Establish contact interests before publishing contact membership for rendering;
+  reuse the same retained map for reactive reconciliation and teardown. A local
+  miss must not prematurely end an avatar's existing shared first lookup.
 - Release the four remote slots and ordinary readiness before profile persistence.
   Check `eventStore.add` results for `ok: false`, preserving message/code/cause.
   Keep received metadata in memory after storage refusal; do not retry its relay
@@ -1502,3 +1508,29 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   nameless metadata, persistence delay/quota, additions/removals and teardown.
   The protected profile-recovery browser scenario covers stable arrival order,
   later reactive sorting, original cache events, reload and retained navigation.
+
+## Initial avatar presentation
+
+- `services/avatar-presentation.js` owns one initial visual budget per mounted
+  pubkey: at most ten seconds across profile and image preparation, with no
+  minimum delay. Keep the existing opacity pulse until a decoded photo or a
+  definitive fallback, never using empty profile object truthiness as readiness.
+  The visual timeout does not cancel shared metadata IO or image preparation.
+- Once a photo or DiceBear appears, never reopen the pulse for metadata updates,
+  reconnects or retries. Preserve the previous photo while a candidate decodes;
+  failures keep it, but explicit picture removal switches to DiceBear. A late
+  photo replaces DiceBear without animation. Pubkey changes reset the visual
+  generation and must reject stale callbacks; unmount clears timers/tasks.
+- Candidates use the existing avatar byte cache and an invisible DOM image.
+  Confirm load/decode even for cached data URLs before replacing the displayed
+  source. Key each candidate by its preparation attempt so queued events from
+  an obsolete DOM image cannot reject its successor. Keep `profile`,
+  `profileCache`, `localOnly`, demo portraits and the
+  no-identity icon. The owner remains local-only; no per-avatar metadata queries
+  or store subscriptions. Signed remote metadata still survives storage failure
+  in shared memory, without personal copies or extra relay queries.
+- Controlled presentation/coordinator tests cover the ten-second budget,
+  first-outcome readiness, local-only observation, retries, stale results and
+  teardown. The protected profile-recovery browser fixture covers real contact
+  and own-profile transitions with held metadata/HTTP bytes, replacement failure,
+  explicit removal and late success without renewed pulse.

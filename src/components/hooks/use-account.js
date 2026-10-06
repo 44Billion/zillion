@@ -284,7 +284,14 @@ function useInitConversationPrefetch (account, queue, self) {
 
 function useInitProfiles (account) {
   const retained = useMemo(() => new Map())
-  const runtime = useMemo(() => ({ service: null, order: null }))
+  const runtime = useMemo(() => ({ service: null, order: null, owner: null }))
+  // Establish contact-owned work before local-only avatars can finish a local miss.
+  account.prepareContactProfiles = (owner, contacts) => {
+    if (runtime.owner !== owner) return
+    const peers = new Set(contacts.map(contact => contact.pubkey))
+    for (const pubkey of peers) if (!retained.has(pubkey)) retained.set(pubkey, observeProfile(pubkey))
+    for (const [pubkey, interest] of retained) if (!peers.has(pubkey)) { interest.release(); retained.delete(pubkey) }
+  }
   account.loadPerson = (pubkey, { signal } = {}) => {
     if (signal?.aborted) return Promise.resolve(null)
     const interest = observeProfile(pubkey)
@@ -306,6 +313,7 @@ function useInitProfiles (account) {
       onError: error => console.warn('Could not refresh profile', error)
     })
     runtime.service = service
+    runtime.owner = owner
     const order = createContactOrder({
       initialReady: pubkey => retained.get(pubkey)?.initialReady,
       onChange: state => { if (runtime.order === order) account.contactOrder$(state) }
@@ -318,15 +326,14 @@ function useInitProfiles (account) {
       for (const interest of retained.values()) interest.release()
       retained.clear()
       own.release(); detach(); service.close(); runtime.service = null
+      runtime.owner = null
       account.directory$({}); account.contactOrder$({ ids: [], alphabetical: false })
     })
   })
   useTask(({ track }) => {
     const [owner, contactsOwner, contacts, state] = track(() => [account.pubkey$(), account.contactsOwner$(), account.contacts$(), account.contactsState$()])
     const members = owner && contactsOwner === owner ? contacts : []
-    const peers = new Set(members.map(contact => contact.pubkey))
-    for (const pubkey of peers) if (!retained.has(pubkey)) retained.set(pubkey, observeProfile(pubkey))
-    for (const [pubkey, interest] of retained) if (!peers.has(pubkey)) { interest.release(); retained.delete(pubkey) }
+    account.prepareContactProfiles(owner, members)
     runtime.order?.reconcile(members, { start: state === 'loaded' })
   })
   useTask(({ track }) => { track(() => [account.recovery$(), account.retry$()]); runtime.service?.recoverLocal() })
@@ -420,6 +427,7 @@ function useInitPrivateChats (account, queue) {
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
       onChange: contacts => {
         if (closed) return
+        account.prepareContactProfiles(owner, contacts)
         account.contactsOwner$(owner)
         account.contacts$(contacts)
         runtime.transport.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})

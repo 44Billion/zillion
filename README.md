@@ -38,7 +38,11 @@ Zillion is **offline-first**: the launcher loads the installed app, Nostr events
 and private-message personal copies belong in `window.napp.eventStore`, and
 image bytes use `libp2r2p/idb-queue` (IndexedDB). `temporaryStorage` is reserved
 for disposable session data. Cached content renders before remote refreshes;
-uncached avatars use a generated fallback. HTTPS images need a successful
+avatars pulse only during their initial profile/image preparation, for at most
+10 seconds, then show a photo or generated fallback. Later photo updates keep
+the existing presentation until the replacement decodes, without another pulse;
+failed replacements keep the previous photo, while explicit removal shows the
+fallback. HTTPS images need a successful
 CORS download to be reliably available offline. Avatars have a dedicated 16 MiB
 FIFO cache; chat images, previews and thumbnails share a separate 64 MiB FIFO
 cache. Both store decoded dimensions. Conversation media cannot evict avatars
