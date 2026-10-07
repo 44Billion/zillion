@@ -642,7 +642,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.11.18`
+This checkout consumes the public APIs from the published `libp2r2p@^0.11.19`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -838,7 +838,15 @@ Private sends now wait on observed messenger pause reasons and wake when recover
 completes. Network and inbox persistence recovery do not require a new account
 state transition; self-chat and local personal copies stay independent.
 
-Private sends opt into a three-second fallback deadline with libp2r2p 0.11.18.
+Private sends opt into a three-second fallback deadline with libp2r2p 0.11.19.
 Slow primary relays remain eligible while configured fallback relays compete;
 fast primary acceptance avoids extra publication. Signed outer bytes and recipient
 coverage remain owned by the library, with cancellation isolated per consumer.
+
+One messenger per account prepares contact channels incrementally. Opening a chat
+prioritizes its channel, with a reserved preparation slot; unrelated contacts and
+remote history do not gate text sends. Unlock reconciles account availability
+separately from contact discovery. The library's default readiness is local;
+background failures cannot recreate a signer pause. The guarded
+`tests/browser/local-readiness.browser.js` scenario covers locked startup with
+persisted contacts and slow remote recovery, measuring local save and publication.

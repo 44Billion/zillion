@@ -403,6 +403,7 @@ function useInitPrivateChats (account, queue) {
   }
   account.openConversation = peer => {
     account.prefetchContentKeys(peer)
+    runtime.transport?.preparePeer(peer).catch(() => { console.warn(`Could not prepare peer ${peer} for private chat. Continuing...`) })
     const chat = account.ensureConversation(peer)
     if (!chat) return Promise.resolve(false)
     account.focusConversation(peer)
@@ -476,8 +477,8 @@ function useInitPrivateChats (account, queue) {
       const changed = available !== availableApplied
       if (!changed && !resume) return
       availableApplied = available
-      // Begin transport recovery and local reads independently. setState can
-      // wait for encrypted queues, channels and remote recovery work.
+      // Begin local transport readiness and cached contacts independently.
+      // Individual channels and remote recovery continue in the background.
       const delivery = runtime.transport.setState(state).catch(error => { if (!closed) console.warn('Could not resume message delivery', error) })
       if (!available) { account.resetConversationPrefetch?.(); return delivery }
       if (!changed) return delivery

@@ -14,6 +14,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
+  const contactErrors = []
   const imageWaiters = new Map()
   const imageRequests = []
   const blockedImages = new Set(['initial-photo.png', 'new-photo.png', 'late-photo.png', 'budget-photo.png', 'obsolete-photo.png'])
@@ -41,6 +42,11 @@ test('shared profiles recover and avatars pulse only before their first presenta
     html.bytes = new TextEncoder().encode(new TextDecoder().decode(html.bytes).replaceAll('z-app', 'z-profile-recovery-fixture'))
     const app = await prepareTestApp(files, { identifier: 'profile-recovery-test', name: 'Profile recovery test' })
     browser = await launchChrome({
+      onEvent: ({ method, params }) => {
+        if (method !== 'Runtime.consoleAPICalled') return
+        const values = params.args.map(value => value.value ?? value.description)
+        if (values.some(value => typeof value === 'string' && value.includes('Could not load contacts'))) contactErrors.push(values)
+      },
       intercept: request => {
         const { hostname } = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(hostname)) return null
@@ -277,6 +283,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
     const finalOverride = await evaluate('profileRecovery.readContactsOverride()')
     assert.equal(finalOverride.tags.some(tag => tag[0] === 'p' && tag[1] === pubkey), false)
   } catch (error) {
+    console.error('Initial contact errors:', contactErrors)
     for (const context of browser?.contexts.values() ?? []) {
       if (/^http:\/\/[0-9]+[.]localhost:10000$/.test(context.origin) && context.auxData?.isDefault) {
         console.log('Profile recovery diagnostic:', await browser.evaluate('({ contacts:profileRecovery.account.contactsState$(), signer:profileRecovery.account.signerState$(), error:profileRecovery.account.error$(), ready:profileRecovery.account.ready$(), avatars:Object.keys(profileRecovery.account.avatarStates$()).length })', context.origin).catch(() => null))

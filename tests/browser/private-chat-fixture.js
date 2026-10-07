@@ -18,7 +18,21 @@ export function installPrivateChatFixture () {
   const relay = 'wss://controlled.example'
   const relays = [{ relay, status: 'eose' }]
   const select = filter => [...events.values()].filter(event => matchFilter(filter, event))
-  relayPool.getEvents = async filter => ({ result: select(filter).map(event => ({ event, relay })), errors: [], success: true, relays })
+  relayPool.getEvents = async (filter, urls, { signal } = {}) => {
+    if (filter.kinds?.includes(3560) && window.dmTest?.delayPrivateReadsMs) {
+      window.dmTest.pendingPrivateReads = (window.dmTest.pendingPrivateReads || 0) + 1
+      try {
+        await new Promise((resolve, reject) => {
+          const done = () => { signal?.removeEventListener('abort', abort); resolve() }
+          const timer = setTimeout(done, window.dmTest.delayPrivateReadsMs)
+          const abort = () => { clearTimeout(timer); signal?.removeEventListener('abort', abort); reject(signal.reason) }
+          signal?.addEventListener('abort', abort, { once: true })
+          if (signal?.aborted) abort()
+        })
+      } finally { window.dmTest.pendingPrivateReads-- }
+    }
+    return { result: select(filter).map(event => ({ event, relay })), errors: [], success: true, relays }
+  }
   const acknowledgements = []
   const publisher = new RelayPool({
     WebSocket: class ControlledRelaySocket {
@@ -36,7 +50,11 @@ export function installPrivateChatFixture () {
           events.set(event.id, event)
           for (const stream of streams) if (matchFilter(stream.filter, event)) stream.push({ type: 'event', event, relay })
         }
-        const acknowledge = () => { if (this.readyState === 1) this.onmessage?.({ data: JSON.stringify(['OK', event.id, !rejection, rejection]) }) }
+        const acknowledge = () => {
+          if (this.readyState !== 1) return
+          if (!rejection) (window.dmTest.acceptances ||= []).push({ id: event.id, at: performance.now() })
+          this.onmessage?.({ data: JSON.stringify(['OK', event.id, !rejection, rejection]) })
+        }
         if (window.dmTest?.holdAcknowledgements || window.dmTest?.heldRelays?.includes(this.url)) acknowledgements.push(acknowledge)
         else queueMicrotask(acknowledge)
       }

@@ -6,6 +6,17 @@ same pages of 50, four-worker decryption, viewport, references, attachments and
 viewer for self and peer chats. Self-chat never publishes remotely. Additional
 persona inboxes are not opened; scoped signer/state/store APIs prepare that use.
 
+With libp2r2p 0.11.19, readiness is local by default. Account availability and
+contact revisions reconcile separately, with one messenger creation in flight.
+Up to four contacts prepare concurrently, at most three in the background;
+opening a conversation calls `preparePeer(peer)` to prioritize its local channel.
+Send/retry/download do so automatically too. Resolved identities are reused and
+incremental changes retain the other channels. Local writes and ready conversations
+do not wait for unrelated preparation, subscription setup, presence or history.
+Background diagnostics preserve the original error and stage. Only actual account
+unavailability sets `signer`; late tasks cannot clear a newer lock or restore a
+removed contact. Recovery gaps, cooldowns and durable ACK/NACK remain unchanged.
+
 ## Contacts and routes
 
 The directory combines owner kind 3 public and personal lists with the owner's

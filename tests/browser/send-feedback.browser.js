@@ -12,8 +12,9 @@ import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 
 const latencyOnly = process.env.ZILLION_SEND_LATENCY_ONLY === '1'
+const readinessOnly = process.env.ZILLION_LOCAL_READINESS_ONLY === '1'
 
-test(latencyOnly ? 'early fallback reduces send latency and fast primaries avoid it' : 'send failures show actionable toasts only for the originating active chat', { timeout: 120000 }, async () => {
+test(readinessOnly ? 'locked startup sends promptly while other contacts recover in the background' : latencyOnly ? 'early fallback reduces send latency and fast primaries avoid it' : 'send failures show actionable toasts only for the originating active chat', { timeout: 150000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
@@ -26,6 +27,11 @@ test(latencyOnly ? 'early fallback reduces send latency and fast primaries avoid
         build.onLoad({ filter: /private-messenger\/index\.js$/ }, async args => ({
           contents: (await readFile(args.path, 'utf8')).replace('this.initialized = false', 'this.initialized = false; (window.pauseTestMessengers ||= []).push(this)'), loader: 'js'
         }))
+        if (readinessOnly) {
+          build.onLoad({ filter: /private-messenger\/session\/index\.js$/ }, async args => ({
+            contents: (await readFile(args.path, 'utf8')).replace('entry.localSaved[index] = true', 'entry.localSaved[index] = true; (window.localSendMeasurements ||= []).push({ id: entry.id, at: performance.now() })'), loader: 'js'
+          }))
+        }
       }
     })
     options.entryPoints[0] = { in: 'tests/browser/fixtures/send-feedback-entry.js', out: 'app' }
@@ -43,6 +49,20 @@ test(latencyOnly ? 'early fallback reduces send latency and fast primaries avoid
       }
     })
     permissions = setInterval(() => browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {}), 100)
+    if (readinessOnly) {
+      await browser.send('Page.addScriptToEvaluateOnNewDocument', {
+        source: `if (location.hostname === 'localhost' && location.port === '10000') {
+        window.WebSocket = class extends EventTarget {
+          static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
+          CONNECTING = 0; OPEN = 1; CLOSING = 2; CLOSED = 3;
+          readyState = 0; bufferedAmount = 0; extensions = ''; protocol = '';
+          constructor(url) { super(); this.url = url; queueMicrotask(() => { if (this.readyState !== 0) return; this.readyState = 1; this.onopen?.(new Event('open')); this.dispatchEvent(new Event('open')); }); }
+          send(raw) { const [op, id] = JSON.parse(raw); const frame = op === 'REQ' ? ['EOSE', id] : op === 'EVENT' ? ['OK', id.id, true, ''] : null; if (frame) queueMicrotask(() => { if (this.readyState !== 1) return; const event = new MessageEvent('message', { data: JSON.stringify(frame) }); this.onmessage?.(event); this.dispatchEvent(event); }); }
+          close() { if (this.readyState === 3) return; this.readyState = 3; const event = new CloseEvent('close', { code: 1000, wasClean: true }); this.onclose?.(event); this.dispatchEvent(event); }
+        };
+      }`
+      }, browser.sessionId)
+    }
     await browser.navigate('http://localhost:10000')
     await browser.until(() => browser.evaluate('Boolean(localStorage.getItem("session_workspaceKeys"))'), 'launcher ready')
     const vaultOrigin = 'http://localhost:4000'
@@ -102,7 +122,7 @@ test(latencyOnly ? 'early fallback reduces send latency and fast primaries avoid
         input.dispatchEvent(new Event('input', { bubbles: true }));
       })()`)
       await browser.until(() => evaluate(`document.querySelector('${chat} .compose-action')?.getAttribute('aria-disabled') === 'false'`), 'composer can send')
-      await evaluate(`document.querySelector('${chat} .compose-action').click()`)
+      await evaluate(`window.sendClickedAt = performance.now(); document.querySelector('${chat} .compose-action').click()`)
       return browser.until(async () => (await messages()).find(message => message.content === text)?.id, 'optimistic bubble')
     }
     const failed = id => browser.until(async () => (await messages()).find(message => message.id === id)?.status === 'error', 'failed bubble')
@@ -110,6 +130,43 @@ test(latencyOnly ? 'early fallback reduces send latency and fast primaries avoid
     const dismiss = async () => {
       await evaluate('sendTest.closeToast()')
       await browser.until(() => evaluate('!document.querySelector(".toast-card")'), 'toast closed')
+    }
+    if (readinessOnly) {
+      const extraPeers = Array.from({ length: 7 }, () => getPublicKey(generateSecretKey()))
+      for (const contact of extraPeers) await evaluate(`sendTest.account.setContact('${contact}', true)`)
+      // Establish this returning user's real permissions and persisted chat
+      // before timing a subsequent locked startup; consent UI is not latency.
+      await push(`/chat/${peer}`)
+      const prior = await send('Prior persisted conversation')
+      await browser.until(async () => (await messages()).find(message => message.id === prior)?.status === 'saved', 'prior conversation persisted', 45000)
+      await browser.until(() => evaluate('pauseTestMessengers[0].channels.size === 8 && pauseTestMessengers[0].channelBackground.size === 0'), 'contact setup and permissions settled', 45000)
+      await push('/')
+      await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
+      await browser.until(() => browser.evaluate('Boolean(document.querySelector("vault-lock-button button:not(:disabled)"))', vaultOrigin), 'lock available')
+      await browser.evaluate('document.querySelector("vault-lock-button button").click()', vaultOrigin)
+      await browser.until(() => evaluate('sendTest.account.signerState$()?.isLocked === true'), 'locked account notification')
+      // Reload through the parent-owned src, preserving the bridge marker.
+      await evaluate('window.beforeReadinessReload = true')
+      await browser.evaluate(`(() => { const frame = [...document.querySelectorAll('app-window iframe')].find(frame => frame.src.startsWith('${origin}/')); frame.src = frame.src })()`)
+      await browser.until(() => evaluate('!window.beforeReadinessReload && window.sendTest?.account.signerState$()?.isLocked === true'), 'app opened while locked')
+      await evaluate(`dmTest.events.set('${relayList.id}', ${JSON.stringify(relayList)}); dmTest.events.set('${ownRelayList.id}', ${JSON.stringify(ownRelayList)}); dmTest.delayPrivateReadsMs = 120000; dmTest.publicationBatches = []`)
+      await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
+      await browser.until(() => browser.evaluate('Boolean(document.querySelector("lock-overlay .lock-unlock"))', vaultOrigin), 'unlock after app startup')
+      await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
+      await browser.until(() => evaluate('sendTest.account.signerState$()?.isLocked === false'), 'unlocked account notification')
+      await push(`/chat/${peer}`)
+      const id = await send('Text after locked startup')
+      await browser.until(async () => (await messages()).find(message => message.id === id)?.status === 'saved', 'healthy publication after unlock', 30000)
+      const measurement = await evaluate(`(() => { const first = dmTest.publicationBatches.find(value => value.kind === 3560); return { clicked: sendClickedAt, local: localSendMeasurements.find(value => value.id === '${id}')?.at, first: first?.at, accepted: dmTest.acceptances.find(value => value.id === first?.id)?.at, settled: performance.now(), instances: pauseTestMessengers.length, reasons: pauseTestMessengers[0].readStatus().pauseReasons } })()`)
+      assert.ok(measurement.local >= measurement.clicked, 'personal copy persists after click')
+      assert.ok(measurement.first >= measurement.local, 'publication follows local persistence')
+      assert.ok(measurement.accepted - measurement.clicked <= 5000, JSON.stringify(measurement))
+      assert.equal(measurement.instances, 1)
+      assert.deepEqual(measurement.reasons, [])
+      await browser.until(() => evaluate('dmTest.pendingPrivateReads > 0'), 'two-minute remote recovery remains pending')
+      assert.equal(await evaluate(`sendTest.account.contacts$().length >= ${extraPeers.length + 1}`), true)
+      console.log('Locked-startup send timing (ms)', { local: measurement.local - measurement.clicked, publication: measurement.first - measurement.clicked, accepted: measurement.accepted - measurement.clicked, settled: measurement.settled - measurement.clicked })
+      return
     }
     await push(`/chat/${peer}`)
     if (latencyOnly) {
@@ -241,7 +298,7 @@ test(latencyOnly ? 'early fallback reduces send latency and fast primaries avoid
   } catch (error) {
     for (const context of browser?.contexts.values() || []) {
       if (/^http:\/\/[0-9]+\.localhost:10000$/.test(context.origin)) {
-        console.error('Pause state', await browser.evaluate('({ status: window.pauseTestMessengers?.map(value => value.readStatus()), signer: window.sendTest?.account.signerState$(), outbox: window.sendTest?.account.outbox$().map(({ status, failed }) => ({ status, failed })), batches: window.dmTest?.publicationBatches?.length })', context.origin).catch(() => null))
+        console.error('Pause state', await browser.evaluate('({ status: window.pauseTestMessengers?.map(value => value.readStatus()), signer: window.sendTest?.account.signerState$(), outbox: window.sendTest?.account.outbox$().map(({ status, failed }) => ({ status, failed })), batches: window.dmTest?.publicationBatches?.length, measurements: window.localSendMeasurements, channels: window.pauseTestMessengers?.map(value => ({ channels: value.channels.size, jobs: value.channelBackground.size })), contacts: window.sendTest?.account.contacts$().length, pendingReads: window.dmTest?.pendingPrivateReads })', context.origin).catch(() => null))
       }
     }
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/send-feedback'))

@@ -70,8 +70,9 @@ test('both peer-chat participants seed recovery, retain NIP-65 routing and exclu
     t.after(() => f.transport.close())
     await f.transport.setPeers([primary, contact])
     await f.transport.setState(active)
+    await f.transport.preparePeer(contact)
     const settings = () => f.updates.at(-1).channels.map(({ signer: _signer, ...settings }) => settings)
-    const expected = [{ pubkey: `channel:${contact}`, mode: 'seeder', seeders: [contact] }]
+    const expected = [{ pubkey: `channel:${contact}`, readerPubkey: `channel:${contact}`, mode: 'seeder', seeders: [contact] }]
     assert.deepEqual(f.messengerOptions().fallbackRelays, ['wss://relay.44billion.net'])
     assert.equal(f.messengerOptions().fallbackDelayMs, 3000)
     assert.deepEqual(settings(), expected, 'only the contact is a remote seeder and relay routing is inherited')
@@ -81,6 +82,7 @@ test('both peer-chat participants seed recovery, retain NIP-65 routing and exclu
     await f.transport.setPeers([primary])
     assert.deepEqual(settings(), [], 'removing the contact also stops its seeder channel')
     await f.transport.setPeers([contact])
+    await f.transport.preparePeer(contact)
     assert.deepEqual(settings(), expected, 'readding a retained channel preserves its seeder role')
   }
 })

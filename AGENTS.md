@@ -1003,7 +1003,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.18`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.19`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1633,8 +1633,19 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 
 ## Early message fallback
 
+- One root-owned session/messenger serves every contact. Navigation calls
+  `preparePeer`; the library also promotes sends/retries/downloads. Keep the
+  four-preparation limit (three background slots) inside the library, with local
+  readiness as default. Account generations and contact revisions are distinct;
+  contact reconciliation must not cause signer pauses or repeat healthy channels.
+- Local-ready initialization allows deliveries before background work settles.
+  Preserve root callback ownership, account fences and persistence before publish.
+  The protected local-readiness browser test reloads with persisted contacts while
+  locked, unlocks through the real vault and sends while remote history is delayed.
+  Observe timing without replacing signer, event store or the account coordinator.
+
 - `private-chats.js` defaults `fallbackDelayMs` to 3000, forwarding explicit null
-  unchanged for sequential fallback. Keep this routing in libp2r2p 0.11.18, not
+  unchanged for sequential fallback. Keep this routing in libp2r2p 0.11.19, not
   UI tasks. The deadline is per signed outer event; primary attempts remain live
   and fast primary acceptance avoids fallback. Honor connectivity, exclusions,
   cooldowns and complete encrypted recipient coverage without public new tags.
