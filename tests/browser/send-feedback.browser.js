@@ -11,7 +11,9 @@ import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
 import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 
-test('send failures show actionable toasts only for the originating active chat', { timeout: 120000 }, async () => {
+const latencyOnly = process.env.ZILLION_SEND_LATENCY_ONLY === '1'
+
+test(latencyOnly ? 'early fallback reduces send latency and fast primaries avoid it' : 'send failures show actionable toasts only for the originating active chat', { timeout: 120000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
@@ -110,6 +112,29 @@ test('send failures show actionable toasts only for the originating active chat'
       await browser.until(() => evaluate('!document.querySelector(".toast-card")'), 'toast closed')
     }
     await push(`/chat/${peer}`)
+    if (latencyOnly) {
+      // Slow primaries retain their real 30s deadline; the fallback wins around 3s.
+      await evaluate(`dmTest.rejectionReasons = {}; dmTest.rejectionReason = ''; dmTest.heldRelays = ${JSON.stringify(readRelays)}; dmTest.publicationBatches = []`)
+      const hedged = await send('Early fallback beats silent primaries')
+      await browser.until(() => evaluate('dmTest.publicationBatches.some(batch => batch.kind === 3560)'), 'first primary publication')
+      const started = Date.now()
+      await browser.until(async () => (await messages()).find(message => message.id === hedged)?.status === 'saved', 'early fallback accepts silent-primary send', 12000)
+      const hedgeBatches = await evaluate('dmTest.publicationBatches')
+      const opening = hedgeBatches.find(batch => batch.kind === 3560)
+      const alternate = hedgeBatches.find(batch => batch.id === opening.id && batch.relays.includes(fallbackRelay))
+      assert.ok(alternate)
+      assert.ok(alternate.at - opening.at >= 2900 && alternate.at - opening.at < 6000, 'fallback starts at the single three-second deadline')
+      assert.ok(Date.now() - started < 12000, 'no primary-exhaustion wait')
+      assert.equal(await toast(), '')
+      await evaluate('dmTest.heldRelays = []; dmTest.releaseAcknowledgements()')
+      // A healthy initial pair must accept without publishing to fallback.
+      await evaluate('dmTest.publicationBatches = []')
+      const fast = await send('Fast primaries skip fallback')
+      await browser.until(async () => (await messages()).find(message => message.id === fast)?.status === 'saved', 'fast primary send')
+      assert.equal(await evaluate(`dmTest.publicationBatches.some(batch => batch.relays.includes('${fallbackRelay}'))`), false)
+      console.log('Three-second fallback, immediate primary success and unchanged signed events verified')
+      return
+    }
     await evaluate('dmTest.rejectionReason = \'blocked: only accepts some kinds that support public mentions well\'')
     const first = await send('Rejected active send')
     await failed(first)

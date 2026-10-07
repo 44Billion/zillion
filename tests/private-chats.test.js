@@ -73,6 +73,7 @@ test('both peer-chat participants seed recovery, retain NIP-65 routing and exclu
     const settings = () => f.updates.at(-1).channels.map(({ signer: _signer, ...settings }) => settings)
     const expected = [{ pubkey: `channel:${contact}`, mode: 'seeder', seeders: [contact] }]
     assert.deepEqual(f.messengerOptions().fallbackRelays, ['wss://relay.44billion.net'])
+    assert.equal(f.messengerOptions().fallbackDelayMs, 3000)
     assert.deepEqual(settings(), expected, 'only the contact is a remote seeder and relay routing is inherited')
     await f.transport.setState({ ...active, isLocked: true })
     await f.transport.setState(active)
@@ -472,4 +473,11 @@ test('local-only preparation checks self and peer files without waiting for or i
   }
   assert.deepEqual(f.writes, [])
   assert.deepEqual(f.sends, [])
+})
+
+test('transport can retain sequential fallback through an explicit null delay', async t => {
+  const f = fixture({ fallbackDelayMs: null })
+  t.after(() => f.transport.close())
+  await f.open()
+  assert.equal(f.messengerOptions().fallbackDelayMs, null)
 })

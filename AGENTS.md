@@ -1003,7 +1003,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.17`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.18`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1478,7 +1478,8 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   recipient subsets and requiring publication coverage for each member.
 - The send-feedback browser scenario gives the owner a NIP-65 read relay distinct
   from the fallback, verifies both are watched, exhausts all five recipient read
-  relays before fallback publication, and checks that no public `p` tag is added.
+  relays before fallback publication when refusals arrive immediately, and checks
+  that no public `p` tag is added. Silent primaries yield to fallback after 3s.
   Fallback acceptance keeps the bubble successful and quiet; fallback refusal is
   required before relay-failure feedback. The real vault and event-store remain
   active. Validation uses the published npm release recorded in
@@ -1629,3 +1630,26 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   `session-storage` is distinct from internal messenger storage/capacity pauses;
   retry the actual save and ACK before release. Self-chat/personal writes remain
   independent, and historical recovery does not gate text publication.
+
+## Early message fallback
+
+- `private-chats.js` defaults `fallbackDelayMs` to 3000, forwarding explicit null
+  unchanged for sequential fallback. Keep this routing in libp2r2p 0.11.18, not
+  UI tasks. The deadline is per signed outer event; primary attempts remain live
+  and fast primary acceptance avoids fallback. Honor connectivity, exclusions,
+  cooldowns and complete encrypted recipient coverage without public new tags.
+- The browser send fixture controls only transport/remote probes, measures the
+  fallback from the initial EVENT and preserves real signer/store/route behavior.
+  It reuses the feedback fixture in a separate guarded browser unit to stay within
+  3 GiB; signing preparation precedes the relay deadline.
+  Use the installed release, maintain quiet intermediate outcomes, and validate
+  cancellation, same-ID bytes and pending outbox recovery under the 3 GiB runner.
+
+- Native touch drags in the contacts browser regression are paced between input
+  frames so Chrome can begin scrolling before touchEnd. Do not force scrollLeft
+  or change the strip's production ordering/snap logic to satisfy the test.
+
+- The private-only chat browser phase confirms connectivity through controlled
+  HTTP probe responses before testing exhausted remote publications. Offline
+  scenarios retain blocked probes and expect parked pending outbox entries,
+  rather than a final relay failure. Keep the actual shared monitor active.

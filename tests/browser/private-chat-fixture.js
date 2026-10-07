@@ -50,7 +50,7 @@ export function installPrivateChatFixture () {
   })
   // The installed library owns acknowledgement timing; only socket I/O is fake.
   relayPool.sendEvent = (event, urls, options = {}) => {
-    window.dmTest?.publicationBatches?.push({ id: event.id, kind: event.kind, tags: event.tags, relays: [...urls] })
+    window.dmTest?.publicationBatches?.push({ id: event.id, kind: event.kind, tags: event.tags, relays: [...urls], at: performance.now() })
     return publisher.sendEvent(event, urls, {
       ...options,
       ...(window.dmTest?.rejectPublication ? { timeout: 25 } : {})

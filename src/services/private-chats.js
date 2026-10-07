@@ -15,6 +15,7 @@ export function createPrivateChats (options) {
   const session = createPrivateMessageSession({
     ...options,
     fallbackRelays: options.fallbackRelays === undefined ? ['wss://relay.44billion.net'] : options.fallbackRelays,
+    fallbackDelayMs: options.fallbackDelayMs === undefined ? 3000 : options.fallbackDelayMs,
     chunkStorage,
     FileTransfer: options.FileTransfer || createMediaTransferPresentation,
     recoveryStorage: recovery,

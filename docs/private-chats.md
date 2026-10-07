@@ -127,6 +127,16 @@ The published libp2r2p performs fallback inside PrivateMessenger,
 shared by text, quoted context, announcements and attachment chunks. For implicit
 single-recipient NIP-65 routing, it selects at most two recipient read relays per
 attempt and republishes the exact signed outer event to remaining candidates.
+Zillion configures `fallbackDelayMs: 3000`: if no full acceptance arrives within
+three seconds, up to two configured fallback relays compete while the primary
+operations retain their deadlines. Primary exhaustion can start fallback sooner.
+The clock begins with the first primary publication, after signing/preparation.
+`tests/browser/send-latency.browser.js` validates this with silent primaries and
+a fast primary, in its own guarded 3 GiB browser unit. Companion contact tests
+pace native touch frames; private-sync tests allow granted permission dialogs
+to finish closing. Both retain the real UI and avoid production workarounds.
+A failed fallback does not discard primary alternatives; explicit relay routes
+retain their sequential policy. This requires libp2r2p 0.11.18 or newer.
 One accepting relay completes that outer event immediately. There is no extra
 publication solely to replace a failed redundant copy; eligible redundant
 failures influence later selections while the healthy relay remains selected.
@@ -164,7 +174,8 @@ unchanged outer event IDs, the two-recipient-relay limit and inactive retained
 routes. The published libp2r2p exposes `fallbackRelays` through both
 the messenger and session constructors. Zillion sets it to
 `['wss://relay.44billion.net']` in `private-chats.js`. The same signed outer event
-is published only after eligible primary failures; no public recipient `p` tag
+can reach the fallback after three seconds without acceptance or primary
+exhaustion; no public recipient `p` tag
 is introduced. A relay ACK continues to mean publication, not peer receipt.
 
 The fallback is watched from the start alongside the owner's read relays and is

@@ -54,7 +54,13 @@ test('contacts preview navigation, search, responsive strip and unsaved DM', { t
     const frameOffset = await browser.evaluate(`(() => {const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>frame.src.startsWith('${origin}'));const r=frame.getBoundingClientRect();return {x:r.left,y:r.top}})()`)
     const point = { x: localPoint.x + frameOffset.x, y: localPoint.y + frameOffset.y }
     await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...point, id: 1 }] }, session)
-    for (let n = 1; n <= 4; n++) await browser.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x - n * 25, y: point.y, id: 1 }] }, session)
+    // Let Chrome process each native input frame instead of coalescing an
+    // entire zero-duration drag before it can begin scrolling.
+    for (let n = 1; n <= 4; n++) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      await browser.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: point.x - n * 25, y: point.y, id: 1 }] }, session)
+    }
+    await new Promise(resolve => setTimeout(resolve, 25))
     await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, session)
     await browser.until(() => evaluate(`(() => {
       const list=document.querySelector('${active}.contact-list');const step=parseFloat(getComputedStyle(list).getPropertyValue('--contact-step'));

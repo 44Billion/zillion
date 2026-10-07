@@ -642,7 +642,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.11.17`
+This checkout consumes the public APIs from the published `libp2r2p@^0.11.18`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -780,7 +780,8 @@ release is resolved from npm in the production lockfile. See
 
 Zillion configures `fallbackRelays: ['wss://relay.44billion.net']` in its private
 session. Recipient read relays remain primary for sends; the fallback is tried
-only after eligible primary failures and is included from the start in live,
+after three seconds without acceptance or eligible primary exhaustion, and is
+included from the start in live,
 historical and file-channel reads. The library also supports multi-recipient
 channels and explicit recipient maps; Zillion continues to use DM sessions.
 The published libp2r2p release is installed from npm and recorded in the
@@ -836,3 +837,8 @@ keyboard scrolling remain available; retained navigation preserves their positio
 Private sends now wait on observed messenger pause reasons and wake when recovery
 completes. Network and inbox persistence recovery do not require a new account
 state transition; self-chat and local personal copies stay independent.
+
+Private sends opt into a three-second fallback deadline with libp2r2p 0.11.18.
+Slow primary relays remain eligible while configured fallback relays compete;
+fast primary acceptance avoids extra publication. Signed outer bytes and recipient
+coverage remain owned by the library, with cancellation isolated per consumer.
