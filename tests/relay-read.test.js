@@ -7,7 +7,7 @@ const pubkey = 'd'.repeat(64)
 const response = relays => ({ byPubkey: {}, requests: [{ phase: 'primary', authors: [pubkey], relays }] })
 const fail = (relay, message, extra = {}) => ({ relay, status: 'error', error: Object.assign(new Error(message), { category: 'relay', ...extra }) })
 
-test('mixed outcomes retry only eligible routes, without losing retry_after or restarting its deadline', async t => {
+test('mixed outcomes retry only eligible routes, without losing relay cooldown or restarting its deadline', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
   const calls = []
   const read = createRelayRead({

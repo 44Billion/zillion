@@ -105,7 +105,7 @@ test('network has four shared slots while cached profiles do not wait for them',
   await flush()
 })
 
-test('transient retries recover and consumers cannot bypass absolute retry_after', async t => {
+test('transient retries recover and consumers cannot bypass absolute relay cooldown', async t => {
   const f = fixture(t, {
     query: (pubkey, options, state) => state.calls.length === 1
       ? response(pubkey, null, temporary({ retryAt: 15000, retryAfterMs: 5000 }))

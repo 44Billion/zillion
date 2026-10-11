@@ -794,7 +794,7 @@ One account-owned profile coordinator serves contacts, searches, profile pages a
 avatars. It shares local reads and up to four remote lookups; local names remain
 available while network work waits. Missing profiles retry recoverable relay
 failures with exponential backoff from one second to five minutes, honoring the
-relay's optional `retry_after` without extending its absolute deadline. Offline
+relay's optional millisecond `params` without extending its absolute deadline. Offline
 work waits for the shared connectivity monitor and does not advance backoff.
 
 Successful empty lookups are revisited after five minutes. Successful profiles
@@ -810,8 +810,10 @@ The coordinated 0.11.16 release also stops definitive live-read refusals while
 recovering transient failures with offline-aware backoff and relay cooldowns.
 The account profile coordinator and contact presentation retain their own policy.
 
-The installed library also accepts optional Nostr `retry_at` Unix seconds,
-avoiding a renewed relative cooldown after delayed bridge delivery. Profile,
+The installed libp2r2p 0.11.20 accepts optional Nostr `params` as relative
+milliseconds or `@` Unix milliseconds, avoiding a renewed wait after delayed
+bridge delivery. Connection cooldowns apply only to the refused message type;
+rate-limited publications do not block profile reads. Profile,
 contact and messaging recovery keep their existing backoff policy and standard
 WebSocket events; relay origin/policy claims are ignored.
 

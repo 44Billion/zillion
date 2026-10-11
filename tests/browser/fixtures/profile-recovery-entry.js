@@ -33,7 +33,7 @@ const pool = new RelayPool({
         }
         if (state.holdPeers.includes(pubkey) || globalThis.__profileRecoveryHoldAll) { state.held.push(reply); return }
         if (pubkey === state.peer && Date.now() < state.releaseAt) {
-          send(['CLOSED', id, 'rate-limited: profile fixture', { retry_after: Math.ceil((state.releaseAt - Date.now()) / 1000) }])
+          send(['CLOSED', id, 'rate-limited: profile fixture', String(Math.max(1, state.releaseAt - Date.now()))])
           return
         }
         reply()

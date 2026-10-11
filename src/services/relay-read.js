@@ -103,7 +103,7 @@ export function createRelayRead ({ pubkey, kind, now = Date.now, retryDelays = R
       if (found) { attempt = 0; nextAt = time + REFRESH_MS; due.events.clear(); due.discovery.clear() } else {
         if (transient && online) attempt++
         // Keep absolute deadlines: a new consumer or an online notification
-        // must not restart or bypass either backoff or relay retry_after.
+        // must not restart or bypass either backoff or relay relay cooldown.
         const sharedDeadlines = [...cooldowns].filter(([relay, deadline]) => deadline > time && !due.events.has(relay) && !due.discovery.has(relay)).map(([, deadline]) => deadline)
         nextAt = Math.min(unscoped, ...due.events.values(), ...due.discovery.values(), ...sharedDeadlines)
         if (nextAt < time) nextAt = time

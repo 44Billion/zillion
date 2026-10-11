@@ -1003,7 +1003,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.19`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.20`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1507,7 +1507,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   and preserve partial/native diagnostics and shared absolute relay cooldowns.
 - Retry transient failures at 1, 2, 4... seconds capped at five minutes. A confirmed
   offline failure spends no backoff step; wait for `onOnline` rather than adding
-  a connectivity polling loop. `retry_at`/`retry_after` are normalized by the library:
+  a connectivity polling loop. Relative millisecond or absolute `@` timestamp `params` are normalized by the library:
   wait until max(local backoff deadline, relay retryAt), never sum or restart them.
 - Empty kind-0 lookups wait five minutes. Successful profiles revalidate on demand
   or reconnection only after five minutes; a valid nameless object is success.
@@ -1645,7 +1645,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   Observe timing without replacing signer, event store or the account coordinator.
 
 - `private-chats.js` defaults `fallbackDelayMs` to 3000, forwarding explicit null
-  unchanged for sequential fallback. Keep this routing in libp2r2p 0.11.19, not
+  unchanged for sequential fallback. Keep this routing in libp2r2p 0.11.20, not
   UI tasks. The deadline is per signed outer event; primary attempts remain live
   and fast primary acceptance avoids fallback. Honor connectivity, exclusions,
   cooldowns and complete encrypted recipient coverage without public new tags.
@@ -1664,3 +1664,10 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   HTTP probe responses before testing exhausted remote publications. Offline
   scenarios retain blocked probes and expect parked pending outbox entries,
   rather than a final relay failure. Keep the actual shared monitor active.
+
+## Prepared relay package validation
+
+The 0.11.20 patch scopes connection cooldowns by EVENT/AUTH/REQ/COUNT. Keep temporal
+parsing in the library; profile recovery consumes normalized retryAt. Before
+publication, test the exact prepared tarball through public imports. Final
+lockfiles use npm URLs and its actual integrity; publish that same archive.
