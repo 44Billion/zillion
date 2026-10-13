@@ -1,7 +1,7 @@
 import { onOnline } from 'libp2r2p/network'
 import { isDataAvatarPicture } from '#helpers/avatar.js'
 import { abortable } from '#helpers/media-dimensions.js'
-import { createAvatarPresentation, AVATAR_INITIAL_TIMEOUT_MS } from './avatar-presentation.js'
+import { createAvatarPresentation, getAvatarInitialTimeout } from './avatar-presentation.js'
 
 const IDLE_BYTES = 32 * 1024 * 1024
 const IDLE_ENTRIES = 256
@@ -157,7 +157,7 @@ export function createAvatars ({ cache, onState, watchOnline = onOnline, now = D
       if (closed) return { release () {} }
       let entry = entries.get(key)
       if (!entry) {
-        entry = { key, consumers: new Set(), deadline: now() + AVATAR_INITIAL_TIMEOUT_MS, url: null, version: null, used: now(), model: null, visual: null }
+        entry = { key, consumers: new Set(), deadline: now() + getAvatarInitialTimeout(), url: null, version: null, used: now(), model: null, visual: null }
         entries.set(key, entry)
       }
       const consumer = {}

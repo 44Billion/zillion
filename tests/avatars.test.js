@@ -5,6 +5,14 @@ import { createAvatars } from '#services/avatars.js'
 const flush = async () => { for (let n = 0; n < 5; n++) await new Promise(resolve => setImmediate(resolve)) }
 const image = url => ({ source: `data:image/png;base64,${url}`, width: 1, height: 1 })
 const options = (url, version) => ({ url, pending: false, version })
+function mockMatchMedia (t, matchMedia) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia')
+  Object.defineProperty(globalThis, 'matchMedia', { value: matchMedia, configurable: true })
+  t.after(() => {
+    if (original) Object.defineProperty(globalThis, 'matchMedia', original)
+    else delete globalThis.matchMedia
+  })
+}
 function fixture (t, { get = async () => null, resolve = async url => image(url), ...config } = {}) {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
   const reads = []; const requests = []; const states = []
@@ -119,6 +127,45 @@ test('online recovery shares one observer and never reopens the pulse', async t 
   f.confirm('alice')
   assert.equal(f.service.snapshot('bob').initial, false)
   assert.ok(f.service.snapshot('bob').displayed)
+})
+
+test('mobile gets eighteen seconds and each identity keeps its deadline across resize and remount', async t => {
+  let width = 718
+  mockMatchMedia(t, query => {
+    assert.equal(query, '(max-width: 718px)')
+    return { matches: width <= 718 }
+  })
+  const f = fixture(t)
+  const mobile = f.service.retain('mobile', { pending: true })
+  width = 719
+  f.service.retain('desktop', { pending: true })
+  await f.advance(9999)
+  assert.equal(f.service.snapshot('desktop').initial, true)
+  assert.equal(f.service.snapshot('mobile').initial, true)
+  await f.advance(1)
+  assert.equal(f.service.snapshot('desktop').initial, false)
+  assert.equal(f.service.snapshot('mobile').initial, true)
+  mobile.release()
+  f.service.retain('mobile', { pending: true })
+  await f.advance(7999)
+  assert.equal(f.service.snapshot('mobile').initial, true)
+  await f.advance(1)
+  assert.equal(f.service.snapshot('mobile').initial, false)
+  const late = f.service.retain('mobile', options('late'))
+  await flush(); f.confirm('mobile')
+  assert.ok(f.service.snapshot('mobile').displayed)
+  assert.equal(f.service.snapshot('mobile').initial, false)
+  late.release()
+})
+
+test('mobile photos and definitive fallbacks still finish immediately', async t => {
+  mockMatchMedia(t, () => ({ matches: true }))
+  const f = fixture(t)
+  f.service.retain('photo', options('cached'))
+  await flush(); f.confirm('photo')
+  assert.equal(f.service.snapshot('photo').initial, false)
+  f.service.retain('empty', options(null))
+  assert.equal(f.service.snapshot('empty').initial, false)
 })
 
 test('last consumer release cancels work; old responses and confirmations cannot leak to a new service', async t => {

@@ -1,6 +1,11 @@
 export const AVATAR_INITIAL_TIMEOUT_MS = 10000
+const AVATAR_MOBILE_INITIAL_TIMEOUT_MS = 18000
 
-// One initial visual budget per mounted identity, independent of shared IO/retries.
+export function getAvatarInitialTimeout () {
+  return globalThis.matchMedia?.('(max-width: 718px)').matches ? AVATAR_MOBILE_INITIAL_TIMEOUT_MS : AVATAR_INITIAL_TIMEOUT_MS
+}
+
+// One initial visual budget per identity, independent of shared IO/retries.
 export function createAvatarPresentation ({ onChange, timeout = AVATAR_INITIAL_TIMEOUT_MS }) {
   let state
   let timer

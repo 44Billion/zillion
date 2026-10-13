@@ -19,7 +19,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
   const contactErrors = []
   const imageWaiters = new Map()
   const imageRequests = []
-  const blockedImages = new Set(['initial-photo.png', 'new-photo.png', 'late-photo.png', 'budget-photo.png', 'obsolete-photo.png'])
+  const blockedImages = new Set(['initial-photo.png', 'new-photo.png', 'late-photo.png', 'mobile-photo.png', 'budget-photo.png', 'obsolete-photo.png'])
   const imageResponse = { responseCode: 200, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }, { name: 'Content-Type', value: 'image/png' }], body: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4VQAAAAASUVORK5CYII=' }
   const responseForImage = name => {
     if (!['new-photo.png', 'late-photo.png'].includes(name)) return imageResponse
@@ -220,6 +220,17 @@ test('shared profiles recover and avatars pulse only before their first presenta
     await browser.until(() => evaluate(`${stage} === 'photo'`), 'cached photo is ready without an artificial minimum delay')
     assert.equal(imageRequests.length, cachedImageRequests, 'cached photo requires no HTTP download')
 
+    const mobilePeer = getPublicKey(generateSecretKey())
+    assert.equal(await evaluate("matchMedia('(max-width: 718px)').matches"), true)
+    await evaluate(`profileRecovery.mountAvatar(document.querySelector('#avatar-lifecycle'), {pk:'${mobilePeer}',profile:{picture:'${imageUrl('mobile-photo.png')}'}})`)
+    await browser.until(() => imageWaiters.has('mobile-photo.png'), 'mobile image request')
+    await evaluate('new Promise(resolve => setTimeout(resolve, 10500))')
+    assert.equal(await evaluate(stage), 'loading', 'mobile loading continues beyond the desktop deadline')
+    releaseImage('mobile-photo.png')
+    await browser.until(() => evaluate(`${stage} === 'photo'`), 'mobile photo arrives before fallback')
+
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 780, deviceScaleFactor: 1, mobile: false }, session)
+    await browser.until(() => evaluate("!matchMedia('(max-width: 718px)').matches"), 'desktop viewport')
     const budgetPeer = getPublicKey(generateSecretKey())
     await evaluate(`profileRecovery.mountAvatar(document.querySelector('#avatar-lifecycle'), {pk:'${budgetPeer}',profile:{picture:'${imageUrl('budget-photo.png')}'}})`)
     await browser.until(() => evaluate(`${stage} === 'loading'`), 'initial image budget starts')
@@ -237,6 +248,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
     const identitySource = await evaluate(source)
     releaseImage('obsolete-photo.png')
     assert.equal(await evaluate(source), identitySource, 'old identity cannot replace the new photo')
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 780, deviceScaleFactor: 1, mobile: true }, session)
     await evaluate('avatarObserver.disconnect(); document.querySelector("#avatar-lifecycle").remove()')
     let appContext
     for (const context of [...browser.contexts.values()].filter(context => context.origin === origin && context.auxData?.isDefault)) {

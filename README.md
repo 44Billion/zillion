@@ -831,8 +831,12 @@ signed kind-0 events, report both rejected promises and `ok: false` results, and
 never occupy remote-query slots or delay ordering.
 Avatar presentation is shared across home, contact search/listing and profiles:
 already prepared photos and pending URL lookups are reused, and a failed update
-keeps the last valid photo on every screen. Four shared preparations run at once;
-local cache reads remain independent. Contact-directory avatars mount only near
+keeps the last valid photo on every screen. Initial loading lasts at most 18 seconds
+at viewport widths up to 718px, or 10 seconds above that, and ends as soon as a
+photo or definitive fallback is ready. Each identity retains its original deadline
+across resizing and remounting; late photos appear without restarting the pulse.
+Four shared preparations run at once; local cache reads remain independent.
+Contact-directory avatars mount only near
 the viewport, while all names stay available for search and sorting. Idle image
 sources have their own bounded memory cache; active views retain their photos.
 The strip starts at the left edge while contacts load and reorder. Native snap

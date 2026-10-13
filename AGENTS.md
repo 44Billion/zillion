@@ -1579,9 +1579,11 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 ## Initial avatar presentation
 
 - `services/avatar-presentation.js` owns one initial visual budget per account
-  avatar identity: at most ten seconds across profile and image preparation, with no
-  minimum delay. Keep the existing opacity pulse until a decoded photo or a
-  definitive fallback, never using empty profile object truthiness as readiness.
+  avatar identity: at most eighteen seconds for `(max-width: 718px)`, otherwise
+  ten seconds across profile and image preparation, with no minimum delay. Select
+  the budget at the identity's first retain; resize/orientation changes and remounts
+  preserve its absolute deadline. Keep the existing opacity pulse until a decoded
+  photo or a definitive fallback, never using empty profile object truthiness as readiness.
   The visual timeout does not cancel shared metadata IO or image preparation.
 - Once a photo or DiceBear appears, never reopen the pulse for metadata updates,
   reconnects or retries. Preserve the previous photo while a candidate decodes;
@@ -1626,7 +1628,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   another native DOM load fails, draw the last known pixels in a local canvas;
   never export/persist a tainted canvas or equate a URL with offline bytes. That
   fallback is a still last-known photo; normal native loads retain their behavior.
-- Controlled presentation/coordinator tests cover the ten-second budget,
+- Controlled presentation/coordinator tests cover the desktop/mobile budgets,
   first-outcome readiness, local-only observation, retries, stale results and
   teardown. The protected profile-recovery browser fixture covers real contact
   and own-profile transitions with held metadata/HTTP bytes, replacement failure,
