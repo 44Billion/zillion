@@ -4,6 +4,7 @@ import { attachPrivateMediaTransport, reportPrivateMedia } from './private-media
 import { createMediaTransferPresentation } from './media-transfer-presentation.js'
 import { createChatOutbox } from './chat-outbox.js'
 import { createLocalMediaAccess } from './local-media.js'
+import { isAccountAvailable } from '#helpers/account-availability.js'
 export { wireEvent } from 'libp2r2p/private-messenger/session'
 
 export function createPrivateChats (options) {
@@ -49,7 +50,7 @@ export function createPrivateChats (options) {
     ...session,
     setPeers (peers) { peersKnown = true; return track(session.setPeers(peers)) },
     setAvailable (value) { available = value === true; return track(session.setAvailable(value)) },
-    setState (state) { return transport.setAvailable(state.access === 'allowed' && state.connection === 'connected' && state.isLocked === false && state.isReadOnly === false) },
+    setState (state) { return transport.setAvailable(isAccountAvailable(state)) },
     checkLocal (file, { signal } = {}) {
       if (available === false) return Promise.resolve(false)
       return local.check(file, { signal: AbortSignal.any([lifetime.signal, ...(signal ? [signal] : [])]) })

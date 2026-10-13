@@ -14,6 +14,7 @@ import { useInitChatReadState } from './hooks/use-chat-read-state.js'
 import { useSendFeedback } from '#hooks/use-send-feedback.js'
 import { useAccount, useConversation } from '#hooks/use-account.js'
 import { firstUnreadMessageId } from '#helpers/conversation-preview.js'
+import { isAccountAvailable } from '#helpers/account-availability.js'
 
 f('z-chat-route', ({ h, props }) => {
   const location = useLocation()
@@ -93,7 +94,7 @@ f('z-chat', ({ h, props }) => {
     loadError$ () { return account.error$() || (this.contactsPending$() && identity.contactsState$() === 'unavailable') },
     loading$ () { return this.contactsPending$() || !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) },
     recover () { if (this.contactsPending$()) identity.recoverContacts(); account.recover() },
-    canSend$ () { return this.real$() && !this.contactsPending$() && (props.person$().self || this.saved$()) && account.ready$() && !!account.pubkey$() && (props.person$().self || (identity.signerState$()?.connection === 'connected' && identity.signerState$()?.access === 'allowed' && identity.signerState$()?.isLocked === false && identity.signerState$()?.isReadOnly === false)) },
+    canSend$ () { return this.real$() && !this.contactsPending$() && (props.person$().self || this.saved$()) && account.ready$() && !!account.pubkey$() && isAccountAvailable(identity.signerState$()) },
     send (text, attachment) { return feedback.send(() => account.send(text, this.replyTo$(), attachment)) }
   }))
   const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length, view.initialAnchor$)

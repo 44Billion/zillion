@@ -16,6 +16,19 @@ const active = { access: 'allowed', connection: 'connected', isLocked: false, is
 const event = { kind: 9, created_at: 100, tags: [['salt', 'stable']], content: 'hello', pubkey: owner }
 const until = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)) }; assert.fail('condition not reached') }
 
+test('capability-only recovery enables delivery in the existing session', async t => {
+  const f = fixture()
+  t.after(() => f.transport.close())
+  await f.transport.setState({ ...active, supportsContentKeyMethods: false })
+  await f.transport.setPeers([peer])
+  await assert.rejects(f.transport.enqueue({ peer, event }), /CHAT_UNAVAILABLE/)
+  assert.equal(f.sends.length, 0)
+  await f.transport.setState({ ...active, supportsContentKeyMethods: true })
+  await f.transport.enqueue({ peer, event })
+  await until(() => f.sends.length === 1)
+  assert.equal(f.sends[0].rumor.content, event.content)
+})
+
 function fixture ({ beforeOpen = async () => {}, fileAuthorize = async () => {}, fileDownload = async () => {}, downloadPut = async () => {}, downloadRemove = async () => {}, primary = owner, records = new Map(), save = async () => ({ result: { ok: true } }), query = async () => ({ results: [] }), publish = async () => ({ delivery: { reports: [{ success: true }] } }), ...sessionOptions } = {}) {
   const grants = []; const errors = []; const sendErrors = []; const states = []; const sends = []; const writes = []; const queue = []; const updates = []; const pauses = new Set()
   const signer = { getPublicKey: async () => primary, withSharedKey: (pubkey, info) => { assert.equal(info, 'dm'); return { getPublicKey: async () => `channel:${pubkey}` } } }

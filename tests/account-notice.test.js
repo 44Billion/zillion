@@ -5,8 +5,8 @@ import { createPersistentToasts } from '#helpers/persistent-toasts.js'
 
 const owner = 'a'.repeat(64)
 const other = 'b'.repeat(64)
-const available = { pubkey: owner, connection: 'connected', access: 'allowed', isLocked: false, isReadOnly: false }
-const messages = { locked: () => 'Unlock', readonly: () => 'Enable signing' }
+const available = { pubkey: owner, connection: 'connected', access: 'allowed', isDefaultUser: false, supportsContentKeyMethods: true, isLocked: false, isReadOnly: false }
+const messages = { signedout: () => 'Create or sign in', locked: () => 'Unlock', readonly: () => 'Enable signing', unsupported: () => 'Use a compatible account' }
 function fixture (t) {
   let entries = []
   let updates = 0
@@ -73,4 +73,27 @@ test('notice removal and root teardown preserve unrelated notices and reject lat
   f.notice.close()
   f.notice.update(owner, { ...available, isReadOnly: true })
   assert.deepEqual(f.entries().map(entry => entry.key), ['unrelated'])
+})
+
+test('signed-out identity is distinct from read-only and needs no vault connection', t => {
+  const f = fixture(t)
+  f.notice.update(owner, { ...available, connection: 'unknown', isDefaultUser: true, isReadOnly: null, isLocked: null, supportsContentKeyMethods: false })
+  assert.equal(f.entries()[0].message, messages.signedout)
+  const id = f.entries()[0].id
+  f.notice.update(owner, { ...available, isReadOnly: true, supportsContentKeyMethods: false })
+  assert.equal(f.entries()[0].id, id)
+  assert.equal(f.entries()[0].message, messages.readonly)
+})
+
+test('capability absence outranks lock, survives unknown state and clears on capability-only recovery', t => {
+  const f = fixture(t)
+  f.notice.update(owner, { ...available, supportsContentKeyMethods: false, isLocked: true })
+  assert.equal(f.entries()[0].message, messages.unsupported)
+  const id = f.entries()[0].id
+  f.notice.update(owner, { ...available, supportsContentKeyMethods: false })
+  assert.equal(f.entries()[0].id, id)
+  f.notice.update(owner, { ...available, connection: 'disconnected', supportsContentKeyMethods: null, isReadOnly: null, isLocked: null })
+  assert.equal(f.entries()[0].id, id)
+  f.notice.update(owner, available)
+  assert.deepEqual(f.entries(), [])
 })

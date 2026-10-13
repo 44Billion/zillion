@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
 import esbuild from 'esbuild'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { finalizeEvent } from 'libp2r2p/event'
@@ -13,6 +14,7 @@ import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prep
 test('shared profiles recover and avatars pulse only before their first presentation', { timeout: 180000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
+  let appOrigin
   let permissions
   const contactErrors = []
   const imageWaiters = new Map()
@@ -97,6 +99,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
     await browser.navigate(`http://localhost:10000/${app.app}`)
     const url = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app frame')
     const origin = new URL(url).origin
+    appOrigin = origin
     const evaluate = expression => browser.evaluate(expression, origin)
     await browser.until(() => evaluate("profileRecovery.account.signerState$()?.isLocked===true && document.querySelector('.toast-card[data-persistent] .toast-message')?.textContent.includes('Unlock your account')"), 'locked startup shows account action')
     assert.equal(await evaluate("Boolean(document.querySelector('.toast-card[data-persistent] .toast-close'))"), false)
@@ -283,6 +286,19 @@ test('shared profiles recover and avatars pulse only before their first presenta
     const finalOverride = await evaluate('profileRecovery.readContactsOverride()')
     assert.equal(finalOverride.tags.some(tag => tag[0] === 'p' && tag[1] === pubkey), false)
   } catch (error) {
+    if (appOrigin) {
+      const state = await browser.evaluate(`(async()=>({
+        owner:profileRecovery.account.pubkey$(),
+        signer:profileRecovery.account.signerState$(),
+        contacts:profileRecovery.account.contactsState$(),
+        recovery:profileRecovery.account.recovery$(),
+        methods:[typeof window.nostr.doubleSignEvent,typeof window.nostr.nip44v3.encryptDoubleDH,typeof window.nostr.nip44v3.decryptDoubleDH],
+        notice:document.querySelector('.toast-card[data-persistent] .toast-message')?.textContent,
+        current:await Promise.race([window.napp.getSignerState(),new Promise(resolve=>setTimeout(()=>resolve('state request timed out'),2000))])
+      }))()`, appOrigin).catch(error => ({ error: error.message }))
+      await mkdir(path.join(root, 'tmp/browser-failures/profile-recovery'), { recursive: true })
+      await writeFile(path.join(root, 'tmp/browser-failures/profile-recovery/account-state.json'), JSON.stringify(state, null, 2))
+    }
     console.error('Initial contact errors:', contactErrors)
     for (const context of browser?.contexts.values() ?? []) {
       if (/^http:\/\/[0-9]+[.]localhost:10000$/.test(context.origin) && context.auxData?.isDefault) {

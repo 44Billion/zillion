@@ -15,6 +15,8 @@ import { createContactOrder } from '#services/contact-order.js'
 import { profileName } from '#helpers/profile-presentation.js'
 import avatarCache from '#services/avatar-cache.js'
 import { createAvatars, attachAvatars } from '#services/avatars.js'
+import { hasContentKeyMethods, isAccountAvailable } from '#helpers/account-availability.js'
+import { dynamicContentKeySigner } from '#services/messenger-signer.js'
 
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
@@ -38,7 +40,9 @@ export function useAccount () {
     },
     person$ () {
       const profile = this.profile$()
-      return { id: 'user', self: true, pubkey: this.pubkey$(), profile: profile ?? {}, name: profileName(profile), shortName: profileName(profile), pinned: this.contactsOwner$() === this.pubkey$() && this.selfPinned$(), unread: 0 }
+      const state = this.signerState$()
+      const isDefaultUser = state?.pubkey === this.pubkey$() && state.isDefaultUser === true
+      return { id: 'user', self: true, isDefaultUser, pubkey: this.pubkey$(), profile: profile ?? {}, name: profileName(profile), shortName: profileName(profile), pinned: this.contactsOwner$() === this.pubkey$() && this.selfPinned$(), unread: 0 }
     }
   }))
 }
@@ -445,7 +449,7 @@ function useInitPrivateChats (account, queue) {
     account.signerState$(null)
     account.contactsState$('loading')
     runtime.transport = createPrivateChats({
-      owner, signer: window.nostr, eventStore: window.napp.eventStore,
+      owner, signer: dynamicContentKeySigner(window.nostr), eventStore: window.napp.eventStore,
       onSendError: (error, attempt) => { if (!closed) account.reportSendError(error, attempt) },
       onOutbox: entries => {
         if (closed) return
@@ -472,8 +476,14 @@ function useInitPrivateChats (account, queue) {
     let wasAvailable = false
     const stateChanged = async (state, { resume = false } = {}) => {
       if (closed) return
+      state = {
+        ...state,
+        supportsContentKeyMethods: state.access === 'allowed'
+          ? state.supportsContentKeyMethods !== false && hasContentKeyMethods(window.nostr)
+          : null
+      }
       account.signerState$(state)
-      const available = state.connection === 'connected' && state.access === 'allowed' && !state.isLocked && state.isReadOnly === false
+      const available = isAccountAvailable(state)
       const changed = available !== availableApplied
       if (!changed && !resume) return
       availableApplied = available
@@ -548,7 +558,7 @@ export function useConversation (id$, { open = false, active$ = () => true } = {
   })
   useTask(({ track }) => {
     const [peer, owner, ready, initialized, active] = track(() => [view.peer$(), account.pubkey$(), account.signerState$(), account.ready$(), active$()])
-    if (open && active && peer && owner && initialized && ((ready?.connection === 'connected' && !ready.isLocked) || demoEnabled) && !demoPeople.some(person => person.id === peer)) {
+    if (open && active && peer && owner && initialized && (isAccountAvailable(ready) || demoEnabled) && !demoPeople.some(person => person.id === peer)) {
       const work = peer === owner ? account.openSelfConversation() : account.openConversation(peer)
       work?.catch(() => {})
     }

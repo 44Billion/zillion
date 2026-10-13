@@ -1,6 +1,7 @@
 import { useMemo, useStore, useTask } from '#f'
 import { useRoutePage } from '#shared/route-page.js'
 import { demoEnabled } from '#services/demo.js'
+import { isAccountAvailable } from '#helpers/account-availability.js'
 
 export function useConversationPrefetch (account, view) {
   const page = useRoutePage()
@@ -10,7 +11,7 @@ export function useConversationPrefetch (account, view) {
   const state = useStore({
     order$ () {
       const signer = account.signerState$()
-      if (demoEnabled || !page.isActive$() || !account.ready$() || signer?.connection !== 'connected' || signer.isLocked || account.contactsState$() !== 'loaded') return ''
+      if (demoEnabled || !page.isActive$() || !account.ready$() || !isAccountAvailable(signer) || account.contactsState$() !== 'loaded') return ''
       const summaries = account.summaries$()
       const peers = [account.pubkey$(), ...account.contacts$().map(contact => contact.pubkey)]
       if (!peers.every(peer => summaries[peer]?.state === 'loaded')) return ''

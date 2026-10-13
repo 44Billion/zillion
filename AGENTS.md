@@ -200,17 +200,33 @@ foundations, and build/publishing tooling. Do not describe planned features as a
 
 - `useAccountNotice`, mounted once by `z-app`, observes existing
   `account.signerState$`/`pubkey$` without another availability query/subscription.
-  Only a connected, allowed snapshot for the current primary identity with
-  `isLocked === true` or `isReadOnly === true` creates a notice. Read-only takes
-  priority; messages briefly instruct unlocking or importing the account's
-  private key/bunker URL into the credential vault. Match the launcher's localized
-  credential-vault terminology; do not suggest a nonexistent write-mode toggle.
-- Initial unknown state is silent. Later null/unknown flags do not remove a
-  known warning. Only confirmed `isLocked === false` and `isReadOnly === false`
-  on a connected/allowed snapshot close it. Owner change and root teardown clear
+  The companion launcher exposes `isDefaultUser` and `supportsContentKeyMethods`
+  through the existing signer-state subscription, including capability-only
+  changes. Default identity is known independently of vault connectivity and
+  never inferred from read-only access. Notice priority is signed-out identity,
+  connected read-only account, unsupported content-key methods, then connected
+  locked account. Guide creation/sign-in, private-key import, a compatible account
+  or unlock respectively; never suggest importing a bunker URL as a remedy.
+- Initial unknown state without confirmed identity/capability information is
+  silent. Later null/unknown flags do not remove a known warning. Only full
+  connected/allowed readiness, including required cryptographic capabilities,
+  closes it. Owner change and root teardown clear
   the old scoped notice; stale snapshots/handles must not affect another owner.
   Reset stale signer snapshots when account observation starts/ends, and keep
   demonstration builds free of real-account warnings.
+- The root verifies `doubleSignEvent` and both `nip44v3` Double DH methods on
+  the actual injected signer, combines that with the public capability and uses
+  one shared availability predicate for contact/history recovery, send controls,
+  speculative prefetch and transport.
+  Capability-only recovery resumes the existing session/outbox. The internal
+  `dynamicContentKeySigner` forwards to the current injected methods because the
+  library captures optional Double DH methods when its adapter is constructed;
+  this facade is not a capability probe or a second signer implementation.
+- Own persons carry the primary state's `isDefaultUser`. `z-home-avatar` passes
+  an empty pubkey and no profile for that identity, using `icon-user-circle`
+  across home, self chat and profile views. Preserve the actual owner pubkey for
+  data scoping; read-only real accounts retain their ordinary avatar. Signing in
+  changes the app document's identity rather than simulating an in-app login.
 - Internet connectivity, bridge/access failures and per-operation permissions
   are outside this notice policy. Never infer account restrictions from their
   errors or gate offline reads on internet access. Keep existing unlock recovery

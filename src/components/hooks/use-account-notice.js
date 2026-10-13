@@ -8,8 +8,10 @@ import locales from './account-notice-locales.json'
 
 const t = getT(locales)
 const messages = {
+  signedout: () => t('Create or sign in to an account to use Zillion.'),
   locked: () => t('Unlock your account in the credential vault to load contacts and chats.'),
-  readonly: () => t('Import the private key or bunker URL for this account into the credential vault.')
+  readonly: () => t('Import the private key for this account into the credential vault to load contacts and chats.'),
+  unsupported: () => t('This account does not support the encryption required by Zillion. Use an account with a private key in the credential vault.')
 }
 
 // The account root already owns the signer subscription. Retained routes and

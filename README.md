@@ -52,12 +52,16 @@ Animated local images play inside confirmed message bubbles as well as the
 media viewer. Compact previews remain still, and leaving the chat releases its
 image sources. Remote upload services remain outside this delivery; peer attachments use the private channel.
 
-Locked or read-only accounts show a persistent, translated credential-vault
-instruction to unlock the account or import its private key/bunker URL.
-The notice has no close button or expiry and disappears automatically when the
-account is confirmed available; unlock also resumes existing data recovery.
-Other toasts remain independent. Unknown startup is silent, and internet or
-individual permission failures do not generate an account warning.
+Signed-out users see a persistent instruction to create or sign in to an account
+and a user-circle portrait. Read-only accounts are prompted to import their
+private key; accounts without the required encryption methods are prompted to
+use a compatible account; locked accounts are prompted to unlock the vault.
+The translated notice has no close button or expiry. Capability/unlock recovery
+removes it and resumes existing data recovery without recreating the session.
+This uses the companion launcher's `isDefaultUser` and
+`supportsContentKeyMethods` signer-state fields plus actual method availability.
+Other toasts remain independent; internet and individual permission failures
+do not generate account warnings.
 
 The encrypted outbox also uses `libp2r2p/idb-queue`, with a unique event-ID index
 and `evictionPolicy: 'reject'` so pending messages are never evicted for capacity.

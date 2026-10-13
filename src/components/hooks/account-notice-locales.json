@@ -12,17 +12,43 @@
     "ja": "連絡先とチャットを読み込むには、認証情報保管庫でアカウントのロックを解除してください。",
     "ko": "연락처와 채팅을 불러오려면 자격 증명 보관소에서 계정 잠금을 해제하세요."
   },
-  "Import the private key or bunker URL for this account into the credential vault.": {
-    "en": "Import the private key or bunker URL for this account into the credential vault.",
-    "fr": "Importez la clé privée ou l’URL bunker de ce compte dans le coffre d’identifiants.",
-    "it": "Importa la chiave privata o l’URL bunker di questo account nel vault delle credenziali.",
-    "de": "Importiere den privaten Schlüssel oder die Bunker-URL dieses Kontos in den Anmeldedatentresor.",
-    "es": "Importa la clave privada o la URL bunker de esta cuenta en la bóveda de credenciales.",
-    "pt-BR": "Importe a chave privada ou URL de bunker desta conta no cofre de credenciais.",
-    "ru": "Импортируйте закрытый ключ или URL bunker этого аккаунта в хранилище учётных данных.",
-    "zh-CN": "将此账户的私钥或 bunker URL 导入凭据保管库。",
-    "zh-TW": "將此帳戶的私鑰或 bunker URL 匯入憑證保管庫。",
-    "ja": "このアカウントの秘密鍵または bunker URL を認証情報保管庫にインポートしてください。",
-    "ko": "이 계정의 개인 키 또는 bunker URL을 자격 증명 보관소로 가져오세요."
+  "Create or sign in to an account to use Zillion.": {
+    "en": "Create or sign in to an account to use Zillion.",
+    "fr": "Créez un compte ou connectez-vous pour utiliser Zillion.",
+    "it": "Crea un account o accedi per usare Zillion.",
+    "de": "Erstelle ein Konto oder melde dich an, um Zillion zu nutzen.",
+    "es": "Crea una cuenta o inicia sesión para usar Zillion.",
+    "pt-BR": "Crie ou entre numa conta para usar o Zillion.",
+    "ru": "Создайте аккаунт или войдите в него, чтобы пользоваться Zillion.",
+    "zh-CN": "创建账户或登录以使用 Zillion。",
+    "zh-TW": "建立帳戶或登入以使用 Zillion。",
+    "ja": "Zillion を使うには、アカウントを作成するかログインしてください。",
+    "ko": "Zillion을 사용하려면 계정을 만들거나 로그인하세요."
+  },
+  "Import the private key for this account into the credential vault to load contacts and chats.": {
+    "en": "Import the private key for this account into the credential vault to load contacts and chats.",
+    "fr": "Importez la clé privée de ce compte dans le coffre d’identifiants pour charger vos contacts et conversations.",
+    "it": "Importa la chiave privata di questo account nel vault delle credenziali per caricare contatti e chat.",
+    "de": "Importiere den privaten Schlüssel dieses Kontos in den Anmeldedatentresor, um Kontakte und Chats zu laden.",
+    "es": "Importa la clave privada de esta cuenta en la bóveda de credenciales para cargar contactos y conversaciones.",
+    "pt-BR": "Importe a chave privada desta conta no cofre de credenciais para acessar contatos e conversas.",
+    "ru": "Импортируйте закрытый ключ этого аккаунта в хранилище учётных данных, чтобы загрузить контакты и чаты.",
+    "zh-CN": "将此账户的私钥导入凭据保管库以加载联系人和聊天。",
+    "zh-TW": "將此帳戶的私鑰匯入憑證保管庫以載入聯絡人和聊天。",
+    "ja": "連絡先とチャットを読み込むには、このアカウントの秘密鍵を認証情報保管庫にインポートしてください。",
+    "ko": "연락처와 채팅을 불러오려면 이 계정의 개인 키를 자격 증명 보관소로 가져오세요."
+  },
+  "This account does not support the encryption required by Zillion. Use an account with a private key in the credential vault.": {
+    "en": "This account does not support the encryption required by Zillion. Use an account with a private key in the credential vault.",
+    "fr": "Ce compte ne prend pas en charge le chiffrement nécessaire à Zillion. Utilisez un compte dont la clé privée est dans le coffre d’identifiants.",
+    "it": "Questo account non supporta la crittografia richiesta da Zillion. Usa un account con una chiave privata nel vault delle credenziali.",
+    "de": "Dieses Konto unterstützt die von Zillion benötigte Verschlüsselung nicht. Nutze ein Konto mit privatem Schlüssel im Anmeldedatentresor.",
+    "es": "Esta cuenta no admite el cifrado necesario para Zillion. Usa una cuenta con una clave privada en la bóveda de credenciales.",
+    "pt-BR": "Esta conta não oferece a criptografia necessária para usar o Zillion. Use uma conta com chave privada no cofre de credenciais.",
+    "ru": "Этот аккаунт не поддерживает необходимое для Zillion шифрование. Используйте аккаунт с закрытым ключом в хранилище учётных данных.",
+    "zh-CN": "此账户不支持 Zillion 所需的加密。请使用凭据保管库中存有私钥的账户。",
+    "zh-TW": "此帳戶不支援 Zillion 所需的加密。請使用憑證保管庫中存有私鑰的帳戶。",
+    "ja": "このアカウントは Zillion に必要な暗号化に対応していません。認証情報保管庫に秘密鍵があるアカウントを使ってください。",
+    "ko": "이 계정은 Zillion에 필요한 암호화를 지원하지 않습니다. 자격 증명 보관소에 개인 키가 있는 계정을 사용하세요."
   }
 }
