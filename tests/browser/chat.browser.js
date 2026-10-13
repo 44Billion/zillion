@@ -168,7 +168,10 @@ test('fixture DM routes, self chat, context actions and multiline composer in th
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 780, deviceScaleFactor: 1, mobile: true }, pageSession)
       await delay(100)
       assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true)
-      assert.ok(await evaluate('document.querySelector(".chat-screen").getBoundingClientRect().width <= 718'))
+      assert.equal(await evaluate('document.querySelector(".chat-screen").getBoundingClientRect().width === innerWidth'), true)
+      assert.equal(await evaluate('document.querySelector(".chat-timeline").getBoundingClientRect().width === innerWidth'), true)
+      assert.ok(await evaluate('document.querySelector(".timeline-content").getBoundingClientRect().width <= 692'))
+      assert.ok(await evaluate('document.querySelector(".chat-composer").getBoundingClientRect().width <= 718'))
     }
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 780, deviceScaleFactor: 1, mobile: true }, pageSession)
     await evaluate('document.querySelector(".chat-back").click()')

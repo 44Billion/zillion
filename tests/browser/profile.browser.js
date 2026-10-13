@@ -217,10 +217,12 @@ test('profile preview, local controls, editing, identity sharing and retained ch
     await push('/profile/user')
     await browser.until(() => evaluate(`document.querySelector('${active}.profile-share')?.disabled`), 'missing identity')
     assert.equal(await evaluate(`document.querySelector('${active}.profile-portrait').dataset.banner`), 'false')
-    for (const width of [320, 718]) {
+    for (const width of [320, 718, 1024]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 780, deviceScaleFactor: 1, mobile: true }, session)
       await push('/profile/sam')
       assert.equal(await evaluate(`(() => { const e = document.querySelector('${active}.profile-screen'); return e.scrollWidth <= e.clientWidth; })()`), true)
+      assert.equal(await evaluate(`document.querySelector('${active}.route-scroll').getBoundingClientRect().width === innerWidth`), true)
+      assert.ok(await evaluate(`(() => {const r=document.querySelector('${active}.profile-screen').getBoundingClientRect();return r.width<=718 && Math.abs(r.left+r.width/2-innerWidth/2)<1})()`))
     }
     await evaluate('location.href = "/profile/user/edit"')
     await ready('.profile-editor')

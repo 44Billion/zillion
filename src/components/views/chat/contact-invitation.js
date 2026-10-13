@@ -45,7 +45,8 @@ f('z-contact-invitation', ({ h, props }) => {
         50% { opacity: .45; }
       }
       z-contact-invitation .contact-invitation {
-        flex: none; margin: 8px 12px max(12px, env(safe-area-inset-bottom)); padding: 18px 16px 16px;
+        flex: none; width: calc(100% - 26px); max-width: calc(var(--z-mobile-width) - 26px);
+        margin: 8px auto max(12px, env(safe-area-inset-bottom)); padding: 18px 16px 16px;
         border: 1px solid var(--z-border); border-radius: 18px; background: var(--z-chat-overlay);
         backdrop-filter: blur(12px); text-align: center;
         p { margin: 0 auto 16px; max-width: 360px; font-size: 14rem; line-height: 1.5; color: var(--z-muted); }

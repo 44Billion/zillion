@@ -55,7 +55,8 @@ f('z-chat-header', ({ h, props }) => {
     <header class="chat-header">
       <style>${`
         z-chat-header .chat-header {
-          position: absolute; top: 0; left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right));
+          position: absolute; top: 0; left: max(9px, env(safe-area-inset-left)); right: max(9px, env(safe-area-inset-right));
+          max-width: calc(var(--z-mobile-width) - 18px); margin-inline: auto;
           z-index: 4; height: calc(48px + env(safe-area-inset-top));
           padding-block: calc(2px + env(safe-area-inset-top)) 2px;
           display: flex; align-items: center; gap: 6px;

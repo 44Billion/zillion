@@ -192,11 +192,16 @@ f('z-chat', ({ h, props }) => {
       <style>${`
         z-chat .chat-screen {
           position: absolute; top: 0; left: 0; right: 0; margin-inline: auto;
-          width: 100%; max-width: var(--z-mobile-width); height: 100dvh;
-          display: flex; flex-direction: column; background: var(--z-chat-canvas);
-          border-inline: 1px solid var(--z-border);
-          .chat-timeline { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: calc(60px + env(safe-area-inset-top)) 12px 12px; }
-          .timeline-content { display: flow-root; }
+          width: 100%; height: 100dvh;
+          display: flex; flex-direction: column; background: var(--z-canvas); isolation: isolate;
+          &::before {
+            content: ''; position: absolute; inset: 0; max-width: var(--z-mobile-width); margin-inline: auto;
+            background: var(--z-chat-canvas); border-inline: 1px solid var(--z-border); z-index: -1; pointer-events: none;
+          }
+          /* Preserve the column's original 12px padding plus 1px border on each side. */
+          .chat-timeline { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: calc(60px + env(safe-area-inset-top)) 13px 12px; }
+          .timeline-content { display: flow-root; width: 100%; max-width: calc(var(--z-mobile-width) - 26px); margin-inline: auto; }
+          @media (min-width: 719px) { .chat-timeline { scrollbar-gutter: stable both-edges; } }
           .message-list { list-style: none; padding: 0; margin: 0; }
           .chat-date { width: fit-content; margin: 8px auto 16px; padding: 4px 12px; border-radius: 14px; background: var(--z-chat-overlay); color: var(--z-muted); font-size: 12rem; line-height: 1.4; }
           .unread-divider { width: fit-content; margin: 8px auto 16px; padding: 4px 12px; border-radius: 14px; background: var(--z-primary); color: var(--z-on-primary); font-size: 12rem; line-height: 1.4; }

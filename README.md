@@ -270,6 +270,13 @@ Views beyond that distance, replaced entries and discarded forward history are
 unmounted; reloads start fresh. Revisiting a URL at another history position
 replaces its older cached instance.
 
+Scroll containers span the app viewport while home, contacts, profiles and chat
+content stay centered in the 718px column. On desktop, native scrollbars sit at
+the right edge and wheel/touch gestures in the side margins scroll the same
+retained container. Symmetric scrollbar gutters keep the column centered.
+Chat messages retain their own timeline; the composer remains outside it.
+No JavaScript forwards gestures or synchronizes an additional scrollbar.
+
 At widths up to 718px, forward navigation slides the incoming page from the
 right with a light fade; Back slides the outgoing page to the left. These 150ms
 transitions use the native Web Animations API with transforms. Initial loads,

@@ -97,6 +97,78 @@ test('route retention, eviction and mobile page transitions in the real launcher
     assert.ok(retainedAvatars.every(avatar => avatar.loaded && avatar.visibility === 'hidden'), 'retained chat avatars must not show through the home page')
     await go(1)
     await browser.until(() => evaluate('getComputedStyle(document.querySelector(".route-page[data-active=true] .chat-avatar img")).visibility === "visible"'), 'chat avatar reappears on Forward')
+
+    // Keep the actual retained scrollers while exercising native input in the
+    // desktop margins. No synthetic scroll events or gesture forwarding.
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 1024, height: 700, deviceScaleFactor: 1, mobile: false }, session)
+    const desktopGeometry = (scroll, content) => evaluate(`(() => {
+      const s = document.querySelector(${JSON.stringify(scroll)}), c = document.querySelector(${JSON.stringify(content)});
+      const r = s.getBoundingClientRect(), column = c.getBoundingClientRect();
+      return { width: r.width, right: r.right, viewport: innerWidth, column: column.width, center: column.left + column.width / 2,
+        gutter: getComputedStyle(s).scrollbarGutter, scrollbar: getComputedStyle(s).scrollbarWidth, overflow: s.scrollWidth > s.clientWidth };
+    })()`)
+    const checkDesktop = async (scroll, content, columnWidth) => {
+      const box = await desktopGeometry(scroll, content)
+      assert.equal(box.width, box.viewport)
+      assert.equal(box.right, box.viewport, 'scrollbar belongs to the right edge of the app')
+      assert.equal(box.column, columnWidth)
+      assert.ok(Math.abs(box.center - box.viewport / 2) < 1, 'content remains centered including classic scrollbar gutters')
+      assert.equal(box.gutter, 'stable both-edges')
+      assert.equal(box.scrollbar, 'auto')
+      assert.equal(box.overflow, false, 'no horizontal overflow')
+    }
+    const frameOffset = await browser.evaluate(`(() => {const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>frame.src.startsWith('${origin}'));const r=frame.getBoundingClientRect();return {x:r.left,y:r.top}})()`)
+    const margin = { x: frameOffset.x + 40, y: frameOffset.y + 350 }
+    await go(-1)
+    await checkDesktop('.route-page[data-active=true] .route-scroll', '.route-page[data-active=true] .home', 718)
+    await evaluate('window.desktopHomeScroll = savedHome.closest(".route-scroll")')
+    const beforeWheel = await evaluate('desktopHomeScroll.scrollTop')
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...margin, deltaX: 0, deltaY: -100 }, session)
+    await browser.until(() => evaluate(`desktopHomeScroll.scrollTop < ${beforeWheel}`), 'native home wheel scroll from left margin')
+    await evaluate('new Promise(resolve => setTimeout(resolve, 200))')
+    const beforeTouch = await evaluate('desktopHomeScroll.scrollTop')
+    await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 }, session)
+    await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...margin, id: 1 }] }, session)
+    for (let n = 1; n <= 4; n++) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      await browser.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: margin.x, y: margin.y - n * 25, id: 1 }] }, session)
+    }
+    await new Promise(resolve => setTimeout(resolve, 25))
+    await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, session)
+    await browser.until(() => evaluate(`desktopHomeScroll.scrollTop > ${beforeTouch}`), 'native home touch scroll from left margin')
+    await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }, session)
+    await evaluate('new Promise(resolve => setTimeout(resolve, 500))')
+    const desktopHomeTop = await evaluate('desktopHomeScroll.scrollTop')
+    await go(1)
+    await checkDesktop('.route-page[data-active=true] .chat-timeline', '.route-page[data-active=true] .timeline-content', 692)
+    assert.equal(await evaluate('document.querySelector(".route-page[data-active=true] .chat-composer").getBoundingClientRect().width'), 718)
+    await evaluate('window.desktopChatScroll = savedChat.querySelector(".chat-timeline")')
+    const chatBeforeWheel = await evaluate('desktopChatScroll.scrollTop')
+    await browser.send('Input.dispatchMouseEvent', { type: 'mouseWheel', ...margin, deltaX: 0, deltaY: -100 }, session)
+    await browser.until(() => evaluate(`desktopChatScroll.scrollTop < ${chatBeforeWheel}`), 'native chat wheel scroll from left margin')
+    await evaluate('new Promise(resolve => setTimeout(resolve, 200))')
+    const chatBeforeTouch = await evaluate('desktopChatScroll.scrollTop')
+    await browser.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 1 }, session)
+    await browser.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ ...margin, id: 1 }] }, session)
+    for (let n = 1; n <= 4; n++) {
+      await new Promise(resolve => setTimeout(resolve, 25))
+      await browser.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: margin.x, y: margin.y - n * 25, id: 1 }] }, session)
+    }
+    await new Promise(resolve => setTimeout(resolve, 25))
+    await browser.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] }, session)
+    await browser.until(() => evaluate(`desktopChatScroll.scrollTop > ${chatBeforeTouch}`), 'native chat touch scroll from left margin')
+    await browser.send('Emulation.setTouchEmulationEnabled', { enabled: false }, session)
+    await evaluate('new Promise(resolve => setTimeout(resolve, 500))')
+    const desktopChatTop = await evaluate('desktopChatScroll.scrollTop')
+    await go(-1)
+    assert.equal(await evaluate('desktopHomeScroll === document.querySelector(".route-page[data-active=true] .route-scroll")'), true)
+    assert.equal(await evaluate('desktopHomeScroll.scrollTop'), desktopHomeTop, 'Back restores the home margin scroll position')
+    await go(1)
+    assert.equal(await evaluate('desktopChatScroll === document.querySelector(".route-page[data-active=true] .chat-timeline")'), true)
+    assert.equal(await evaluate('desktopChatScroll.scrollTop'), desktopChatTop, 'Forward restores the chat margin scroll position')
+    assert.equal(await evaluate('savedChat.querySelector("textarea").value'), 'Unsent draft\nSecond line')
+    await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 700, deviceScaleFactor: 1, mobile: true }, session)
+
     await push('/chat/user')
     assert.equal(await evaluate('document.querySelector(".chat-screen[data-contact-id=daniel]")'), null)
     await push('/chat/daniel')

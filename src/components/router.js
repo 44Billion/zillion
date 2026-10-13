@@ -43,15 +43,21 @@ f('z-router', ({ h }) => {
       <style>${`
         z-router .route-deck { position: fixed; inset: 0; overflow: hidden; background: var(--z-canvas); }
         z-router .route-page {
-          position: absolute; inset: 0; max-width: var(--z-mobile-width); margin-inline: auto;
+          position: absolute; inset: 0;
           background: var(--z-canvas); visibility: hidden; pointer-events: none;
         }
-        z-router .route-page:has(.media-viewer) { max-width: none; }
         z-router .route-page[data-active=true] { visibility: visible; pointer-events: auto; }
         z-router .route-page[data-transitioning] { visibility: visible; z-index: 1; }
         z-router .route-page[data-active=true][data-transitioning] { z-index: 2; }
-        z-router .route-scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior-y: contain; scrollbar-width: none; outline: none; }
-        z-router .route-scroll::-webkit-scrollbar { display: none; }
+        z-router .route-scroll { position: absolute; inset: 0; overflow-y: auto; overscroll-behavior-y: contain; outline: none; }
+        @media (max-width: 718px) {
+          z-router .route-scroll { scrollbar-width: none; }
+          z-router .route-scroll::-webkit-scrollbar { display: none; }
+        }
+        @media (min-width: 719px) {
+          z-router .route-scroll { scrollbar-gutter: stable both-edges; }
+        }
+        z-router .route-scroll:has(.chat-screen, .media-viewer) { overflow: hidden; scrollbar-gutter: auto; }
       `}</style>
       ${view.pages$().map(page => h({ key: page.mountKey })`<z-route-page props=${{ id: page.id }} />`)}
     </div>

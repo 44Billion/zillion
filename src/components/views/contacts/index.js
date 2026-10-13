@@ -73,6 +73,7 @@ f('z-contacts', ({ h, props }) => {
     <main class="contacts-screen">
       <style>${`
         z-contacts .contacts-screen {
+          width: 100%; max-width: var(--z-mobile-width); margin-inline: auto;
           min-height: 100svh; background: var(--z-surface); padding-bottom: max(24px, env(safe-area-inset-bottom));
           @media (min-width: 719px) { border-inline: 1px solid var(--z-border); }
           .contacts-top { position: sticky; top: 0; z-index: 2; padding: env(safe-area-inset-top) 18px 14px; background: var(--z-surface); }

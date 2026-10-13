@@ -4,6 +4,7 @@ export const profileStyles = `
     50% { opacity: .45; }
   }
   .profile-screen {
+    width: 100%; max-width: var(--z-mobile-width); margin-inline: auto;
     min-height: 100svh; padding-bottom: max(32px, env(safe-area-inset-bottom)); background: var(--z-surface);
     @media (min-width: 719px) { border-inline: 1px solid var(--z-border); }
     button { cursor: pointer; }

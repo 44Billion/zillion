@@ -200,6 +200,7 @@ f('z-chat-composer', ({ h, props }) => {
     <footer class="chat-composer">
       <style>${`
         z-chat-composer .chat-composer {
+          width: 100%; max-width: var(--z-mobile-width); margin-inline: auto; border-inline: 1px solid var(--z-border);
           --attachment-tile-gap: 6px; --attachment-tile-radius: 8px;
           display: flex; flex-wrap: wrap; align-items: end; gap: 8px;
           padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));

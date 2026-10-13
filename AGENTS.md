@@ -318,7 +318,15 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   in either direction. Hash-only changes keep the same view. Eviction/reload
   discards local drafts and scroll; ordinary Back/Forward preserves them.
 - Each page owns a `.route-scroll` container. Home's collapse hook reads that
-  element, not window scroll. Cached pages keep their layout boxes and DOM
+  element, not window scroll. Pages and scrollers span the viewport; apply the
+  718px limit only to screen content. Desktop scrollers expose native right-edge
+  scrollbars with `scrollbar-gutter: stable both-edges`; mobile route scrollbars
+  remain hidden. Chat keeps its full-width `.chat-timeline`, centered inner
+  content/header/composer and a decorative central background. Keep the composer
+  outside the timeline so read visibility and its measured viewport remain valid.
+  Chat/viewer outer route scrollers have no gutter or second user scrollbar.
+  Side-margin wheel/touch scrolling is native; do not add gesture forwarding or
+  replace the retained scroll elements. Cached pages keep their layout boxes and DOM
   state through `visibility: hidden`, `inert`, and `aria-hidden`; only the active
   page accepts interaction. Close chat menus and cancel pending long presses
   when a page becomes inactive. Do not use `display: none` for cached views,
