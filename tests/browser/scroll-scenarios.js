@@ -86,7 +86,9 @@ export async function checkScrollScenarios ({ browser, evaluate, addNote, media 
 
   // Read older messages while another resource above them expands.
   media.hold = true
-  await addNote('Earlier late media\nhttps://example.com/scroll-earlier.png', timestamp - 1)
+  // Keep this resource inside the loaded page. Earlier live arrivals only
+  // advertise hasOlder until pagination; that is a separate history scenario.
+  await addNote('Earlier late media\nhttps://example.com/scroll-earlier.png', timestamp + 1)
   await browser.until(() => evaluate('!!document.querySelector(\'.chat-media a[href$="scroll-earlier.png"]\')'), 'earlier media link')
   // Start preparation while visible, then move away before the held response.
   // Offscreen resources that were never visited are intentionally left unloaded.

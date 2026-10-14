@@ -84,6 +84,7 @@ export function useInitChatReadState (account, view) {
     const timeline = track(() => view.timelineRef$())
     const peer = track(() => view.peer$())
     const self = track(() => view.self$())
+    const insets = track(() => view.viewportInsets$())
     track(() => view.active$())
     // Dwell only counts after the viewport settled (anchored open included);
     // pages rendered while the anchor window is still loading must not mark the
@@ -92,7 +93,8 @@ export function useInitChatReadState (account, view) {
     if (!timeline || self || !/^[0-9a-f]{64}$/i.test(peer || '')) return
     const visible = runtime.visible = new Set()
     const timers = runtime.timers = new Map()
-    const allowed = () => view.settled$() && view.active$() && document.visibilityState !== 'hidden'
+    let closed = false
+    const allowed = () => !closed && view.settled$() && view.active$() && document.visibilityState !== 'hidden'
     const stop = id => {
       const timer = timers.get(id)
       if (!timer) return
@@ -102,7 +104,11 @@ export function useInitChatReadState (account, view) {
     const stopAll = () => { for (const id of [...timers.keys()]) stop(id) }
     const read = id => {
       timers.delete(id)
-      if (!allowed()) return
+      if (!allowed() || !visible.has(id)) return
+      const row = [...timeline.querySelectorAll('[data-message-id]')].find(element => element.dataset.messageId === id)
+      // Recheck geometry at expiry: an observer notification can still be
+      // pending when the composer grows or a scroll hides the message.
+      if (!row || !view.readable(row, READ_VISIBILITY)) { visible.delete(id); return }
       const message = view.messages$().find(item => item.id === id)
       if (!message) return
       account.advanceReadAnchor?.(peer, { id: message.id, created_at: message.created_at })
@@ -116,6 +122,7 @@ export function useInitChatReadState (account, view) {
       for (const id of visible) start(id)
     }
     const observer = new IntersectionObserver(entries => {
+      if (closed) return
       for (const entry of entries) {
         const id = entry.target.dataset?.messageId
         if (!id) continue
@@ -127,7 +134,7 @@ export function useInitChatReadState (account, view) {
           stop(id)
         }
       }
-    }, { root: timeline, threshold: [0, READ_VISIBILITY] })
+    }, { root: timeline, rootMargin: `-${insets.top}px 0px -${insets.bottom}px 0px`, threshold: [0, READ_VISIBILITY] })
     const observe = () => { for (const row of timeline.querySelectorAll('[data-message-id]')) observer.observe(row) }
     observe()
     const mutations = new MutationObserver(observe)
@@ -137,6 +144,7 @@ export function useInitChatReadState (account, view) {
     document.addEventListener('visibilitychange', visibility)
     window.addEventListener('pagehide', pagehide)
     cleanup(() => {
+      closed = true
       observer.disconnect()
       mutations.disconnect()
       stopAll()
@@ -175,7 +183,7 @@ export function useInitChatReadState (account, view) {
       if (!view.active$() || view.dividerId$() !== dividerId) return
       const divider = timeline.querySelector('[data-unread-divider]')
       if (!divider || cancelCollapse) return
-      const padding = parseFloat(getComputedStyle(timeline).paddingTop) || 0
+      const padding = parseFloat(getComputedStyle(timeline.querySelector('.timeline-content')).marginTop) || 0
       const top = timeline.getBoundingClientRect().top + padding
       if (divider.getBoundingClientRect().bottom < top - DISMISS_MARGIN) {
         cancelCollapse = collapseDivider(divider, () => view.dismissDivider?.())

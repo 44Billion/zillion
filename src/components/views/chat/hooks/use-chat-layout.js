@@ -9,7 +9,9 @@ export function useInitChatLayout (timelineRef$, historyLoaded$, onScroll, messa
   const runtime = useMemo(() => ({ controller: null }))
   const layout = useClosestStore('z-chat-layout', () => ({
     initial$: true,
+    viewportInsets$: { top: 0, bottom: 0 },
     visible: element => runtime.controller?.visible(element) ?? false,
+    readable: (element, ratio) => runtime.controller?.visible(element, 0, ratio) ?? false,
     reconcile: () => runtime.controller?.reconcile()
   }), { shouldCache: false })
   useTask(({ track, cleanup }) => {
@@ -17,7 +19,8 @@ export function useInitChatLayout (timelineRef$, historyLoaded$, onScroll, messa
     if (!timeline) return
     runtime.controller = createChatViewport(timeline, {
       active: page.isActive$(), historyLoaded: historyLoaded$(),
-      onInitialChange: layout.initial$, onScroll, messageCount: messageCount$, initialAnchor: initialAnchor$
+      onInitialChange: layout.initial$, onScroll, messageCount: messageCount$, initialAnchor: initialAnchor$,
+      onViewportChange: layout.viewportInsets$
     })
     cleanup(() => { runtime.controller.close(); runtime.controller = null })
   }, { after: 'rendering' })

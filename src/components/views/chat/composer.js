@@ -174,9 +174,14 @@ f('z-chat-composer', ({ h, props }) => {
       const style = getComputedStyle(input)
       const padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
       const max = parseFloat(style.lineHeight) * 5 + padding
+      // Measuring at zero height must not briefly shrink the sticky footer and
+      // clamp its surrounding timeline's scroll position before observers run.
+      const previousMinHeight = field.style.minHeight
+      field.style.minHeight = `${field.getBoundingClientRect().height}px`
       input.style.height = '0px'
       input.style.height = `${Math.min(input.scrollHeight, max)}px`
       input.style.overflowY = input.scrollHeight > max ? 'auto' : 'hidden'
+      field.style.minHeight = previousMinHeight
     }
     resize()
     const observer = new ResizeObserver(resize)

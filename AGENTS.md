@@ -322,8 +322,15 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   718px limit only to screen content. Desktop scrollers expose native right-edge
   scrollbars with `scrollbar-gutter: stable both-edges`; mobile route scrollbars
   remain hidden. Chat keeps its full-width `.chat-timeline`, centered inner
-  content/header/composer and a decorative central background. Keep the composer
-  outside the timeline so read visibility and its measured viewport remain valid.
+  content/header/composer and a decorative central background. The timeline spans
+  the full screen height; its centered `.chat-footer` uses `position: sticky`
+  and `bottom: 0`, retaining flow space for the composer or contact invitation.
+  Do not copy footer height into CSS padding or forward scrolling gestures.
+  Observe footer size with the existing viewport controller for bottom following
+  and read visibility, not to drive the native layout.
+  Hold the textarea field's current minimum height only during its zero-height
+  measurement, restoring it immediately, so remeasurement cannot transiently
+  shrink the scroll extent and clamp the timeline before observers reconcile.
   Chat/viewer outer route scrollers have no gutter or second user scrollbar.
   Side-margin wheel/touch scrolling is native; do not add gesture forwarding or
   replace the retained scroll elements. Cached pages keep their layout boxes and DOM
@@ -919,6 +926,16 @@ needed; empty folders mark the initial structure.
 
 
 ## Chat layout stability
+
+- The visible message viewport excludes the header reserve and sticky footer.
+  Publish inset changes only when their sizes change; rebuild the read observer
+  with negative root margins and restart continuous dwell after such changes.
+  Recheck current geometry when a dwell timer expires so queued observer delivery
+  cannot mark covered messages as read. Composer interactions do not imply history
+  scrolling; observe message mutations separately from footer controls.
+  `tests/browser/chat-scroll.browser.js` checks full-height geometry, changing
+  footer height, covered and partially visible messages, interrupted dwell and
+  retained navigation; the routing suite checks native side-margin gestures.
 
 - `useInitChatLayout` owns a conversation-scoped viewport controller. It keeps
   bottom-following intent across programmatic corrections and uses a visible

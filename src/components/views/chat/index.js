@@ -105,6 +105,8 @@ f('z-chat', ({ h, props }) => {
     timelineRef$: view.timelineRef$,
     active$: page.isActive$,
     settled$: () => !layout.initial$(),
+    viewportInsets$: layout.viewportInsets$,
+    readable: layout.readable,
     dividerId$: view.dividerId$,
     dismissDivider: view.dismissDivider
   })
@@ -199,8 +201,9 @@ f('z-chat', ({ h, props }) => {
             background: var(--z-chat-canvas); border-inline: 1px solid var(--z-border); z-index: -1; pointer-events: none;
           }
           /* Preserve the column's original 12px padding plus 1px border on each side. */
-          .chat-timeline { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; padding: calc(60px + env(safe-area-inset-top)) 13px 12px; }
-          .timeline-content { display: flow-root; width: 100%; max-width: calc(var(--z-mobile-width) - 26px); margin-inline: auto; }
+          .chat-timeline { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior-y: contain; display: flex; flex-direction: column; }
+          .timeline-content { display: flow-root; flex: 1 0 auto; width: calc(100% - 26px); max-width: calc(var(--z-mobile-width) - 26px); margin: calc(60px + env(safe-area-inset-top)) auto 0; padding-bottom: 12px; }
+          .chat-footer { position: sticky; bottom: 0; z-index: 2; flex: none; display: flow-root; width: 100%; max-width: var(--z-mobile-width); margin-inline: auto; }
           @media (min-width: 719px) { .chat-timeline { scrollbar-gutter: stable both-edges; } }
           .message-list { list-style: none; padding: 0; margin: 0; }
           .chat-date { width: fit-content; margin: 8px auto 16px; padding: 4px 12px; border-radius: 14px; background: var(--z-chat-overlay); color: var(--z-muted); font-size: 12rem; line-height: 1.4; }
@@ -223,8 +226,10 @@ f('z-chat', ({ h, props }) => {
             }} />
           `)}
         </ol>
-      </div></div>
+      </div>
+      <div class="chat-footer">
       ${view.nonContact$() ? h`<z-contact-invitation props=${{ person$: props.person$ }} />` : h`<z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null), readFiles: account.readFiles, references$: account.references$ }} />`}
+      </div></div>
     </main>
   `
 })

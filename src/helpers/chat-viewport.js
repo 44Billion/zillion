@@ -1,7 +1,19 @@
 // Own both bottom following and the reading anchor; native anchoring must not
 // apply a second adjustment to the same layout change.
-export function createChatViewport (timeline, { active = true, historyLoaded = false, messageCount = () => 0, initialAnchor = () => null, onInitialChange = () => {}, onScroll = () => {} } = {}) {
+export function createChatViewport (timeline, { active = true, historyLoaded = false, messageCount = () => 0, initialAnchor = () => null, onInitialChange = () => {}, onScroll = () => {}, onViewportChange = () => {} } = {}) {
   const content = timeline.querySelector('.timeline-content')
+  const footer = timeline.querySelector('.chat-footer')
+  let insets = { top: -1, bottom: -1 }
+  const measureInsets = () => ({
+    top: parseFloat(getComputedStyle(content).marginTop) || 0,
+    bottom: footer?.getBoundingClientRect().height ?? 0
+  })
+  const updateInsets = () => {
+    const next = measureInsets()
+    if (next.top === insets.top && next.bottom === insets.bottom) return
+    insets = next
+    onViewportChange(next)
+  }
   const previousPadding = content.style.paddingTop
   let following = true
   let initial = true
@@ -17,15 +29,18 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
   const previousAnchoring = timeline.style.overflowAnchor
   timeline.style.overflowAnchor = 'none'
   const gap = () => timeline.scrollHeight - timeline.scrollTop - timeline.clientHeight
-  const visible = (element, margin = 0) => {
+  const visible = (element, margin = 0, ratio = 0) => {
     const box = element.getBoundingClientRect()
     const viewport = timeline.getBoundingClientRect()
-    return box.bottom > viewport.top - margin && box.top < viewport.bottom + margin
+    const { top, bottom } = measureInsets()
+    const height = Math.max(0, Math.min(box.bottom, viewport.bottom - bottom + margin) - Math.max(box.top, viewport.top + top - margin))
+    const width = Math.max(0, Math.min(box.right, viewport.right) - Math.max(box.left, viewport.left))
+    return height > 0 && width > 0 && height * width >= box.height * box.width * ratio
   }
   const remember = () => {
     if (following) { anchor = null; return }
     const viewportTop = timeline.getBoundingClientRect().top
-    const top = viewportTop + 60
+    const top = viewportTop + measureInsets().top
     const element = [...timeline.querySelectorAll('[data-message-id]')].find(row => row.getBoundingClientRect().bottom > top)
     anchor = element ? { element, top: element.getBoundingClientRect().top - viewportTop } : null
   }
@@ -41,8 +56,8 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
     if (timeline.scrollHeight > timeline.clientHeight) {
       const scale = window.devicePixelRatio || 1
       const padding = parseFloat(getComputedStyle(content).paddingTop) || 0
-      const top = parseFloat(getComputedStyle(timeline).paddingTop) || 0
-      const end = top + content.getBoundingClientRect().height - padding
+      const { top, bottom } = measureInsets()
+      const end = top + content.getBoundingClientRect().height - padding + bottom
       const adjustment = Math.ceil(end * scale) / scale - end
       const value = `${Math.round(adjustment * 64) / 64}px`
       if (content.style.paddingTop !== value) content.style.paddingTop = value
@@ -71,7 +86,7 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
           const divider = timeline.querySelector('[data-unread-divider]')
           if (!divider) return
           following = false
-          const padding = parseFloat(getComputedStyle(timeline).paddingTop) || 0
+          const padding = measureInsets().top
           const delta = divider.getBoundingClientRect().top - timeline.getBoundingClientRect().top - padding
           if (Math.abs(delta) > 0.5) writeScroll(timeline.scrollTop + delta)
           remember()
@@ -90,6 +105,7 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
     })
   }
   const reconcile = () => {
+    updateInsets()
     if (!active) return
     // While an anchored open is waiting for its divider, never settle at the
     // bottom: the scroll position must not flash before the anchor lands.
@@ -135,15 +151,17 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
       remember()
     })
   }
-  const wheel = event => { if (event.deltaY) intent(event.deltaY < 0) }
-  const touchstart = event => { touchY = event.touches[0]?.clientY }
+  const fromFooter = event => !!event.target.closest?.('.chat-footer')
+  const wheel = event => { if (!fromFooter(event) && event.deltaY) intent(event.deltaY < 0) }
+  const touchstart = event => { touchY = fromFooter(event) ? null : event.touches[0]?.clientY }
   const touchmove = event => {
+    if (fromFooter(event)) return
     const y = event.touches[0]?.clientY
     if (touchY != null && y !== touchY) intent(y > touchY)
     touchY = y
   }
   const keydown = event => {
-    if (event.defaultPrevented) return
+    if (event.defaultPrevented || fromFooter(event)) return
     if (event.target.closest('input, textarea, video, [contenteditable="true"]')) return
     if (['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
       intent(['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey))
@@ -164,8 +182,9 @@ export function createChatViewport (timeline, { active = true, historyLoaded = f
   const resize = new ResizeObserver(reconcile)
   resize.observe(timeline)
   resize.observe(content)
+  if (footer) resize.observe(footer)
   const mutations = new MutationObserver(() => { revision++; checkInitial() })
-  mutations.observe(timeline, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-chat-prepared'] })
+  mutations.observe(content, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-chat-prepared'] })
   const listeners = { scroll, wheel, touchstart, touchmove, keydown, pointerdown }
   for (const [name, listener] of Object.entries(listeners)) timeline.addEventListener(name, listener, { passive: true })
   window.addEventListener('pointerup', pointerup)

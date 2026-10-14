@@ -274,7 +274,12 @@ Scroll containers span the app viewport while home, contacts, profiles and chat
 content stay centered in the 718px column. On desktop, native scrollbars sit at
 the right edge and wheel/touch gestures in the side margins scroll the same
 retained container. Symmetric scrollbar gutters keep the column centered.
-Chat messages retain their own timeline; the composer remains outside it.
+Chat's timeline spans the full height, including the native scrollbar. Its
+centered composer (or contact invitation) stays at the bottom with CSS sticky
+positioning and reserves its own dynamic height in the content flow. Read dwell
+excludes the floating header and sticky footer, rechecking visibility before
+advancing the read anchor. Composer growth preserves bottom following or the
+current reading anchor; returning through history retains the timeline and draft.
 No JavaScript forwards gestures or synchronizes an additional scrollbar.
 
 At widths up to 718px, forward navigation slides the incoming page from the
