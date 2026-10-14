@@ -280,6 +280,9 @@ positioning and reserves its own dynamic height in the content flow. Read dwell
 excludes the floating header and sticky footer, rechecking visibility before
 advancing the read anchor. Composer growth preserves bottom following or the
 current reading anchor; returning through history retains the timeline and draft.
+The composer's background fades messages underneath over its first 32px,
+retaining 24% visibility below that transition. The effect follows its dynamic
+height in CSS; controls and the reply preview keep opaque themed surfaces.
 No JavaScript forwards gestures or synchronizes an additional scrollbar.
 
 At widths up to 718px, forward navigation slides the incoming page from the

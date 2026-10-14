@@ -59,9 +59,12 @@ test('full-height chat scroll keeps a growing composer sticky and excludes cover
 
     for (const width of [1024, 320]) {
       await browser.send('Emulation.setDeviceMetricsOverride', { width, height: 780, deviceScaleFactor: 1, mobile: width === 320 }, session)
+      await wait(200)
       await input('')
-      await evaluate('chatTimeline.scrollTop=chatTimeline.scrollHeight')
+      await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+      await evaluate('chatTimeline.dispatchEvent(new WheelEvent("wheel",{deltaY:1,bubbles:true})); chatTimeline.scrollTop=chatTimeline.scrollHeight')
       await browser.until(async () => Math.abs((await geometry()).gap) <= 2, 'bottom followed')
+      await wait(150)
       const before = await geometry()
       assert.equal(before.timeline.height, before.screen.height)
       assert.ok(Math.abs(before.footer.bottom - before.timeline.bottom) <= 1)
@@ -70,7 +73,9 @@ test('full-height chat scroll keeps a growing composer sticky and excludes cover
       await browser.until(async () => (await geometry()).footer.height > before.footer.height + 50, 'composer grew')
       await evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
       const grown = await geometry()
-      assert.equal(grown.timeline.height, before.timeline.height)
+      // The launcher can resize its iframe while desktop/mobile chrome settles.
+      // The scrollport must always span the current visible chat screen.
+      assert.equal(grown.timeline.height, grown.screen.height)
       assert.ok(Math.abs(grown.footer.bottom - grown.timeline.bottom) <= 1)
       assert.ok(grown.target.bottom <= grown.footer.top + 1, `last message stays above expanded composer at bottom: ${JSON.stringify({ width, before, grown })}`)
       assert.ok(Math.abs(grown.gap) <= 2)

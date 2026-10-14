@@ -331,6 +331,14 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Hold the textarea field's current minimum height only during its zero-height
   measurement, restoring it immediately, so remeasurement cannot transiently
   shrink the scroll extent and clamp the timeline before observers reconcile.
+  The composer background uses a theme-derived alpha gradient over its first
+  32px, ending at 76% coverage (24% underlying visibility). Keep the gradient
+  on the sticky composer, not a mask/opacity on the timeline or its descendants;
+  CSS follows changes in height without new measurement or scroll handlers.
+  Retain the solid-background fallback for browsers without color-mix. The
+  reply summary has an opaque surface, border, padding and primary text color;
+  preserve its two-line preview, thumbnail and cancel control. Messages behind
+  the translucent composer remain excluded from incoming read dwell.
   Chat/viewer outer route scrollers have no gutter or second user scrollbar.
   Side-margin wheel/touch scrolling is native; do not add gesture forwarding or
   replace the retained scroll elements. Cached pages keep their layout boxes and DOM

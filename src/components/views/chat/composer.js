@@ -207,11 +207,26 @@ f('z-chat-composer', ({ h, props }) => {
         z-chat-composer .chat-composer {
           width: 100%; max-width: var(--z-mobile-width); margin-inline: auto; border-inline: 1px solid var(--z-border);
           --attachment-tile-gap: 6px; --attachment-tile-radius: 8px;
+          --composer-fade-depth: 32px;
           display: flex; flex-wrap: wrap; align-items: end; gap: 8px;
           padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
-          background: var(--z-chat-canvas); flex: none;
+          background: var(--z-chat-canvas);
+          /* Retain 24% of the underlying messages after the fade. Controls
+             keep their own opaque surfaces; the fade follows this sticky box. */
+          background: linear-gradient(to bottom,
+            transparent 0,
+            color-mix(in srgb, var(--z-chat-canvas) 6.5%, transparent) calc(var(--composer-fade-depth) * .2),
+            color-mix(in srgb, var(--z-chat-canvas) 25.4%, transparent) calc(var(--composer-fade-depth) * .4),
+            color-mix(in srgb, var(--z-chat-canvas) 50.7%, transparent) calc(var(--composer-fade-depth) * .6),
+            color-mix(in srgb, var(--z-chat-canvas) 69.5%, transparent) calc(var(--composer-fade-depth) * .8),
+            color-mix(in srgb, var(--z-chat-canvas) 76%, transparent) var(--composer-fade-depth));
+          flex: none;
           .composer-reply { flex: 0 0 100%; min-width: 0; display: flex; align-items: center; gap: 8px; color: var(--z-muted); font-size: 14rem; }
-          .reply-summary { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
+          .reply-summary {
+            flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px;
+            padding: 8px 10px; border: 1px solid var(--z-border); border-radius: 12px;
+            background: var(--z-surface); color: var(--z-text);
+          }
           .reply-summary.has-thumbnail { align-items: start; }
           .reply-text { flex: 1; min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: normal; line-height: 22px; max-height: 44px; }
           .reply-thumbnail { display: block; flex: none; width: 44px; height: 44px; border-radius: 6px; object-fit: cover; background: var(--z-control); }
