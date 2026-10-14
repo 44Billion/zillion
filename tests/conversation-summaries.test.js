@@ -25,7 +25,7 @@ const matches = (event, filter) => (!filter.kinds || filter.kinds.includes(event
   Object.entries(filter).every(([key, values]) => !key.startsWith('#') || event.tags.some(tag => tag[0] === key.slice(1) && values.includes(tag[1])))
 const until = async predicate => { for (let n = 0; n < 100; n++) { if (predicate()) return; await new Promise(resolve => setTimeout(resolve, 2)) }; assert.fail('condition not reached') }
 
-function fixture (t, initial = []) {
+function fixture (t, initial = [], options = {}) {
   const events = new Map(initial.map(event => [event.id, event]))
   const streams = new Set()
   const records = new Map()
@@ -57,6 +57,7 @@ function fixture (t, initial = []) {
   const signer = { obfuscate: async value => value, nip44v3: { decrypt: (...args) => decrypt(...args) } }
   const summaries = createConversationSummaries({
     pubkey: owner, eventStore, signer,
+    ...options,
     onChange: (peer, record) => { updates.push({ peer, record }); if (record) records.set(peer, record); else records.delete(peer) },
     onError: error => errors.push(error)
   })
@@ -135,7 +136,7 @@ test('read failures can recover, and late metadata cannot replace a newer previe
   held.resolve()
   await recover
   await until(() => f.records.get(peer).event?.content === 'Newer text')
-  assert.ok(!f.updates.some(update => update.record?.event?.id === getEventHash(original)), 'stale work never becomes a visible preview')
+  assert.ok(!f.updates.some(update => update.record?.event?.id === getEventHash(original) && update.record.state === 'loaded'), 'stale metadata never completes or replaces the newer preview')
   f.summaries.close()
   assert.equal(f.streams.size, 0)
 })
@@ -329,4 +330,150 @@ test('cancelled setup cannot leak a subscription or clear the resumed start', as
   assert.equal(await resumed, true)
   assert.equal(f.subscriptions.length, 2, 'only resumed deletion/history subscriptions exist')
   assert.deepEqual(f.errors, [])
+})
+
+test('the authoritative message is published before slow reference metadata', async t => {
+  const attachment = file(peer, 'A caption')
+  const message = inner(chatReferenceUri(identified(attachment)), 100, peer)
+  const f = fixture(t, [copy(message, peer), copy(attachment, peer)])
+  const gate = Promise.withResolvers()
+  t.after(() => gate.resolve())
+  f.decrypt(async (_, kind, scope, content) => { if (kind === 1063) await gate.promise; return base64ToBytes(content).buffer })
+  const reading = f.summaries.setPeers([peer])
+  await until(() => f.records.get(peer)?.messageReady)
+  assert.equal(f.records.get(peer).state, 'loading')
+  assert.equal(f.records.get(peer).verified, true)
+  assert.equal(conversationPreview(f.records.get(peer).event, f.records.get(peer).references), 'File')
+  gate.resolve(); await reading
+  assert.equal(conversationPreview(f.records.get(peer).event, f.records.get(peer).references), 'A caption')
+})
+
+test('a warm projection restores once, validates source copies and avoids repeated message/reference decryption', async t => {
+  let stored = []
+  const cache = { read: async () => stored, write: async value => { stored = value }, close: async () => {} }
+  const attachment = file(peer, 'Cached caption')
+  const message = inner(chatReferenceUri(identified(attachment)), 100, peer)
+  const initial = [copy(message, peer), copy(attachment, peer)]
+  const first = fixture(t, initial, { cache })
+  await first.summaries.setPeers([peer]); await first.summaries.flush()
+  assert.equal(stored.length, 1)
+  const restored = []
+  const second = fixture(t, initial, { cache, onRestore: values => restored.push(values) })
+  await second.summaries.setPeers([peer])
+  assert.equal(restored.length, 1)
+  assert.equal(restored[0][peer].verified, false)
+  assert.equal(second.records.get(peer).verified, true)
+  assert.equal(conversationPreview(second.records.get(peer).event, second.records.get(peer).references), 'Cached caption')
+  assert.deepEqual(second.decrypted, [], 'existing copies and references reuse their admitted plaintext')
+  assert.ok(second.queries.some(filter => filter.ids_only), 'cache adoption still checks authoritative existence')
+})
+
+test('deleted cached copies cannot seed a foreground bubble; remaining history replaces the projection', async t => {
+  const latest = inner('Deleted cached message', 100, peer)
+  const older = inner('Still present', 50, peer)
+  const snapshot = { peer, context: `dm:${peer}`, event: identified(latest), copies: [{ id: copy(latest, peer).id, created_at: 100 }], references: {}, sources: {} }
+  const cache = { read: async () => [snapshot], write: async () => {}, close: async () => {} }
+  const f = fixture(t, [copy(older, peer)], { cache })
+  const gate = Promise.withResolvers()
+  const query = f.eventStore.query
+  f.eventStore.query = async filter => { if (filter.ids_only) await gate.promise; return query(filter) }
+  t.after(() => gate.resolve())
+  const reading = f.summaries.setPeers([peer])
+  await until(() => f.records.get(peer)?.state === 'cached')
+  let messages = []
+  const chat = createChat({ pubkey: owner, peer, eventStore: f.eventStore, signer: { ...f.signer, obfuscate: async value => { await gate.promise; return value } }, onMessages: value => { messages = value }, onError: error => f.errors.push(error) })
+  t.after(() => chat.close())
+  const starting = chat.start(f.records.get(peer))
+  assert.deepEqual(messages, [], 'an unverified persistent cache is presentation only')
+  gate.resolve(); await reading; await starting
+  assert.equal(f.records.get(peer).event.content, 'Still present')
+  assert.deepEqual(messages.map(event => event.content), ['Still present'])
+})
+
+test('cache failures and late snapshots cannot delay or overwrite fresh summaries', async t => {
+  const latest = inner('Fresh source', 200, peer)
+  const cache = { read: async () => { throw new Error('cache denied') }, write: async () => { throw new Error('quota') }, close: async () => {} }
+  const f = fixture(t, [copy(latest, peer)], { cache })
+  await f.summaries.setPeers([peer]); await f.summaries.flush()
+  assert.equal(f.records.get(peer).event.content, 'Fresh source')
+  assert.equal(f.errors.length, 2)
+  const gate = Promise.withResolvers()
+  const second = fixture(t, [copy(latest, peer)], { cache: { ...cache, read: () => gate.promise, write: async () => {} } })
+  await second.summaries.setPeers([peer])
+  gate.resolve([{ peer, context: `dm:${peer}`, event: identified(inner('Stale snapshot', 100, peer)), copies: [{ id: 'f'.repeat(64), created_at: 100 }], references: {}, sources: {} }])
+  await new Promise(resolve => setImmediate(resolve))
+  assert.equal(second.records.get(peer).event.content, 'Fresh source')
+})
+
+test('missing cached reference copies drop old captions without discarding the still-present message', async t => {
+  const attachment = file(peer, 'Removed caption')
+  const message = inner(chatReferenceUri(identified(attachment)), 100, peer)
+  const referenceId = getEventHash(attachment)
+  const snapshot = {
+    peer, context: `dm:${peer}`, event: identified(message), copies: [{ id: copy(message, peer).id, created_at: 100 }],
+    references: { [referenceId]: identified(attachment) }, sources: { [referenceId]: { personal: true, ids: [copy(attachment, peer).id] } }
+  }
+  const cache = { read: async () => [snapshot], write: async () => {}, close: async () => {} }
+  const f = fixture(t, [copy(message, peer)], { cache })
+  await f.summaries.setPeers([peer])
+  assert.equal(f.records.get(peer).event.id, getEventHash(message))
+  assert.deepEqual(f.records.get(peer).references, {})
+  assert.equal(conversationPreview(f.records.get(peer).event, f.records.get(peer).references), 'File')
+  assert.deepEqual(f.decrypted, [])
+})
+
+test('new source messages supersede an existing cached preview while decrypting only the new message', async t => {
+  const cached = inner('Cached old message', 100, peer)
+  const latest = inner('New source message', 200, peer)
+  const cache = { read: async () => [{ peer, context: `dm:${peer}`, event: identified(cached), copies: [{ id: copy(cached, peer).id, created_at: 100 }], references: {}, sources: {} }], write: async () => {}, close: async () => {} }
+  const f = fixture(t, [copy(cached, peer), copy(latest, peer)], { cache })
+  await f.summaries.setPeers([peer])
+  assert.equal(f.records.get(peer).event.content, 'New source message')
+  assert.deepEqual(f.decrypted, [9])
+})
+
+test('closing an account fences a pending persistent-cache restore', async t => {
+  const gate = Promise.withResolvers()
+  const restored = []
+  const f = fixture(t, [], { cache: { read: () => gate.promise, write: async () => {}, close: async () => {} }, onRestore: values => restored.push(values) })
+  const reading = f.summaries.setPeers([peer])
+  await f.summaries.close()
+  const cached = inner('Old account message', 100, peer)
+  gate.resolve([{ peer, context: `dm:${peer}`, event: identified(cached), copies: [{ id: copy(cached, peer).id, created_at: 100 }], references: {}, sources: {} }])
+  await reading
+  assert.deepEqual(restored, [])
+  assert.equal(f.streams.size, 0)
+})
+
+test('an empty cold account does not encrypt or create a useless snapshot', async t => {
+  let writes = 0
+  const cache = { read: async () => [], write: async () => { writes++ }, close: async () => {} }
+  const f = fixture(t, [], { cache })
+  await f.summaries.setPeers([peer]); await f.summaries.flush()
+  assert.equal(writes, 0)
+})
+
+test('a late cache restore validates independently of held initial-summary delivery', async t => {
+  const cached = inner('Late cached message', 100, peer)
+  const local = copy(cached, peer)
+  const cacheGate = Promise.withResolvers()
+  const sourceGate = Promise.withResolvers()
+  t.after(() => { cacheGate.resolve([]); sourceGate.resolve() })
+  const f = fixture(t, [local], { cache: { read: () => cacheGate.promise, write: async () => {}, close: async () => {} } })
+  const subscribe = f.eventStore.subscribe
+  f.eventStore.subscribe = (filter, options) => {
+    const stream = subscribe(filter, options)
+    if (!options?.initial) return stream
+    return { [Symbol.asyncIterator] () { return this }, async next () { await sourceGate.promise; return stream.next() }, return: () => stream.return() }
+  }
+  const reading = f.summaries.setPeers([peer])
+  await new Promise(resolve => setTimeout(resolve, 270))
+  cacheGate.resolve([{ peer, context: `dm:${peer}`, event: identified(cached), copies: [{ id: local.id, created_at: 100 }], references: {}, sources: {} }])
+  await until(() => f.records.get(peer)?.verified === true)
+  assert.equal(f.records.get(peer).state, 'cached')
+  assert.equal(f.records.get(peer).messageReady, false)
+  assert.deepEqual(f.decrypted, [], 'the late snapshot becomes eligible without its ordinary read')
+  sourceGate.resolve(); await reading
+  assert.equal(f.records.get(peer).state, 'loaded')
+  assert.deepEqual(f.decrypted, [])
 })

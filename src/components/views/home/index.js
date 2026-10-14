@@ -1,4 +1,5 @@
-import { compareChatMessages, conversationPreview } from '#helpers/conversation-preview.js'
+import { latestConversationMessage, conversationPreview } from '#helpers/conversation-preview.js'
+import { orderHomeConversations } from '#services/conversation-order.js'
 import { t } from '#i18n/messages.js'
 import { i18n } from '#i18n/index.js'
 import { f, useStore } from '#f'
@@ -29,13 +30,12 @@ f('z-home', ({ h }) => {
     conversations$ () {
       const self = account.person$()
       const rows = demoEnabled ? data.conversations : [{ id: 'user', contactId: 'user', unread: 0 }, ...account.people$().filter(person => person.saved).map(person => ({ id: person.id, contactId: person.id, unread: 0 }))]
-      return rows.flatMap(conversation => {
+      const conversations = rows.flatMap(conversation => {
         const person = account.personFor(conversation.contactId)
         if (demoEnabled && !person.self) return [{ ...conversation, contact: person }]
         const summary = account.summaries$()[person.pubkey]
         const chat = person.self ? { messages: account.messages$(), references: account.references$() } : account.conversations$()[person.pubkey]
-        const local = chat?.messages?.at(-1)
-        const latest = local && (!summary?.event || compareChatMessages(local, summary.event) > 0) ? local : summary?.event
+        const latest = latestConversationMessage(summary, chat?.messages)
         if (!latest && !person.self) return []
         const date = latest ? new Date(latest.created_at * 1000) : null
         return [{
@@ -45,7 +45,8 @@ f('z-home', ({ h }) => {
           lastMessageAt: date?.toISOString() ?? '',
           timeLabel: date?.toLocaleTimeString(i18n.getLocale(), { hour: '2-digit', minute: '2-digit' }) ?? ''
         }]
-      }).toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
+      })
+      return orderHomeConversations(conversations, demoEnabled ? { live: true } : account.conversationOrder$())
     }
   }))
   useHeaderCollapse(view)

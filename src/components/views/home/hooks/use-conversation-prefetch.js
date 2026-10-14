@@ -13,9 +13,7 @@ export function useConversationPrefetch (account, view) {
       const signer = account.signerState$()
       if (demoEnabled || !page.isActive$() || !account.ready$() || !isAccountAvailable(signer) || account.contactsState$() !== 'loaded') return ''
       const summaries = account.summaries$()
-      const peers = [account.pubkey$(), ...account.contacts$().map(contact => contact.pubkey)]
-      if (!peers.every(peer => summaries[peer]?.state === 'loaded')) return ''
-      return view.conversations$().filter(row => row.real && row.lastMessageAt).map(row => row.contact.pubkey).join(',')
+      return view.conversations$().filter(row => row.real && row.lastMessageAt && summaries[row.contact.pubkey]?.verified !== false).map(row => row.contact.pubkey).join(',')
     }
   })
   useTask(({ track, cleanup }) => {

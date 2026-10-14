@@ -130,7 +130,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       // The root-owned summary has already admitted/decrypted these copies.
       // Reuse its bubble and metadata immediately, then let history revalidate
       // the wrapper IDs before marking the initial page complete.
-      if (snapshot?.event && snapshot.copies?.length) {
+      if (snapshot?.event && snapshot.copies?.length && snapshot.verified !== false) {
         const event = snapshot.event
         for (const copy of snapshot.copies) retained.set(copy.id, { innerId: event.id, created_at: copy.created_at })
         references.seed(Object.values(snapshot.references || {}))

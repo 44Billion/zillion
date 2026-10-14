@@ -5,6 +5,11 @@ import { compactWhitespace } from 'libp2r2p/nip27'
 // Same order as the chat: newest timestamp, then lowest inner event ID.
 export const compareChatMessages = (a, b) => a.created_at - b.created_at || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0)
 
+export function latestConversationMessage (summary, messages = []) {
+  const local = messages.at(-1)
+  return local && (!summary?.event || compareChatMessages(local, summary.event) > 0) ? local : summary?.event
+}
+
 // First loaded message newer than the read anchor; null when everything shown
 // is already read, which is when the unread divider disappears.
 export function firstUnreadMessageId (messages, anchor) {

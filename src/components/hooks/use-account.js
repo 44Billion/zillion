@@ -17,13 +17,15 @@ import avatarCache from '#services/avatar-cache.js'
 import { createAvatars, attachAvatars } from '#services/avatars.js'
 import { hasContentKeyMethods, isAccountAvailable } from '#helpers/account-availability.js'
 import { dynamicContentKeySigner } from '#services/messenger-signer.js'
+import { createConversationOrder } from '#services/conversation-order.js'
+import { latestConversationMessage } from '#helpers/conversation-preview.js'
 
 export function useAccount () {
   return useGlobalStore('zillion-account', () => ({
     pubkey$: null, profile$: null, messages$: [], error$: null, ready$: false, historyLoaded$: false, historyState$: 'loading',
     retry$: 0, older$: { loading: false, error: null, hasOlder: false }, newer$: { loading: false, error: null, hasNewer: false },
     // Inner events resolved from kind-9 references, keyed by event id.
-    outbox$: [], references$: {}, directory$: {}, avatarStates$: {}, contacts$: [], contactsOwner$: null, selfPinned$: false, contactOrder$: { ids: [], alphabetical: false }, contactsState$: 'loading', conversations$: {}, summaries$: {}, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
+    outbox$: [], references$: {}, directory$: {}, avatarStates$: {}, contacts$: [], contactsOwner$: null, selfPinned$: false, contactOrder$: { ids: [], alphabetical: false }, contactsState$: 'loading', conversations$: {}, summaries$: {}, conversationOrder$: { ids: [], live: false }, readAnchors$: {}, unread$: {}, signerState$: null, recovery$: 0,
     people$ () {
       return [...this.contacts$().map(contact => this.personFor(contact.pubkey)), ...demoPeople]
     },
@@ -59,6 +61,7 @@ export function useInitAccount () {
   useInitProfiles(account)
   useInitPrivateChats(account, queue)
   useInitConversationSummaries(account)
+  useInitConversationOrder(account)
   useInitReadState(account)
   const runtime = useMemo(() => ({ chat: null, opened: false }))
   useInitConversationPrefetch(account, queue, runtime)
@@ -150,6 +153,7 @@ function useInitConversationSummaries (account) {
     if (!owner) return
     const summaries = createConversationSummaries({
       pubkey: owner, signer: window.nostr, eventStore: window.napp.eventStore,
+      onRestore: records => account.summaries$(previous => ({ ...previous, ...records })),
       onChange: (peer, summary) => account.summaries$(previous => {
         const next = { ...previous }
         if (summary) next[peer] = summary
@@ -160,16 +164,45 @@ function useInitConversationSummaries (account) {
     })
     runtime.summaries = summaries
     runtime.recovery = -1
-    cleanup(() => { summaries.close(); runtime.summaries = null; account.summaries$({}) })
+    const flush = () => summaries.flush().catch(error => console.warn('Could not cache conversation previews', error))
+    const hidden = () => { if (document.hidden) flush() }
+    window.addEventListener('pagehide', flush)
+    document.addEventListener('visibilitychange', hidden)
+    cleanup(() => {
+      window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', hidden)
+      summaries.close().catch(error => console.warn('Could not close conversation previews', error))
+      runtime.summaries = null; account.summaries$({})
+    })
   })
   useTask(({ track }) => {
-    const [owner, ready, contacts, recovery] = track(() => [account.pubkey$(), account.ready$(), account.contacts$(), account.recovery$()])
-    if (!owner || !ready || !runtime.summaries) return
+    const [owner, ready, contactsOwner, contacts, state, signer, recovery] = track(() => [account.pubkey$(), account.ready$(), account.contactsOwner$(), account.contacts$(), account.contactsState$(), account.signerState$(), account.recovery$()])
+    if (!owner || !ready || !runtime.summaries || contactsOwner !== owner || state !== 'loaded' || !isAccountAvailable(signer)) return
     if (runtime.recovery !== recovery) {
       if (runtime.recovery >= 0) runtime.summaries.recover().catch(() => {})
       runtime.recovery = recovery
     }
     runtime.summaries.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
+  })
+}
+
+function useInitConversationOrder (account) {
+  const runtime = useMemo(() => ({ order: null }))
+  useTask(({ track, cleanup }) => {
+    const owner = track(() => account.pubkey$())
+    if (!owner) return
+    const order = createConversationOrder({ onChange: account.conversationOrder$ })
+    runtime.order = order
+    cleanup(() => { order.close(); runtime.order = null; account.conversationOrder$({ ids: [], live: false }) })
+  })
+  useTask(({ track }) => {
+    const [owner, contactsOwner, state, contacts, summaries, conversations, self] = track(() => [account.pubkey$(), account.contactsOwner$(), account.contactsState$(), account.contacts$(), account.summaries$(), account.conversations$(), account.messages$()])
+    if (!owner || contactsOwner !== owner || state !== 'loaded') return
+    const peers = [owner, ...contacts.map(contact => contact.pubkey)]
+    const rows = peers.map(peer => {
+      const event = latestConversationMessage(summaries[peer], peer === owner ? self : conversations[peer]?.messages)
+      return { contact: { pubkey: peer }, lastMessageAt: event ? new Date(event.created_at * 1000).toISOString() : '' }
+    }).filter(row => row.lastMessageAt || row.contact.pubkey === owner).toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
+    runtime.order?.reconcile(rows, peers, summaries)
   })
 }
 
@@ -220,7 +253,7 @@ function useInitReadState (account) {
     const peers = new Set(contacts.map(contact => contact.pubkey).filter(peer => peer !== owner))
     for (const peer of peers) {
       const summary = summaries[peer]?.event
-      if (!summary) continue
+      if (!summary || summaries[peer].verified === false) continue
       const local = conversations[peer]?.messages?.at(-1)
       const anchor = anchors[peer] ?? null
       const key = `${anchor ? `${anchor.id}:${anchor.created_at}` : ''}|${summary.id ?? ''}|${local?.id ?? ''}`

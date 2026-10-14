@@ -679,6 +679,35 @@ needed; empty folders mark the initial structure.
   copy reader. Captions and filenames need metadata only; do not fetch previews,
   file chunks, media originals or external references for the list. Known chat
   pointers use a translated fallback while unavailable, never a raw nevent label.
+  Publish the admitted message/copies and `messageReady` before references finish;
+  only enrichment completion sets `state: loaded`. Old reference work cannot
+  complete a newer revision. Keep pending/failed outbox state independent.
+- `conversation-summary-cache.js` owns one disposable encrypted snapshot per
+  owner in `zillion:conversation-summaries:v1:<owner>:idb-queue`, using the
+  existing injected NIP-44 v3 signer with kind 9 and that versioned scope.
+  Store only `{ id: 'snapshot', ciphertext }`, with a 2 MiB serialized queue
+  budget. Bound plaintext to 1 MiB/128 newest summaries, 32 source copies and
+  32 references per entry; skip oversized entries. Preserve complete inner
+  messages, required metadata, obfuscated contexts and exact source IDs inside
+  ciphertext. Never persist plaintext private previews or replace eventStore.
+  Coalesce writes for 250ms; hidden/pagehide/root teardown request a flush.
+  Cache failure never fails authoritative history; late reads cannot update a
+  closed account, and teardown finishes its own scoped flush before queue close.
+  Root recovery restores only after matching loaded
+  contact membership and allowed, unlocked account availability.
+- Restore the encrypted projection in one atomic account-store update, with a
+  250ms maximum bootstrap wait and late-result fencing. Cached display remains
+  `verified: false` until exact IDs are checked in the account/context store.
+  Validate reference source IDs as well, dropping missing metadata. Only verified
+  messages can seed foreground bubbles/prefetch; reuse admitted ciphertext IDs
+  to avoid repeat decryption. `chat-references.js` tracks private/public source
+  IDs for this projection. Loaded source messages supersede late cache results.
+- `conversation-order.js` owns a single account startup cohort and stable row
+  ledger, seeded from restored rows ordered by latest timestamp. Keep empty
+  self last while other previews arrive. Release the freeze on initial message
+  readiness (not reference completion), removals/errors or an absolute three-
+  second deadline. New contacts and retained routes cannot restart the cohort.
+  This order policy never gates eligible visible history work.
 - A shared local kind-5/1063 subscription invalidates the affected context, then
   rereads authoritative storage; do not execute deletion claims in presentation.
   New/live kind-9 messages update unopened chats; older backfills cannot replace
@@ -695,8 +724,11 @@ needed; empty folders mark the initial structure.
   overwrite pending/failed outbox state, duplicate bubbles, or mark history ready.
   Later starts/recovery never reapply a stale summary. Reference-cache seeding
   respects deletions and cannot be overwritten by an older pending lookup.
-- `use-conversation-prefetch.js` waits for contacts and all last-message snapshots
-  to settle, then measures visible home rows after 250 ms without scrolling.
+- `use-conversation-prefetch.js` waits for confirmed contacts/account availability,
+  then measures independently eligible, source-validated visible home rows after
+  250 ms without scrolling. Pending/failed/empty offscreen summaries cannot block
+  ready rows; do not mislabel provisional cached summaries as loaded to bypass
+  eligibility. Stable order and preview readiness have separate lifecycles.
   Intersect the route scroller/window with the actual sticky header/divider;
   partly visible rows qualify, covered rows do not. Remeasure on ordered peer
   changes, resize and visibility return. Inactive retained routes and hidden tabs
@@ -747,6 +779,11 @@ needed; empty folders mark the initial structure.
   Opening completed prefetch must not restart history; opening held prefetch
   shares its subscription and keeps the latest bubble's DOM node as the earlier
   messages arrive before EOSE. Visiting a chat must not repair its row.
+  Its warm reload holds all source-summary delivery and verifies first-frame
+  cached ordering/captions, independent visible prefetch and verified bubble
+  handoff through the real cache, signer and event-store APIs. Logic/cache tests
+  cover ciphertext-only persistence, size/owner limits, early previews, missing
+  sources, late/failed cache work, finite startup order and retained history.
 
 ## Real self chat
 

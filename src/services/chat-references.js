@@ -64,6 +64,7 @@ export function createChatReferences ({
   workers = work => work()
 }) {
   const cache = new Map()
+  const sources = new Map()
   const pending = new Map()
   // References that resolved to nothing. They are retried when new messages
   // arrive, because a personal copy may land after the one that references it.
@@ -82,30 +83,35 @@ export function createChatReferences ({
     return rememberPrivateMediaEvent(event, context.startsWith('dm:') && context.slice(3) !== pubkey ? context.slice(3) : null)
   }
 
-  async function load (id) {
+  async function load (id, version) {
+    const rememberSource = source => { if (version === generation && !removed.has(id) && !sources.has(id)) sources.set(id, source) }
     const mirror = await signer.obfuscate(id, String(PERSONAL_COPY), '.id')
     const { results: copies = [] } = await eventStore.query({
       kinds: [PERSONAL_COPY], authors: [pubkey], '#o': [mirror], '#c': [await encodedContext()], '#v': ['0', '1', '2'], limit: 3
     })
     for (const wrapper of copies.toSorted((a, b) => Number(a.tags.find(tag => tag[0] === 'v')?.[1]) - Number(b.tags.find(tag => tag[0] === 'v')?.[1]))) {
       const event = await readWrapper(wrapper)
-      if (event?.id === id) return event
+      if (event?.id === id) { rememberSource({ personal: true, ids: [wrapper.id] }); return event }
     }
     const { results: publicEvents = [] } = await eventStore.query({ ids: [id], limit: 1 })
-    return publicEvents.find(event => event?.id === id) ?? null
+    const event = publicEvents.find(event => event?.id === id) ?? null
+    if (event) rememberSource({ personal: false, ids: [event.id] })
+    return event
   }
 
   return {
     // Pending outbox events by inner id; messages read them before the store.
     locals,
     peek: id => locals.get(id) || cache.get(id),
+    source: id => sources.get(id),
     // Already admitted metadata from the conversation-list reader shares the
     // normal cache, including its deletion and recovery lifecycle.
-    seed (events) {
+    seed (events, origins = {}) {
       for (const event of events) {
         if (removed.has(event.id) || locals.has(event.id) || cache.get(event.id)) continue
         misses.delete(event.id)
         cache.set(event.id, event)
+        if (origins[event.id]) sources.set(event.id, origins[event.id])
         onResolved(event.id, event)
       }
     },
@@ -120,6 +126,7 @@ export function createChatReferences ({
         removed.add(id)
         locals.delete(id)
         cache.delete(id)
+        sources.delete(id)
         misses.delete(id)
         onResolved(id, null)
       }
@@ -127,6 +134,7 @@ export function createChatReferences ({
     clear () {
       generation++
       cache.clear()
+      sources.clear()
       pending.clear()
       misses.clear()
       locals.clear()
@@ -163,7 +171,7 @@ export function createChatReferences ({
       if (cache.has(id)) return cache.get(id)
       if (!pending.has(id)) {
         const version = generation
-        pending.set(id, workers(async () => version === generation ? load(id) : null)
+        pending.set(id, workers(async () => version === generation ? load(id, version) : null)
           .then(event => {
             if (version !== generation || removed.has(id)) return null
             // A summary can fill the cache while this older read is pending.

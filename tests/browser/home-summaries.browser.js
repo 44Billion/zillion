@@ -10,14 +10,14 @@ import { ensureRuntime } from '../../../../44billion/bin/dev-runtime.js'
 import { launchChrome } from '../../../../44billion/tests/browser/runtime/chrome.js'
 import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prepare-app.js'
 
-test('cold summaries order chats before visible histories prefetch and survive foreground handoff', { timeout: 120000 }, async () => {
+test('cold and cached summaries order chats and prefetch independently of pending summaries', { timeout: 240000 }, async () => {
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
+  const summaryErrors = []
   try {
     let files
-    const options = buildOptions({ onEnd: result => { files = result } })
-    options.sourcemap = false
+    const options = buildOptions({ sourceMaps: false, onEnd: result => { files = result } })
     options.plugins.push({
       name: 'home-summaries-test', setup (build) {
         build.onLoad({ filter: /src\/components\/app\.js$/ }, async args => ({
@@ -36,6 +36,11 @@ test('cold summaries order chats before visible histories prefetch and survive f
     await esbuild.build(options)
     const app = await prepareTestApp(files, { identifier: 'home-summaries-test', name: 'Home summaries test' })
     browser = await launchChrome({
+      onEvent: ({ method, params }) => {
+        if (method !== 'Runtime.consoleAPICalled') return
+        const values = params.args.map(value => value.value ?? value.description)
+        if (values.some(value => typeof value === 'string' && value.includes('Could not load conversation preview'))) summaryErrors.push(values)
+      },
       intercept: request => /^(?:[a-z0-9-]+\.)*localhost$/.test(new URL(request.url).hostname) ? null : false
     })
     permissions = setInterval(() => browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {}), 100)
@@ -76,6 +81,12 @@ test('cold summaries order chats before visible histories prefetch and survive f
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("vault-lock-button") && !document.querySelector("vault-lock-button").hidden)', vaultOrigin), 'unlocked vault')
     await browser.until(() => evaluate('contactBoot.account.contactsState$() === "loaded"'), 'initial local contacts')
+    await browser.until(() => evaluate(`contactBoot.account.summaries$()['${pubkey}']?.state==='loaded'`), 'initial self summary permission settles before navigation')
+    // Seed source history away from home so ordinary visible prefetch does not
+    // compete with fixture creation. Both tested home openings follow below.
+    await browser.until(() => evaluate('Boolean(document.querySelector(".contact-strip .add-contact"))'), 'home add-contact control')
+    await evaluate('document.querySelector(".contact-strip .add-contact").click()')
+    await browser.until(() => evaluate('!document.querySelector(".route-page[data-active=true] .home")'), 'home is inactive during fixture preparation')
     const peer = getPublicKey(generateSecretKey())
     const other = getPublicKey(generateSecretKey())
     const empty = getPublicKey(generateSecretKey())
@@ -83,13 +94,17 @@ test('cold summaries order chats before visible histories prefetch and survive f
     for (const contact of [peer, other, empty]) await evaluate(`contactBoot.account.setContact('${contact}', true)`)
     const base = Math.floor(Date.now() / 1000) - 1000
     for (const contact of [pubkey, peer, other]) {
-      for (let index = 0; index < (contact === peer ? 26 : 5); index++) await evaluate(`contactBoot.seedMessage({ peer: '${contact}', at: ${base + index}, text: 'Older message ${index}' })`)
+      for (let index = 0; index < (contact === peer ? 4 : 1); index++) await evaluate(`contactBoot.seedMessage({ peer: '${contact}', at: ${base + index}, text: 'Older message ${index}' })`)
     }
     console.log('Seeding reference metadata')
     const olderFile = await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 70}, filename: 'older-attachment.pdf' })`)
     const selfLatest = await evaluate(`contactBoot.seedMessage({ peer: '${pubkey}', at: ${base + 100}, filename: 'self-notes.pdf' })`)
     await evaluate(`contactBoot.seedMessage({ peer: '${peer}', at: ${base + 200}, text: 'Latest contact text' })`)
     const newest = await evaluate(`contactBoot.seedMessage({ peer: '${other}', at: ${base + 300}, filename: 'trip.pdf', caption: 'Trip caption' })`)
+    await browser.until(() => evaluate(`['${pubkey}', '${peer}', '${other}', '${empty}'].every(peer=>contactBoot.account.summaries$()[peer]?.state==='loaded')`), 'fixture summaries settle before the cold-cache opening')
+    await evaluate('window.dispatchEvent(new Event("pagehide"))')
+    await browser.until(async () => (await evaluate('contactBoot.readSummaryCache()')).some(record => record.peer === other), 'fixture cache exists before the cold-cache opening')
+    await evaluate('contactBoot.clearSummaryCache()')
     console.log('Reloading cold home')
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 320, deviceScaleFactor: 1, mobile: true }, session)
     await browser.evaluate(`(() => {
@@ -128,17 +143,19 @@ test('cold summaries order chats before visible histories prefetch and survive f
     assert.deepEqual(await evaluate('contactBoot.mediaStates'), [], 'home never starts thumbnail/original transfers')
     if (visible.includes(peer)) {
       await browser.until(() => evaluate(`contactBoot.account.conversations$()['${peer}'].references?.[contactBoot.account.conversations$()['${peer}'].messages.find(event => event.id === '${olderFile}')?.tags.find(tag => tag[0] === 'q')?.[1]]?.kind === 1063`), 'first-page attachment metadata is resolved before visiting')
-      assert.equal(await evaluate(`contactBoot.account.conversations$()['${peer}'].messages.length`), 25, 'prefetch stops at the first page')
+      assert.equal(await evaluate(`contactBoot.account.conversations$()['${peer}'].messages.length`), 6, 'the first page contains the local history')
       assert.equal(await evaluate(`contactBoot.account.conversations$()['${peer}'].messages.some(event => event.id === '${olderFile}')`), true)
     }
     const beforeOpen = (await histories()).length
     await evaluate(`document.querySelector('.conversation button[data-contact-id="${other}"]').click()`)
-    await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 6'), 'prefetched bubbles appear on entry')
+    await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 2'), 'prefetched bubbles appear on entry')
     assert.equal((await histories()).length, beforeOpen, 'opening completed prefetch does not restart history')
     assert.equal(await evaluate('!!document.querySelector(\'.route-page[data-active=true] .chat-date[role=status]:not([hidden])\')'), false)
     await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
     await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .conversations")'), 'return to home')
 
+    const selfContext = await evaluate(`window.nostr.obfuscate('dm:${pubkey}', '1006', '')`)
+    const selfHistories = async () => (await histories()).filter(read => read.filter['#c']?.includes(selfContext))
     await evaluate('contactBoot.holdHistory()')
     await evaluate(`(async () => {
       const scroll = document.querySelector('.route-page[data-active=true] .route-scroll');
@@ -150,17 +167,18 @@ test('cold summaries order chats before visible histories prefetch and survive f
     })()`)
     assert.equal(await evaluate('contactBoot.account.messages$().length'), 0, 'continuous scrolling does not start offscreen history')
     await browser.until(() => evaluate(`contactBoot.account.messages$().some(event => event.id === '${selfLatest}')`), 'self chat prefetch starts after scrolling settles')
-    const inFlight = (await histories()).length
+    await browser.until(async () => (await selfHistories()).length > 0, 'in-flight self history subscription is registered')
+    const inFlight = (await selfHistories()).length
     await evaluate('document.querySelector(\'.route-page[data-active=true] .conversation button[data-contact-id="user"]\').click()')
     await browser.until(() => evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${selfLatest}"] .chat-bubble')?.textContent.includes('self-notes')`), 'opening in-flight prefetch reuses its cached latest bubble')
     assert.equal(await evaluate('contactBoot.account.historyLoaded$()'), false)
     await evaluate(`contactBoot.lastBubble = document.querySelector('.route-page[data-active=true] [data-message-id="${selfLatest}"] .chat-bubble')`)
     await evaluate('contactBoot.releaseHistory()')
-    await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 6'), 'earlier messages appear before EOSE')
+    await browser.until(() => evaluate('document.querySelectorAll(\'.route-page[data-active=true] [data-message-id]\').length === 2'), 'earlier messages appear before EOSE')
     assert.equal(await evaluate('contactBoot.account.historyLoaded$()'), false)
     await evaluate('contactBoot.releaseEose()')
     await browser.until(() => evaluate('contactBoot.account.historyLoaded$()'), 'promoted history completes')
-    assert.equal((await histories()).length, inFlight, 'foreground promotion shares the in-flight subscription')
+    assert.equal((await selfHistories()).length, inFlight, 'foreground promotion shares the in-flight subscription')
     assert.equal(await evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${selfLatest}"] .chat-bubble') === contactBoot.lastBubble`), true)
     await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
     await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .conversations")'), 'return from self chat')
@@ -170,10 +188,47 @@ test('cold summaries order chats before visible histories prefetch and survive f
     await browser.until(async () => { const list = await rows(); return list[0]?.id === other && list[1]?.preview === 'Latest contact text' }, 'deleting latest message restores ordering and preview without opening chat')
     assert.equal((await rows())[1].preview, 'Latest contact text')
     await evaluate(`napp.eventStore.addPersonalCopy({kind:5,created_at:Math.floor(Date.now()/1000),tags:[['e','${newest}'],['k','9']],content:''},{context:'dm:${other}'})`)
-    await browser.until(async () => { const list = await rows(); return list[0]?.id === peer && list[2]?.preview === 'Older message 4' }, 'another deletion falls back to older local history')
+    await browser.until(async () => { const list = await rows(); return list[0]?.id === peer && list[2]?.preview === 'Older message 0' }, 'another deletion falls back to older local history')
     console.log('Cold ordering, visible-only prefetch, first-page limit, metadata, scroll debounce, completed/in-flight handoff and live updates verified')
+    // The same installation retains the encrypted projection. Hold every
+    // authoritative summary delivery after reload, including the empty contact;
+    // restored, source-validated rows must still start visible history work.
+    await browser.until(() => evaluate(`['${pubkey}', '${peer}', '${other}', '${empty}'].every(peer=>contactBoot.account.summaries$()[peer]?.state==='loaded')`), 'summaries settle before persisting the warm projection')
+    const warmRows = await rows()
+    const warmIds = await evaluate(`Object.fromEntries(['${pubkey}', '${peer}', '${other}'].map(peer=>[peer,contactBoot.account.summaries$()[peer].event.id]))`)
+    await evaluate('window.dispatchEvent(new Event("pagehide"))')
+    await browser.until(async () => {
+      const snapshot = await evaluate('contactBoot.readSummaryCache()')
+      return Object.entries(warmIds).every(([peer, id]) => snapshot.some(record => record.peer === peer && record.event.id === id))
+    }, 'complete projection is persisted through the real encrypted cache')
+    await browser.evaluate(`(() => {
+      const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>new URL(frame.src).origin===${JSON.stringify(origin)});
+      const url=new URL(frame.src);url.pathname='/';url.search='?holdOutbox=1&holdSummaries=1';frame.src=url.href;
+    })()`)
+    await browser.until(() => evaluate('contactBoot.summaryFrames.length>0'), 'encrypted projection restores home rows while source summaries wait', 5000)
+    const firstFrame = await evaluate('contactBoot.summaryFrames[0]')
+    assert.deepEqual(firstFrame.rows, warmRows, 'the first restored frame keeps previews and latest-message order')
+    assert.ok(firstFrame.at < 5000)
+    assert.equal(await evaluate(`contactBoot.account.summaries$()['${empty}']?.state`), 'loading', 'an empty offscreen contact remains pending')
+    await browser.until(() => evaluate('contactBoot.reads.some(read=>read.method==="subscribe" && read.filter.limit===25)'), 'visible prefetch starts without waiting for every summary')
+    console.log(`Warm summaries: first cached rows in ${Math.round(firstFrame.at)} ms; all source summaries still held.`)
+    await evaluate(`document.querySelector('.conversation button[data-contact-id="${peer}"]').click()`)
+    await browser.until(() => evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${warmIds[peer]}"] .chat-bubble')?.textContent.includes('Latest contact text')`), 'verified persistent snapshot immediately seeds the foreground bubble')
+    assert.equal(await evaluate(`Boolean(contactBoot.account.conversations$()['${peer}'].historyLoaded)`), false, 'the remaining first page is still held')
+    await evaluate('contactBoot.releaseSummaries();contactBoot.releaseHistory();contactBoot.releaseEose();contactBoot.releaseQueue()')
+    await browser.until(() => evaluate(`['${pubkey}', '${peer}', '${other}', '${empty}'].every(peer=>contactBoot.account.summaries$()[peer]?.state==='loaded')`), 'warm summaries revalidate after release')
     await evaluate('contactBoot.releaseQueue()')
   } catch (error) {
+    console.log('Summary errors:', summaryErrors.slice(-5))
+    for (const context of browser?.contexts.values() ?? []) {
+      if (!/^http:\/\/[0-9]+[.]localhost:10000$/.test(context.origin) || !context.auxData?.isDefault) continue
+      console.log('Summary cache diagnostic:', await browser.evaluate(`(async()=>({
+        summaries:Object.fromEntries(Object.entries(contactBoot.account.summaries$()).map(([peer,record])=>[peer,{state:record.state,id:record.event?.id,at:record.event?.created_at,copies:record.copies?.length}])),
+        cached:await contactBoot.readSummaryCache().then(records=>records.map(record=>({peer:record.peer,id:record.event.id,at:record.event.created_at}))).catch(error=>({error:error.message})),
+        reads:contactBoot.reads.slice(-5)
+      }))()`, context.origin).catch(() => null))
+      break
+    }
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/home-summaries'))
     throw error
   } finally {

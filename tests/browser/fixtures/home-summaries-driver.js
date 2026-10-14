@@ -2,13 +2,34 @@ import './contact-readiness-driver.js'
 import { createFileMetadata } from 'libp2r2p/nip94'
 import { nfileEncode } from 'libp2r2p/nip19'
 import { getEventHash } from 'libp2r2p/event'
-import { chatReferenceUri } from '#services/chat-references.js'
+import { chatReferenceUri, decryptPersonalCopy } from '#services/chat-references.js'
+import { createConversationSummaryCache } from '#services/conversation-summary-cache.js'
 
 const boot = window.contactBoot
 boot.reads = []
 boot.holdHistory = () => { boot.historyGate = Promise.withResolvers(); boot.eoseGate = Promise.withResolvers() }
 boot.releaseEose = () => { boot.eoseGate?.resolve(); boot.eoseGate = null }
 boot.releaseHistory = () => { boot.historyGate?.resolve(); boot.historyGate = null }
+if (new URL(location.href).searchParams.has('holdSummaries')) {
+  boot.summaryGate = Promise.withResolvers()
+  boot.holdHistory()
+}
+boot.releaseSummaries = () => { boot.summaryGate?.resolve(); boot.summaryGate = null }
+boot.readSummaryCache = async () => {
+  const cache = createConversationSummaryCache({ owner: await window.nostr.peekPublicKey(), signer: window.nostr })
+  try { return await cache.read() } finally { await cache.close() }
+}
+boot.clearSummaryCache = async () => {
+  const cache = createConversationSummaryCache({ owner: await window.nostr.peekPublicKey(), signer: window.nostr })
+  try { await cache.clear() } finally { await cache.close() }
+}
+boot.summaryFrames = []
+const sample = () => {
+  const rows = [...document.querySelectorAll('.route-page[data-active=true] .conversation button')].map(button => ({ id: button.dataset.contactId, preview: button.querySelector('.preview').textContent }))
+  if (rows.length > 1 && boot.summaryFrames.length < 60) boot.summaryFrames.push({ rows, at: performance.now() - boot.started })
+  if (boot.summaryFrames.length < 60) requestAnimationFrame(sample)
+}
+requestAnimationFrame(sample)
 const stores = new WeakMap()
 // Observe real bridge calls; permissions, signatures, encryption and storage
 // remain owned by the actual launcher/vault, with no synthetic read results.
@@ -21,10 +42,12 @@ boot.observeStore = store => {
         return (...args) => {
           if (['query', 'subscribe'].includes(key)) boot.reads.push({ method: key, filter: args[0], options: args[1] })
           const result = value.apply(target, args)
-          if (key !== 'subscribe' || !args[0]['#k']?.includes('9') || args[0].limit !== 25 || !boot.historyGate) return result
+          const summary = key === 'subscribe' && args[0]['#k']?.includes('9') && args[0].limit === 1 && boot.summaryGate
+          const history = key === 'subscribe' && args[0]['#k']?.includes('9') && args[0].limit === 25 && boot.historyGate
+          if (!summary && !history) return result
           // Delay delivery, without replacing any real history results.
-          const gate = boot.historyGate
-          const eose = boot.eoseGate
+          const gate = summary ? boot.summaryGate : boot.historyGate
+          const eose = summary ? null : boot.eoseGate
           const closed = Promise.withResolvers()
           let finished = false
           return {
@@ -33,7 +56,7 @@ boot.observeStore = store => {
               await Promise.race([gate.promise, closed.promise])
               if (finished) return { done: true }
               const item = await result.next()
-              if (item.value?.type === 'eose') await Promise.race([eose.promise, closed.promise])
+              if (item.value?.type === 'eose' && eose) await Promise.race([eose.promise, closed.promise])
               return finished ? { done: true } : item
             },
             return () { finished = true; closed.resolve(); return result.return() }
@@ -50,20 +73,24 @@ boot.seedMessage = async ({ peer, at, text = '', filename, caption = '' }) => {
   const save = async event => {
     const result = await window.napp.eventStore.addPersonalCopy(event, { context })
     if (!result?.result?.ok) throw new Error('FIXTURE_STORAGE_FAILED')
+    return result.event
+  }
+  const identity = async wrapper => {
+    const event = await decryptPersonalCopy(wrapper, { pubkey: owner, signer: window.nostr, encodedContext: wrapper.tags.find(tag => tag[0] === 'c')[1] })
+    if (!event) throw new Error('FIXTURE_INVALID_PERSONAL_COPY')
+    return event.id
   }
   let content = text
   const tags = []
   if (filename) {
     const root = 'd'.repeat(64)
     const file = { ...createFileMetadata({ url: `https://nostr.alt/${nfileEncode({ root, mime: 'application/pdf', filename })}?localOnly=1`, root, mime: 'application/pdf', service: 'irfs', size: 500, caption, created_at: at }), pubkey: owner }
-    await save(file)
-    file.id = getEventHash(file)
+    file.id = await identity(await save(file))
     content = chatReferenceUri(file)
     tags.push(['q', file.id, '', owner])
   }
   const message = { kind: 9, pubkey: owner, created_at: at, tags, content }
-  await save(message)
-  return getEventHash(message)
+  return identity(await save(message))
 }
 
 // Real locally stored IRFS fixtures for speculative preview preparation.

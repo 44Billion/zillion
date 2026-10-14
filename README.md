@@ -95,6 +95,16 @@ The conversation list reads the latest local message for self and saved contacts
 without opening their histories. Media previews use caption or filename from
 local metadata, without downloading media. Active chats sort by that message's
 date and update on new messages and deletions, before any chat is visited.
+An account-scoped encrypted snapshot restores up to 128 recent chat summaries
+after unlock and confirmed local contacts. It keeps complete latest messages,
+their reference metadata and source-copy IDs; eventStore remains authoritative.
+Source existence is checked before cached messages seed bubbles or prefetch.
+Missing/corrupt caches fall back to ordinary reads. New previews appear before
+their reference metadata finishes, using translated placeholders when necessary.
+Startup positions stay stable until the initial message snapshots settle, for
+at most three seconds; reference enrichment never changes positions. Afterward
+new messages and deletions reorder live. The snapshot has a 1 MiB plaintext
+limit and stores only ciphertext in its disposable IndexedDB queue.
 Unread badges are exact incoming-message counts above the synced read anchor,
 capped at 99+; the count stops reading after the badge limit and never counts
 self-chat or outgoing messages. Visible rows also request a recent-window
@@ -104,8 +114,9 @@ launcher's normal sync.
 Contacts without messages stay in the contacts strip/directory; self-chat keeps
 its empty Notes shortcut. Opening a chat immediately reuses that loaded message
 and its attachment metadata while the earlier messages load, for both self and
-contacts. After those previews establish the ordering, home waits for 250 ms
-without scrolling and preloads the first 25 messages and local reference metadata
+contacts. Each source-validated visible preview is eligible independently of
+pending, failed or empty offscreen chats. Home waits for 250 ms without scrolling
+and preloads the first 25 messages and local reference metadata
 for visible chats, one chat at a time. Offscreen chats remain lazy. Opening a chat
 reuses completed or in-flight work; it takes priority in the shared four-worker
 queue. After visible histories are ready, prefetch prepares up to five recent
