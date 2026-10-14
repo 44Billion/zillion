@@ -16,8 +16,6 @@ import { observeAvatar } from '#services/avatars.js'
 import { useAccount } from '#hooks/use-account.js'
 import { abortable } from '#helpers/media-dimensions.js'
 
-const AVATAR_PICTURE_TIMEOUT_MS = 15000
-
 // Each preparation attempt owns its DOM image and decode callbacks. Mounting a
 // keyed child keeps ref setup and post-render checks inside the image lifecycle.
 f('z-avatar-candidate', ({ h, props }) => {
@@ -45,7 +43,7 @@ f('z-avatar-candidate', ({ h, props }) => {
         }
       } catch { fail() }
     }
-    const timer = setTimeout(fail, AVATAR_PICTURE_TIMEOUT_MS)
+    const timer = setTimeout(fail, candidate.timeout)
     const cleanupImage = () => {
       clearTimeout(timer)
       image.removeEventListener('load', loaded)
@@ -128,7 +126,7 @@ f('a-avatar', ({ h, props }) => {
     },
     reject (candidate) {
       if (!isDataAvatarPicture(candidate.src)) this.nativeFailure$({ key: candidate.pk, src: candidate.src })
-      account.rejectAvatar?.(candidate.pk, candidate)
+      runtime.interest?.reject(candidate)
     },
     rejectDisplayed (event) {
       const src = this.displayed$()?.src

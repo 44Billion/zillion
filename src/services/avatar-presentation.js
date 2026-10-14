@@ -1,8 +1,16 @@
 export const AVATAR_INITIAL_TIMEOUT_MS = 10000
-const AVATAR_MOBILE_INITIAL_TIMEOUT_MS = 18000
+const AVATAR_MOBILE_INITIAL_TIMEOUT_MS = 22000
+const AVATAR_ATTEMPT_TIMEOUT_MS = 15000
+const AVATAR_MOBILE_ATTEMPT_TIMEOUT_MS = 30000
+
+const mobile = () => globalThis.matchMedia?.('(max-width: 718px)').matches
 
 export function getAvatarInitialTimeout () {
-  return globalThis.matchMedia?.('(max-width: 718px)').matches ? AVATAR_MOBILE_INITIAL_TIMEOUT_MS : AVATAR_INITIAL_TIMEOUT_MS
+  return mobile() ? AVATAR_MOBILE_INITIAL_TIMEOUT_MS : AVATAR_INITIAL_TIMEOUT_MS
+}
+
+export function getAvatarAttemptTimeout () {
+  return mobile() ? AVATAR_MOBILE_ATTEMPT_TIMEOUT_MS : AVATAR_ATTEMPT_TIMEOUT_MS
 }
 
 // One initial visual budget per identity, independent of shared IO/retries.

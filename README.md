@@ -39,7 +39,8 @@ and private-message personal copies belong in `window.napp.eventStore`, and
 image bytes use `libp2r2p/idb-queue` (IndexedDB). `temporaryStorage` is reserved
 for disposable session data. Cached content renders before remote refreshes;
 avatars pulse only during their initial profile/image preparation, for at most
-10 seconds, then show a photo or generated fallback. Later photo updates keep
+22 seconds on narrow/mobile layouts or 10 seconds otherwise, then show a photo
+or generated fallback. Later photo updates keep
 the existing presentation until the replacement decodes, without another pulse;
 failed replacements keep the previous photo, while explicit removal shows the
 fallback. HTTPS images need a successful
@@ -860,10 +861,16 @@ signed kind-0 events, report both rejected promises and `ok: false` results, and
 never occupy remote-query slots or delay ordering.
 Avatar presentation is shared across home, contact search/listing and profiles:
 already prepared photos and pending URL lookups are reused, and a failed update
-keeps the last valid photo on every screen. Initial loading lasts at most 18 seconds
+keeps the last valid photo on every screen. Initial loading lasts at most 22 seconds
 at viewport widths up to 718px, or 10 seconds above that, and ends as soon as a
 photo or definitive fallback is ready. Each identity retains its original deadline
 across resizing and remounting; late photos appear without restarting the pulse.
+Image preparation and DOM decode have separate 30-second attempt limits on
+these mobile layouts, or 15 seconds otherwise. Failed sources automatically retry
+twice after 1 and 4 seconds, first reusing cached bytes. One avatar's decode failure
+does not cancel the other mounted avatars' attempts; a successful decode updates
+every portrait sharing the source. Background retries stop after exhaustion and
+are cancelled when no view needs the source, or the account closes.
 Four shared preparations run at once; local cache reads remain independent.
 Contact-directory avatars mount only near
 the viewport, while all names stay available for search and sorting. Idle image

@@ -62,9 +62,9 @@ export function createMediaCache ({
     } catch { return null }
   }
 
-  async function resolveImage (url, { signal, cached } = {}) {
+  async function resolveImage (url, { signal, cached, timeout } = {}) {
     if (!isValidAvatarPicture(url)) return null
-    const requestSignal = preparationSignal(signal)
+    const requestSignal = preparationSignal(signal, timeout)
     const decode = async source => {
       const result = await abortable(decodeImage(source, { signal: requestSignal }), requestSignal)
       if (!mediaDimensions(result)) throw new Error('INVALID_IMAGE_DIMENSIONS')

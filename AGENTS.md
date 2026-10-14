@@ -1664,7 +1664,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 ## Initial avatar presentation
 
 - `services/avatar-presentation.js` owns one initial visual budget per account
-  avatar identity: at most eighteen seconds for `(max-width: 718px)`, otherwise
+  avatar identity: at most twenty-two seconds for `(max-width: 718px)`, otherwise
   ten seconds across profile and image preparation, with no minimum delay. Select
   the budget at the identity's first retain; resize/orientation changes and remounts
   preserve its absolute deadline. Keep the existing opacity pulse until a decoded
@@ -1686,6 +1686,23 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   resumes failed sources. Releasing one consumer preserves work for others;
   the last release aborts unwanted work and stops its initial timer. Remounts
   preserve the original deadline and already completed fallback/photo state.
+- Image attempts use 30 seconds for identities first retained at widths up to
+  718px, otherwise 15 seconds. Freeze this budget independently of the 22/10-
+  second visual deadline. Pass it through cache preparation and DOM candidate
+  decode; `preparationSignal`/`resolveImage` keep 15 seconds for other media.
+- Failed image sources automatically retry twice, after 1 and 4 seconds, sharing
+  each attempt by URL and checking saved bytes first. Metadata updates and new
+  consumers cannot bypass a pending retry; ordinary metadata updates cannot
+  restart exhausted background work.
+  An explicit remount after exhaustion or online recovery may start a new cycle.
+  Last release, URL removal, eviction and account teardown cancel unwanted retries.
+  Retain the fallback/last photo throughout recovery, without another pulse.
+- DOM candidate rejections are scoped to the retaining consumer. Keep the shared
+  candidate while another mounted consumer can still decode it; any valid
+  confirmation presents the photo everywhere. Retry only after all remaining
+  consumers failed, including when the last pending consumer releases interest
+  or changes to another URL.
+  Attempt tokens reject stale confirmations/rejections after replacement.
 - Keep the last valid photo by identity while a replacement prepares/fails.
   Metadata timestamp/lowest-id ordering fences stale consumers; explicit removal
   clears all presentations. Already confirmed readable bytes render immediately
@@ -1719,7 +1736,12 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   and own-profile transitions with held metadata/HTTP bytes, replacement failure,
   explicit removal and late success without renewed pulse.
 - `avatars.test.js` covers deduplication, local-read admission, cancellation,
-  idle budgets, stale generations/metadata and native drawables. The guarded
+  idle budgets, bounded automatic retries, independent DOM failures, mobile
+  image deadlines, stale generations/metadata and native drawables. The guarded
+  `avatar-recovery.browser.js` validates all three real home portraits recovering
+  without navigation, independent candidate decodes, cached retry without HTTP,
+  and a mobile request surviving 21 seconds, using the real launcher and vault.
+  The guarded
   `shared-avatars.browser.js` reproduces real FIFO eviction with the remote
   image server unavailable, confirms home/directory reuse without extra kind-0
   or HTTP reads, and tests viewport deferral, retained navigation and native CORS.

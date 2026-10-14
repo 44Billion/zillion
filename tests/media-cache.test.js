@@ -108,3 +108,28 @@ test('the byte budget evicts old images and allows offline misses to use a fallb
   assert.deepEqual(await cache.resolveImage(`${url}?5`), cachedImage)
   await cache.close()
 })
+
+test('avatar preparation can exceed fifteen seconds without extending other media defaults', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const deadlines = []
+  t.mock.method(AbortSignal, 'timeout', timeout => {
+    deadlines.push(timeout)
+    const controller = new AbortController()
+    setTimeout(() => controller.abort(), timeout)
+    return controller.signal
+  })
+  const gate = Promise.withResolvers()
+  const cache = createMediaCache({ decodeImage: () => gate.promise })
+  const source = cachedImage.source
+  let defaultDone = false
+  let avatarDone = false
+  const ordinary = cache.resolveImage(source).then(result => { defaultDone = true; return result })
+  const avatar = cache.resolveImage(source, { timeout: 30000 }).then(result => { avatarDone = true; return result })
+  t.mock.timers.tick(15000)
+  assert.equal(await ordinary, null)
+  assert.equal(defaultDone, true)
+  assert.equal(avatarDone, false)
+  assert.deepEqual(deadlines, [15000, 30000])
+  gate.resolve(cachedImage)
+  assert.deepEqual(await avatar, cachedImage)
+})

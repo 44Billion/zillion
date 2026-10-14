@@ -21,8 +21,8 @@ export function abortable (promise, signal) {
   })
 }
 
-export function preparationSignal (signal) {
-  return AbortSignal.any([AbortSignal.timeout(15000), ...(signal ? [signal] : [])])
+export function preparationSignal (signal, timeout = 15000) {
+  return AbortSignal.any([AbortSignal.timeout(timeout), ...(signal ? [signal] : [])])
 }
 
 export async function prepareImage (source, { signal }) {
