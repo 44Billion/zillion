@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { finalizeEvent } from 'libp2r2p/event'
-import { createProfiles } from '#services/profiles.js'
+import { createProfiles, attachProfiles, observeProfile } from '#services/profiles.js'
 
 const keys = Array.from({ length: 9 }, (_, n) => new Uint8Array(32).fill(n + 1))
 const event = (index = 0, content = { name: 'Alice' }, at = 1) => finalizeEvent({ kind: 0, created_at: at, tags: [], content: JSON.stringify(content) }, keys[index])
@@ -12,7 +12,7 @@ const response = (pubkey, profile, error, relay = 'wss://profiles.test') => ({
   requests: [{ phase: 'primary', authors: [pubkey], relays: [{ relay, status: error ? 'error' : 'eose', ...(error ? { error } : {}) }] }]
 })
 const temporary = (extra = {}) => Object.assign(new Error('rate-limited: busy'), { category: 'relay', ...extra })
-function fixture (t, { query, local = [], persist, timeout } = {}) {
+function fixture (t, { query, local = [], readLocal, persist, timeout } = {}) {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
   const state = { online: true, reads: [], calls: [], saved: [], updates: [], subscriptions: 0, errors: [] }
   let wake
@@ -26,7 +26,7 @@ function fixture (t, { query, local = [], persist, timeout } = {}) {
   const service = createProfiles({
     owner: peers[8], timeout,
     eventStore: {
-      query: async filter => { state.reads.push(filter.authors[0]); return { results: local.filter(event => event.pubkey === filter.authors[0]) } },
+      query: async filter => { state.reads.push(filter.authors[0]); return readLocal ? readLocal(filter) : { results: local.filter(event => event.pubkey === filter.authors[0]) } },
       subscribe: () => { state.subscriptions++; return stream },
       add: async event => { state.saved.push(event); if (persist) return await persist(event) }
     },
@@ -225,6 +225,65 @@ test('ordering readiness uses cache immediately while remote freshness remains p
   assert.equal(f.calls.length, 1)
   gate.resolve(response(peers[0], event(0)))
   await interest.ready
+})
+
+test('local readiness returns a cached profile or miss without waiting for any remote result', async t => {
+  const gate = Promise.withResolvers()
+  const cached = event(0)
+  const f = fixture(t, { local: [cached], query: () => gate.promise })
+  const known = f.service.retain(peers[0])
+  const missing = f.service.retain(peers[1])
+  let settled = false
+  missing.initialReady.then(() => { settled = true })
+  assert.equal((await known.localReady).meta.events[0].id, cached.id)
+  assert.equal(await missing.localReady, null)
+  await flush()
+  assert.equal(settled, false)
+  assert.equal(f.reads.length, 2, 'local readiness reuses the shared reads')
+  gate.resolve(response(peers[0], event(0, { name: 'Fresh' }, 2)))
+  await known.ready
+  assert.equal((await known.localReady).name, 'Alice', 'remote refresh cannot rewrite the local snapshot')
+})
+
+test('local read errors settle the snapshot while the first remote lookup remains owned', async t => {
+  const gate = Promise.withResolvers()
+  const f = fixture(t, { readLocal: () => { throw new Error('storage denied') }, query: () => gate.promise })
+  const interest = f.service.retain(peers[0])
+  assert.equal(await interest.localReady, null)
+  await flush()
+  assert.equal(f.errors.length, 1)
+  assert.equal(f.calls.length, 1)
+  gate.resolve(response(peers[0], event()))
+  assert.equal((await interest.initialReady).name, 'Alice')
+})
+
+test('consumer release and account close settle local readiness even when storage hangs', async t => {
+  const gate = Promise.withResolvers()
+  const f = fixture(t, { readLocal: () => gate.promise })
+  const released = f.service.retain(peers[0])
+  const closed = f.service.retain(peers[1])
+  released.release()
+  assert.equal(await released.localReady, null)
+  f.service.close()
+  assert.equal(await closed.localReady, null)
+  gate.resolve({ results: [event()] })
+  await flush()
+  assert.equal(f.updates.length, 0)
+})
+
+test('profile bindings forward the same local snapshot and reuse contact reads', async t => {
+  const gate = Promise.withResolvers()
+  const f = fixture(t, { local: [event()], query: () => gate.promise })
+  const detach = attachProfiles(f.service)
+  t.after(detach)
+  const contact = f.service.retain(peers[0])
+  const binding = observeProfile(peers[0])
+  t.after(binding.release)
+  assert.equal(await binding.localReady, await contact.localReady)
+  assert.equal(f.reads.length, 1)
+  binding.release()
+  gate.resolve(response(peers[0], event()))
+  await contact.ready
 })
 
 test('slow persistence occupies no network slot and does not delay either readiness promise', async t => {

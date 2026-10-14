@@ -4,6 +4,7 @@ import { profileLightning, profileBitcoinAddress } from './profile-payments.js'
 const text = value => typeof value === 'string' ? value.trim() : ''
 
 export const profileName = profile => text(profile?.name) || text(profile?.display_name)
+export const contactName = (profile, petname, npub) => petname || profileName(profile) || `${npub.slice(0, 12)}…`
 
 export function profileDetails (person) {
   const metadata = person.profile ?? person

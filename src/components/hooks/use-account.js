@@ -12,7 +12,7 @@ import { useGlobalStore, useMemo, useStore, useTask } from '#f'
 import { createSelfChat, createChat } from '#services/self-chat.js'
 import { createProfiles, attachProfiles, observeProfile } from '#services/profiles.js'
 import { createContactOrder } from '#services/contact-order.js'
-import { profileName } from '#helpers/profile-presentation.js'
+import { contactName, profileName } from '#helpers/profile-presentation.js'
 import avatarCache from '#services/avatar-cache.js'
 import { createAvatars, attachAvatars } from '#services/avatars.js'
 import { hasContentKeyMethods, isAccountAvailable } from '#helpers/account-availability.js'
@@ -35,7 +35,7 @@ export function useAccount () {
       const profile = this.directory$()[id] || {}
       const contact = this.contacts$().find(contact => contact.pubkey === id)
       const npub = npubEncode(id)
-      const name = contact?.petname || profileName(profile) || `${npub.slice(0, 12)}…`
+      const name = contactName(profile, contact?.petname, npub)
       return { id, pubkey: id, profile, npub, nip05: profile.nip05 || '', name, shortName: name, saved: !!contact, pinned: !!contact?.pinned, unread: this.unread$()[id] ?? 0 }
     },
     person$ () {
@@ -320,11 +320,13 @@ function useInitProfiles (account) {
   const retained = useMemo(() => new Map())
   const runtime = useMemo(() => ({ service: null, order: null, owner: null }))
   // Establish contact-owned work before local-only avatars can finish a local miss.
-  account.prepareContactProfiles = (owner, contacts) => {
+  account.prepareContactProfiles = (owner, contacts, { start = false } = {}) => {
     if (runtime.owner !== owner) return
     const peers = new Set(contacts.map(contact => contact.pubkey))
     for (const pubkey of peers) if (!retained.has(pubkey)) retained.set(pubkey, observeProfile(pubkey))
     for (const [pubkey, interest] of retained) if (!peers.has(pubkey)) { interest.release(); retained.delete(pubkey) }
+    // Gate the strip before publishing a newly loaded membership snapshot.
+    if (start) runtime.order?.reconcile(contacts)
   }
   account.loadPerson = (pubkey, { signal } = {}) => {
     if (signal?.aborted) return Promise.resolve(null)
@@ -348,13 +350,16 @@ function useInitProfiles (account) {
     })
     runtime.service = service
     runtime.owner = owner
+    const own = service.retain(owner, { remote: false })
     const order = createContactOrder({
       initialReady: pubkey => retained.get(pubkey)?.initialReady,
+      localReady: pubkey => pubkey === owner ? own.localReady : retained.get(pubkey)?.localReady,
+      nameFor: (pubkey, profile, contact) => pubkey === owner ? profileName(profile) : contactName(profile, contact?.petname, npubEncode(pubkey)),
+      self: { id: 'user', pubkey: owner },
       onChange: state => { if (runtime.order === order) account.contactOrder$(state) }
     })
     runtime.order = order
     const detach = attachProfiles(service)
-    const own = service.retain(owner, { remote: false })
     cleanup(() => {
       order.close(); runtime.order = null
       for (const interest of retained.values()) interest.release()
@@ -366,9 +371,11 @@ function useInitProfiles (account) {
   })
   useTask(({ track }) => {
     const [owner, contactsOwner, contacts, state] = track(() => [account.pubkey$(), account.contactsOwner$(), account.contacts$(), account.contactsState$()])
-    const members = owner && contactsOwner === owner ? contacts : []
-    account.prepareContactProfiles(owner, members)
-    runtime.order?.reconcile(members, { start: state === 'loaded' })
+    // Membership and owner are published separately. An intermediate empty
+    // snapshot must not release interests or finish the startup cohort.
+    if (!owner || contactsOwner !== owner || state !== 'loaded') return
+    account.prepareContactProfiles(owner, contacts)
+    runtime.order?.reconcile(contacts)
   })
   useTask(({ track }) => { track(() => [account.recovery$(), account.retry$()]); runtime.service?.recoverLocal() })
   useTask(({ cleanup }) => cleanup(() => { for (const interest of retained.values()) interest.release(); retained.clear() }))
@@ -463,7 +470,7 @@ function useInitPrivateChats (account, queue) {
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
       onChange: (contacts, { selfPinned }) => {
         if (closed) return
-        account.prepareContactProfiles(owner, contacts)
+        account.prepareContactProfiles(owner, contacts, { start: true })
         account.selfPinned$(selfPinned)
         account.contactsOwner$(owner)
         account.contacts$(contacts)

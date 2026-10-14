@@ -125,9 +125,9 @@ test('shared profiles recover and avatars pulse only before their first presenta
     const selector = `.contact-item[data-contact-id="${peers[0]}"]`
     await browser.until(() => evaluate(`document.querySelector('${selector} .contact-name')?.textContent.startsWith('npub1')`), 'missing profile fallback')
     await browser.until(() => evaluate(`profileRecovery.state.held.length>0 && profileRecovery.account.directory$()['${peers[1]}']?.name==='Mona'`), 'partial names with a pending first lookup')
-    const arrivalOrder = await evaluate('Array.from(document.querySelectorAll(\'.route-page[data-active=true] .contact-item\')).map(item => item.dataset.contactId)')
-    assert.equal(arrivalOrder[0], peers[2], 'pins are first even during startup')
-    assert.ok(arrivalOrder.indexOf(peers[0]) < arrivalOrder.indexOf(peers[1]), 'cached names do not move avatars before the remaining first lookup settles')
+    const cachedOrder = await evaluate('Array.from(document.querySelectorAll(\'.route-page[data-active=true] .contact-item\')).map(item => item.dataset.contactId)')
+    assert.equal(cachedOrder[0], peers[2], 'pins are first even during startup')
+    assert.ok(cachedOrder.indexOf(peers[1]) < cachedOrder.indexOf(peers[0]), 'cached names seed positions even while another first lookup is pending')
     assert.equal(await evaluate('profileRecovery.account.contactOrder$().alphabetical'), false)
     const heldAvatar = `.contact-item[data-contact-id="${peers[3]}"] .avatar-presentation`
     await browser.until(() => evaluate(`document.querySelector('${heldAvatar}')?.dataset.avatarState === 'loading'`), 'local-only contact waits for shared first lookup')
@@ -256,14 +256,43 @@ test('shared profiles recover and avatars pulse only before their first presenta
       if (result.result.value) { appContext = context; break }
     }
     assert.ok(appContext)
-    await browser.send('Page.addScriptToEvaluateOnNewDocument', { source: 'globalThis.__profileRecoveryHoldAll=true' }, appContext.sessionId)
+    // Persist one uncached contact among known profiles before reloading. Its
+    // remote lookup stays held; cached peers must still paint in name order.
+    const missingSecret = generateSecretKey()
+    const missingPeer = getPublicKey(missingSecret)
+    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:30000,created_at:${ownTimestamp++},tags:[['d','+zillion:contacts'],['p','${peers[3]}'],['p','${missingPeer}'],['p','${peers[1]}'],['p','${peers[0]}'],['p','${peers[2]}','','','p']],content:''},{context:''})`)
+    const missingRelays = finalizeEvent({ kind: 10002, created_at: profiles[0].created_at, tags: [['r', 'wss://healthy-profiles.example']], content: '' }, missingSecret)
+    const bootScript = await browser.send('Page.addScriptToEvaluateOnNewDocument', {
+      source: `
+      globalThis.__profileRecoveryHoldAll=true;
+      globalThis.__profileRecoveryRelayLists=[${JSON.stringify(missingRelays)}];
+      globalThis.__contactBootFrames=[];
+      function sampleContacts() {
+        const ids=Array.from(document.querySelectorAll('.route-page[data-active=true] .contact-item')).map(item=>item.dataset.contactId);
+        if(ids.length>1 && __contactBootFrames.length<120) __contactBootFrames.push({ids,at:performance.now()});
+        if(__contactBootFrames.length<120) requestAnimationFrame(sampleContacts);
+      }
+      requestAnimationFrame(sampleContacts);
+    `
+    }, appContext.sessionId)
     // Reload through the parent's iframe URL, retaining the trusted bridge marker.
     await browser.evaluate(`(() => {const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>frame.src.startsWith('${origin}'));frame.setAttribute('src',frame.src)})()`)
-    await browser.until(() => evaluate(`globalThis.__profileRecoveryHoldAll && window.profileRecovery?.account.contactOrder$().alphabetical && profileRecovery.account.directory$()['${peers[0]}']?.name==='Aaron'`), 'cached startup sorts without remote completion', 30000)
+    await browser.until(() => evaluate(`globalThis.__profileRecoveryHoldAll && window.profileRecovery?.account.contactsState$()==='loaded' && !profileRecovery.account.contactOrder$().localPending && profileRecovery.account.directory$()['${peers[0]}']?.name==='Aaron' && __contactBootFrames.length>0`), 'partially cached startup paints before remote completion', 5000)
+    assert.equal(await evaluate('profileRecovery.account.contactOrder$().alphabetical'), false, 'the missing contact still owns its first lookup')
+    const expectedOrder = [peers[2], 'user', peers[0], peers[1], missingPeer, peers[3]]
+    const bootFrames = await evaluate('__contactBootFrames')
+    assert.deepEqual(bootFrames[0].ids, expectedOrder, 'the first peer frame already uses cached names')
+    assert.ok(bootFrames[0].at < 5000, 'the initial cached order does not wait thirty seconds')
+    console.log(`Partially cached contacts: first peer frame in ${Math.round(bootFrames[0].at)} ms; remote lookup still pending.`)
+    assert.equal(await evaluate("document.querySelector('.route-page[data-active=true] .contact-list').scrollLeft"), 0)
     await browser.until(() => evaluate('profileRecovery.state.held.length>0'), 'cached remote refresh still pending')
     await evaluate('testNavigation.pushState(null,"","/contacts")')
     await evaluate('testNavigation.pushState(null,"","/")')
-    assert.equal(await evaluate('profileRecovery.account.contactOrder$().alphabetical'), true, 'route navigation does not restart the gate')
+    await browser.until(() => evaluate(`document.querySelectorAll('.route-page[data-active=true] .contact-item').length===${expectedOrder.length}`), 'retained home is visible again')
+    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.route-page[data-active=true] .contact-item')).map(item=>item.dataset.contactId)"), expectedOrder, 'route navigation preserves the cached seed')
+    await evaluate('globalThis.__profileRecoveryHoldAll=false;profileRecovery.state.held.splice(0).forEach(reply=>reply())')
+    await browser.until(() => evaluate('profileRecovery.account.contactOrder$().alphabetical'), 'remote completion releases the final alphabetical order')
+    await browser.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: bootScript.identifier }, appContext.sessionId)
 
     // Self pin is a real private-list preference, separate from peer membership.
     const ownPinButton = '.route-page[data-active=true] .profile-screen[data-profile-id=user] .pin-toggle'
@@ -303,6 +332,12 @@ test('shared profiles recover and avatars pulse only before their first presenta
         owner:profileRecovery.account.pubkey$(),
         signer:profileRecovery.account.signerState$(),
         contacts:profileRecovery.account.contactsState$(),
+        members:profileRecovery.account.contacts$(),
+        order:profileRecovery.account.contactOrder$(),
+        names:Object.fromEntries(Object.entries(profileRecovery.account.directory$()).map(([id,profile])=>[id,profile.name])),
+        profileRequests:profileRecovery.state.requests.slice(-30),
+        held:profileRecovery.state.held.length,
+        bootFrames:globalThis.__contactBootFrames?.slice(0,3),
         recovery:profileRecovery.account.recovery$(),
         methods:[typeof window.nostr.doubleSignEvent,typeof window.nostr.nip44v3.encryptDoubleDH,typeof window.nostr.nip44v3.decryptDoubleDH],
         notice:document.querySelector('.toast-card[data-persistent] .toast-message')?.textContent,

@@ -1579,15 +1579,24 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 
 ## Initial home contact order
 
-- `services/contact-order.js` owns an account-scoped arrival ledger and a single
-  startup cohort from the first nonempty, locally loaded contact list. Retain
-  pinned priority; name/avatar changes do not move contacts until every initial
-  member is ready or the absolute 30s deadline expires. Then use the existing
-  name priority and English comparison dynamically. Demo ordering stays immediate.
+- `services/contact-order.js` owns an account-scoped order ledger and a single
+  startup cohort from the first nonempty, locally loaded contact list. Before
+  rendering peers, seed the ledger alphabetically from shared local profile
+  snapshots and current petnames, including the implicit owner's `user` id.
+  Local reads have a 250ms maximum wait, no minimum delay, and no new profile IO;
+  missed/failed/pending reads use the normal name fallback. Keep self visible
+  during preparation. Preserve pinned priority in both stages. Then freeze the
+  ledger until every initial member is ready or the absolute 30s deadline from
+  list availability expires. Only then compare reactive names dynamically.
+  Late local results cannot reseed the ledger. Demo ordering stays immediate.
 - `profiles.js` exposes `initialReady` separately from ordinary `ready`: memory
   or valid local metadata resolves it before remote refresh; the first query
   outcome/offline also resolves it regardless of success or usable name. Reuse
   existing retained interests/local reads, never start strip-owned profile IO.
+- `retain`/`observeProfile` also expose `localReady`, which returns the original
+  shared local result (including null for a miss/error), independently of remote
+  readiness or a newer in-memory profile. Own metadata participates only in this
+  local preparation; never add the owner to contact membership or remote work.
 - Contact removals and petnames release pending members; additions do not extend
   the cohort. Route remounts do not reset the gate. Account teardown clears timers,
   retained interests and stale completions. `contactsOwner$` fences membership
@@ -1597,17 +1606,23 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   lookups without retaining remote work. Known metadata, a first query outcome
   or offline settles the initial state; retries/revalidation never reopen it.
   Preserve the separate local-only `ready`/`initialReady` promise contracts.
-- Establish contact interests before publishing contact membership for rendering;
+- Establish contact interests and reconcile the order before publishing contact
+  membership for rendering, so no peer frame exposes arbitrary arrival order;
   reuse the same retained map for reactive reconciliation and teardown. A local
   miss must not prematurely end an avatar's existing shared first lookup.
+  Reactive reconciliation requires matching `contactsOwner$` and loaded local
+  membership: intermediate owner/list publications must not release interests
+  or remove startup cohort members. Account teardown owns that cleanup.
 - Release the four remote slots and ordinary readiness before profile persistence.
   Check `eventStore.add` results for `ok: false`, preserving message/code/cause.
   Keep received metadata in memory after storage refusal; do not retry its relay
   query or convert public signed kind-0 events into personal copies.
-- Controlled coordinator/order tests cover cache, timeout, empty/error/offline,
+- Controlled coordinator/order tests cover partial cache, local deadlines,
+  local/remote races, own names, cache, timeout, empty/error/offline,
   nameless metadata, persistence delay/quota, additions/removals and teardown.
-  The protected profile-recovery browser scenario covers stable arrival order,
-  later reactive sorting, original cache events, reload and retained navigation.
+  The protected profile-recovery browser scenario covers the initial cached
+  order, later reactive sorting, original cache events, partially cached reload
+  with held remote reads, first peer frames and retained navigation.
 
 ## Initial avatar presentation
 

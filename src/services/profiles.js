@@ -141,8 +141,8 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
   }
   function readLocal (entry) {
     entry.localFailed = false
-    entry.local = getProfile(entry.pubkey, { eventStore }).then(profile => update(entry, profile))
-      .catch(error => { entry.localFailed = true; if (current(entry)) onError(error) })
+    entry.local = getProfile(entry.pubkey, { eventStore }).then(profile => { update(entry, profile); return profile })
+      .catch(error => { entry.localFailed = true; if (current(entry)) onError(error); return null })
       .finally(() => {
         entry.localDone = true
         if (!interested(entry) || offline) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
@@ -150,6 +150,8 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
         else notifyInitial(entry)
         schedule()
       })
+    entry.localSnapshot = Promise.withResolvers()
+    entry.local.then(entry.localSnapshot.resolve)
   }
   const stopOnline = watchOnline(() => {
     if (lifetime.signal.aborted) return
@@ -192,7 +194,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     retain (pubkey, { remote = true, onProfile, onInitialState } = {}) {
       if (!hex(pubkey) || lifetime.signal.aborted) {
         onInitialState?.({ pending: false })
-        return { ready: Promise.resolve(null), initialReady: Promise.resolve(null), release () {} }
+        return { ready: Promise.resolve(null), initialReady: Promise.resolve(null), localReady: Promise.resolve(null), release () {} }
       }
       const entry = entryFor(pubkey)
       const consumer = { remote, onProfile, onInitialState }
@@ -204,6 +206,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       schedule()
       const released = Promise.withResolvers()
       return {
+        localReady: Promise.race([released.promise, entry.localSnapshot.promise]),
         ready: Promise.race([released.promise, remote && pubkey !== owner ? entry.ready.promise : entry.local.then(() => entry.profile)]),
         initialReady: Promise.race([released.promise, remote && pubkey !== owner ? entry.initial.promise : entry.local.then(() => entry.profile)]),
         release () {
@@ -218,7 +221,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     close () {
       lifetime.abort(); stopOnline(); clearTimeout(timer)
       stream?.return().catch(() => {})
-      for (const entry of entries.values()) { entry.controller?.abort(); entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile); entry.consumers.clear() }
+      for (const entry of entries.values()) { entry.controller?.abort(); entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile); entry.localSnapshot.resolve(null); entry.consumers.clear() }
       entries.clear(); cooldowns.clear()
     }
   }
@@ -240,6 +243,7 @@ export function attachProfiles (service) {
 export function observeProfile (pubkey, options = {}) {
   const initial = Promise.withResolvers()
   const ordering = Promise.withResolvers()
+  const local = Promise.withResolvers()
   const binding = {
     handle: null,
     attach () {
@@ -248,9 +252,10 @@ export function observeProfile (pubkey, options = {}) {
       if (!this.handle) options.onInitialState?.({ pending: hex(pubkey) })
       this.handle?.ready.then(initial.resolve)
       this.handle?.initialReady.then(ordering.resolve)
+      this.handle?.localReady.then(local.resolve)
     }
   }
   bindings.add(binding); binding.attach()
-  const release = () => { bindings.delete(binding); binding.handle?.release(); binding.handle = null; initial.resolve(null); ordering.resolve(null) }
-  return { ready: initial.promise, initialReady: ordering.promise, release }
+  const release = () => { bindings.delete(binding); binding.handle?.release(); binding.handle = null; initial.resolve(null); ordering.resolve(null); local.resolve(null) }
+  return { ready: initial.promise, initialReady: ordering.promise, localReady: local.promise, release }
 }

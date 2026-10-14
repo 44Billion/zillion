@@ -1,36 +1,78 @@
 export const INITIAL_CONTACT_ORDER_TIMEOUT_MS = 30000
+export const INITIAL_CONTACT_CACHE_TIMEOUT_MS = 250
 
-// Account-owned arrival order and one finite startup cohort. Profile interests
-// belong to the shared coordinator; this gate only observes their readiness.
-export function createContactOrder ({ initialReady, onChange, timeout = INITIAL_CONTACT_ORDER_TIMEOUT_MS }) {
+// One local name snapshot seeds a stable order before the first peer paint.
+// Profile interests belong to the shared coordinator, including remote recovery.
+export function createContactOrder ({ initialReady, localReady, nameFor, self, onChange, timeout = INITIAL_CONTACT_ORDER_TIMEOUT_MS, localTimeout = INITIAL_CONTACT_CACHE_TIMEOUT_MS }) {
   let ids = []
   let started = false
   let alphabetical = false
   let closed = false
   let timer
+  let localTimer
+  let localPending = false
+  let cohort = []
+  let contactsById = new Map()
   const pending = new Map()
-  const emit = () => { if (!closed) onChange({ ids: [...ids], alphabetical }) }
+  const localReads = new Set()
+  const localProfiles = new Map()
+  const emit = () => { if (!closed) onChange({ ids: [...ids], alphabetical, localPending }) }
   const finish = () => {
     if (closed || alphabetical) return
     alphabetical = true
+    localPending = false
     clearTimeout(timer)
+    clearTimeout(localTimer)
     pending.clear()
+    localReads.clear()
+    localProfiles.clear()
     emit()
   }
-  const check = () => { if (started && !pending.size) finish() }
+  const check = () => { if (started && !localPending && !pending.size) finish() }
+  const finishLocal = () => {
+    if (closed || !localPending) return
+    localPending = false
+    clearTimeout(localTimer)
+    const members = new Set(ids)
+    const people = cohort.filter(person => members.has(person.id)).map(person => ({ ...person, name: nameFor(person.pubkey, localProfiles.get(person.id), contactsById.get(person.id)) }))
+    const seeded = new Set(people.map(person => person.id))
+    ids = [...orderHomeContacts(people, { alphabetical: true }).map(person => person.id), ...ids.filter(id => !seeded.has(id))]
+    localReads.clear()
+    localProfiles.clear()
+    emit()
+    check()
+  }
   return {
     reconcile (contacts, { start = true } = {}) {
       if (closed) return
+      contactsById = new Map(contacts.map(contact => [contact.pubkey, contact]))
       const members = new Set(contacts.map(contact => contact.pubkey))
+      if (self) members.add(self.id)
       ids = ids.filter(id => members.has(id))
       const seen = new Set(ids)
       for (const contact of contacts) if (!seen.has(contact.pubkey)) { ids.push(contact.pubkey); seen.add(contact.pubkey) }
+      if (self && !seen.has(self.id)) ids.push(self.id)
       for (const [id] of pending) {
         if (!members.has(id) || contacts.some(contact => contact.pubkey === id && contact.petname)) pending.delete(id)
       }
-      if (!started && start && ids.length) {
+      for (const id of localReads) if (!members.has(id) || contactsById.get(id)?.petname) localReads.delete(id)
+      if (!started && start && contacts.length) {
         started = true
         timer = setTimeout(finish, timeout)
+        if (localReady) {
+          localPending = true
+          cohort = [...contacts.map(contact => ({ id: contact.pubkey, pubkey: contact.pubkey })), ...(self ? [self] : [])]
+          localTimer = setTimeout(finishLocal, localTimeout)
+          for (const person of cohort) localReads.add(person.id)
+          for (const person of cohort) {
+            const settle = profile => {
+              if (closed || !localPending || !localReads.delete(person.id)) return
+              localProfiles.set(person.id, profile)
+              if (!localReads.size) finishLocal()
+            }
+            Promise.resolve().then(() => contactsById.get(person.id)?.petname ? null : localReady(person.pubkey)).then(settle, () => settle(null))
+          }
+        }
         for (const contact of contacts) {
           if (contact.petname || pending.has(contact.pubkey)) continue
           const token = {}
@@ -44,13 +86,15 @@ export function createContactOrder ({ initialReady, onChange, timeout = INITIAL_
         }
       }
       emit()
+      if (localPending && !localReads.size) finishLocal()
       check()
     },
-    close () { closed = true; clearTimeout(timer); pending.clear() }
+    close () { closed = true; clearTimeout(timer); clearTimeout(localTimer); pending.clear(); localReads.clear(); localProfiles.clear(); contactsById.clear(); cohort = [] }
   }
 }
 
-export function orderHomeContacts (people, { ids = [], alphabetical = false } = {}) {
+export function orderHomeContacts (people, { ids = [], alphabetical = false, localPending = false } = {}) {
+  if (localPending) return people.filter(person => person.self)
   const rank = new Map(ids.map((id, index) => [id, index]))
   return people.toSorted((a, b) => Number(!!b.pinned) - Number(!!a.pinned) || (alphabetical
     ? a.name.localeCompare(b.name, 'en')

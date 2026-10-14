@@ -8,6 +8,7 @@ import { PERSONAL_COPY } from 'libp2r2p/kind'
 import { decryptPersonalCopy } from '#services/chat-references.js'
 
 installPrivateChatFixture()
+for (const event of globalThis.__profileRecoveryRelayLists ?? []) window.dmTest.events.set(event.id, event)
 const originalGetEvents = relayPool.getEvents.bind(relayPool)
 const state = { peer: null, profiles: [], requests: [], frames: [], releaseAt: 0, holdPeers: [], held: [] }
 const pool = new RelayPool({

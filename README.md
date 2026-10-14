@@ -836,12 +836,15 @@ rate-limited publications do not block profile reads. Profile,
 contact and messaging recovery keep their existing backoff policy and standard
 WebSocket events; relay origin/policy claims are ignored.
 
-The home contact strip keeps arrival order within the pinned/unpinned groups
-while its first nonempty contact batch resolves profile readiness, for at most
-30 seconds. Cached profiles and petnames count immediately; a failed, empty or
-offline first lookup also completes readiness. Names/avatars remain reactive
-throughout. After that one startup sort, alphabetical ordering stays live and
-returning to home does not restart the gate. Profile cache writes preserve public
+The home contact strip first sorts from petnames and cached profiles, including
+the owner's local name, with pinned contacts first. Shared local reads have a
+250 ms maximum wait and no minimum delay; missing names use the usual fallback.
+That initial order stays fixed while the first nonempty contact batch resolves
+profile readiness, for at most 30 seconds from list availability. One uncached
+contact cannot hold back the initial cached order. A failed, empty or offline
+first lookup also completes readiness. Names/avatars remain reactive throughout;
+after readiness or the deadline, alphabetical ordering stays live. Returning to
+home does not restart either stage. Profile cache writes preserve public
 signed kind-0 events, report both rejected promises and `ok: false` results, and
 never occupy remote-query slots or delay ordering.
 Avatar presentation is shared across home, contact search/listing and profiles:
