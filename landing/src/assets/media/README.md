@@ -14,7 +14,7 @@ for the capture. Light/dark media emulation selects the actual app themes.
 No interface or conversation text is composited into the image.
 
 The landing's other illustrations are original inline SVG components. Its logo
-is the unchanged shared `src/assets/media/branding/zillion.icon.svg`, copied
+is the shared optimized `src/assets/media/branding/zillion.icon.png`, copied
 by the landing build rather than duplicated here.
 
 ## 44billion platform icon

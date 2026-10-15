@@ -31,9 +31,6 @@ export function buildOptions ({ development = false, sourceMaps = development, d
           const result = await esbuild.build({ entryPoints: [args.path], bundle: true, platform: 'browser', format: 'iife', target: 'es2022', minify: !development, write: false, metafile: true })
           return { contents: `export default ${JSON.stringify(result.outputFiles[0].text)}`, loader: 'js', watchFiles: Object.keys(result.metafile.inputs).map(file => path.resolve(file)) }
         })
-        build.onLoad({ filter: /\.icon\.svg$/ }, async args => ({
-          contents: await readFile(args.path), loader: 'copy', watchFiles: [args.path]
-        }))
         build.onLoad({ filter: /\.css$/ }, async args => {
           const css = await esbuild.transform(await readFile(args.path, 'utf8'), { loader: 'css', minify: true })
           return { loader: 'text', contents: css.code, watchFiles: [args.path] }
@@ -54,7 +51,7 @@ export function buildOptions ({ development = false, sourceMaps = development, d
       IS_PRODUCTION: JSON.stringify(!development),
       FUTURE_FEATURES_ENABLED: JSON.stringify(development && futureFeatures)
     },
-    entryPoints: ['src/components/app.js', 'src/assets/html/index.html', 'src/assets/media/branding/zillion.icon.svg'],
+    entryPoints: ['src/components/app.js', 'src/assets/html/index.html', 'src/assets/media/branding/zillion.icon.png'],
     outdir, entryNames: '[name]', bundle: true, platform: 'browser', format: 'esm',
     target: ['edge91', 'firefox89', 'chrome91', 'safari15'],
     minify: !development, sourcemap: sourceMaps, write: false

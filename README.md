@@ -86,8 +86,9 @@ safe-area inset). The bubble ends at 28px (excluding transparent padding) as the
 out; both reverse when scrolling back. Contact avatars mount as they approach
 the visible strip, using thenameisf's visibility task with an 84px preloading margin.
 Light and dark themes follow the system; backgrounds are off-white and graphite.
-The same logo artwork serves both themes and the launcher icon; its sources and
-safety padding are documented in [design/branding](design/branding/README.md).
+The same optimized 256px transparent PNG serves both themes and the launcher icon,
+with its framing included in the image. Original artwork and safety
+padding are documented in [design/branding](design/branding/README.md).
 Preview content uses fixed English source keys translated at render time, with
 local portraits. Contacts and conversation rows open real DMs, including the self-chat. Sample data is opt-in via `ZILLION_DEMO=1`. Home Search and new-conversation remain inert previews. The home profile
 portrait opens the account profile. Real user messages never pass through the translation catalog.

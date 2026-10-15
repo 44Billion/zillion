@@ -40,7 +40,7 @@ f('z-home-header', ({ h, props }) => {
       }
     `}</style>
     <div class="brand">
-      <span class="brand-logo" aria-hidden="true"><img src="/zillion.icon.svg" alt="" width="256" height="256" draggable="false"></span>
+      <span class="brand-logo" aria-hidden="true"><img src="/zillion.icon.png" alt="" width="256" height="256" draggable="false"></span>
       <h1>Zillion</h1>
     </div>
     <div class="actions">

@@ -270,10 +270,14 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   expanded flow slot so this visual change cannot alter the collapse threshold
   or trigger scroll-anchoring jumps.
 - The approved logo is the green organic chat bubble with a Z. Use the same
-  `src/assets/media/branding/zillion.icon.svg` in both themes without tinting. It embeds
-  the transparent raster unchanged with 10% safety padding on each side. The
-  header compensates with a 125% image size: the longest visible bubble dimension,
-  including its tail, is 28px when collapsed. Keep the semantic logo box at 28px.
+  `src/assets/media/branding/zillion.icon.png` in both themes without tinting.
+  This optimized 256 × 256 transparent PNG incorporates the original framing,
+  with the same colors, proportions and 10% safety padding on each side. Keep
+  the 1254 × 1254 original unchanged in `design/branding/logo.png`; the framing
+  transform is documented beside it. Ship the PNG directly, without an SVG
+  wrapper or Base64 embedding. The header compensates with a 125% image size:
+  the longest visible bubble dimension, including its tail, is 28px when collapsed.
+  Keep the semantic logo box at 28px.
   `design/branding/README.md` records sources and sizing; design files stay out
   of builds. The HTML icon declaration also supplies the launcher icon via nappup.
 - Mount contact avatars only near the horizontal viewport using `useTask` with
@@ -505,7 +509,7 @@ needed; empty folders mark the initial structure.
   to the system theme; cycle Auto/Light/Dark with a native accessible button and
   persist `zillion:landing:theme` when storage is available. Initialize the saved
   preference before first render; honor reduced motion and browser text scaling.
-- Use the approved app logo unchanged, copied as a build entry. WebP conversation
+- Use the shared optimized app logo, copied as a build entry. WebP conversation
   assets are real fictional-demo captures in both themes; their provenance is
   recorded beside them. Never capture real contacts or messages for the landing.
   The launch badge uses the unchanged 44billion cap from the local landing media

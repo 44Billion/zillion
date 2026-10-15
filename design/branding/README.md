@@ -9,11 +9,20 @@ The positioning prompt requested a very small leftward correction of the Z while
 preserving the chat bubble. The final extraction prompt removed the checkerboard
 while preserving the green bubble, Z, proportions, colors, highlights, and tail.
 
-`../../src/assets/media/branding/zillion.icon.svg` embeds the transparent PNG unchanged.
-This SVG is a sizing wrapper, not a vector tracing. Its square viewBox centers the
-visible artwork with 10% safety padding on each side: the visible alpha >= 16
-bounds are `(54, 106)` to `(1218, 1175)` on the 1254px source, and the viewBox is
-`-91.5 -87 1455 1455`. The bubble occupies 80% of the icon width, including its tail.
+`../../src/assets/media/branding/zillion.icon.png` is an optimized 256 × 256
+RGBA PNG derived directly from `logo.png`, preserving its transparency and artwork.
+It includes the framing previously supplied by the SVG wrapper: the original
+source rectangle `(0, 0, 1254, 1254)` is drawn at
+`(91.5 × s, 87 × s, 1254 × s, 1254 × s)` on a transparent 256px square, where
+`s = 256 / 1455`. This is the same transform as the old viewBox
+`-91.5 -87 1455 1455`, keeping placement and padding independent of file format.
+Use high-quality Canvas smoothing when downsampling, then losslessly recompress
+the PNG IDAT data with DEFLATE level 9. The shared asset is about 44 KB, without
+an SVG wrapper or Base64 encoding; the 1254 × 1254 original stays unchanged here.
+
+The visible alpha >= 16 bounds are `(54, 106)` to `(1218, 1175)` on the original
+and `(25, 33)` to `(230, 222)` on the shipped PNG. The bubble occupies about 80%
+of the icon width, including its tail, with about 10% safety padding on each side.
 Keep these proportions in sync if replacing the artwork.
 
 Use this single artwork in both color schemes, without filters or tinting.

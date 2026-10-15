@@ -86,7 +86,7 @@ f('z-chat-header', ({ h, props }) => {
       <div class="header-pill">
         <button class="chat-back" type="button" onclick=${view.back} aria-label=${t(props.entry$() ? 'Open Zillion' : 'Back')}
           aria-disabled=${props.entry$() ? 'true' : 'false'}>
-          ${props.entry$() ? h`<span class="entry-logo"><img src="/zillion.icon.svg" alt=""></span>` : h`<icon-chevron-down props=${{ rotate: 90, size: '24px', weight: 'regular' }} />`}
+          ${props.entry$() ? h`<span class="entry-logo"><img src="/zillion.icon.png" alt=""></span>` : h`<icon-chevron-down props=${{ rotate: 90, size: '24px', weight: 'regular' }} />`}
         </button>
       </div>
       <div class="chat-identity header-pill">

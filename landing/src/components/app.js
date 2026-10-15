@@ -19,7 +19,7 @@ f('z-landing-app', ({ h }) => {
   <a class="skip-link" href="#main">${t('Skip to content')}</a>
   <header class="site-header shell">
     <a class="wordmark" href="./" aria-label=${t('Zillion home')}>
-      <img src="./zillion.icon.svg" width="40" height="40" alt="">
+      <img src="./zillion.icon.png" width="40" height="40" alt="">
       <span>Zillion</span>
     </a>
     <nav class="header-actions" aria-label=${t('Main navigation')}>
@@ -38,7 +38,7 @@ f('z-landing-app', ({ h }) => {
   </main>
   <footer class="site-footer shell">
     <a class="wordmark footer-wordmark" href="./" aria-label=${t('Zillion home')}>
-      <img src="./zillion.icon.svg" width="28" height="28" alt="">
+      <img src="./zillion.icon.png" width="28" height="28" alt="">
       <span>Zillion</span>
     </a>
     <p>${t('Private by design. Open by nature.')}</p>
