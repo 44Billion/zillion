@@ -230,17 +230,17 @@ test('mobile includes names arriving after 250ms and finishes immediately when l
   f.local.get('b').resolve({ name: 'Zulu' }); f.local.get('a').resolve({ name: 'Aaron' })
   f.local.get('c').resolve(null); f.local.get('owner').resolve({ name: 'Mona' })
   await flush()
-  assert.equal(f.latest().localPending, false, 'ready names do not wait the full second')
+  assert.equal(f.latest().localPending, false, 'ready names do not wait the full budget')
   assert.deepEqual(f.latest().ids, ['a', 'user', 'c', 'b'])
 })
 
-test('mobile bootstrap has a one-second maximum and resize cannot shorten it', async t => {
+test('mobile bootstrap has a 1.5-second maximum and resize cannot shorten it', async t => {
   const resize = mobileViewport(t)
   const f = cachedFixture(t)
   f.order.reconcile([contact('b'), contact('a'), contact('c')])
   await f.advance(250)
   resize()
-  await f.advance(749)
+  await f.advance(1249)
   assert.equal(f.latest().localPending, true)
   await f.advance(1)
   assert.equal(f.latest().localPending, false)

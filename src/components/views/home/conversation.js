@@ -1,5 +1,5 @@
 import { t } from '#i18n/messages.js'
-import { f, useLocation, useStore } from '#f'
+import { f, useLocation, useStore, useTask } from '#f'
 import { useAccount } from '#hooks/use-account.js'
 import './avatar.js'
 import '#shared/unread-badge.js'
@@ -12,6 +12,9 @@ f('z-home-conversation', ({ h, props }) => {
     unread$ () { return props.conversation$().unread }
   })
   const conversation = props.conversation$()
+  useTask(() => {
+    if (props.conversation$().real && props.conversation$().lastMessageAt) account.homeConversationPresented?.()
+  }, { after: 'rendering' })
   return h`
     <li class="conversation">
       <style>${`

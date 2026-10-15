@@ -14,9 +14,11 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
   const workers = createChatWorkers(4)
   let changes
   let closed = false
-  let wanted = new Set()
+  let wanted
   let bootstrap
   let bootstrapFailed = false
+  let cacheValues
+  let cacheGeneration = 0
   let saveTimer
   let saving
   let dirty = false
@@ -46,30 +48,50 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
     saving = cache.write(records).catch(error => { onError(error) }).finally(() => { saving = null })
     return saving
   }
-  async function restore () {
-    if (!cache) return
-    bootstrap ??= cache.read().then(values => {
+  function applyCache () {
+    if (closed || !wanted || !cacheValues) return
+    const values = cacheValues
+    cacheValues = null
+    const restored = {}
+    for (const { peer, ...value } of values) {
+      const previous = records.get(peer)
+      if (!wanted.has(peer) || previous?.messageReady || (previous?.event && compareChatMessages(previous.event, value.event) > 0)) continue
+      const record = { ...value, state: 'cached', verified: false, messageReady: false }
+      records.set(peer, record); projection.set(peer, value); restored[peer] = record
+    }
+    if (onRestore) onRestore(restored)
+    else for (const [peer, value] of Object.entries(restored)) onChange(peer, value)
+    // A late snapshot can become eligible independently of source delivery.
+    for (const peer of Object.keys(restored)) {
+      const entry = entries.get(peer)
+      if (entry?.filter) admitCache(entry).catch(error => { if (active(entry)) onError(error) })
+    }
+  }
+  // Start after unlock, without requiring contact membership or source readers.
+  // The single budget starts here; confirming contacts cannot restart it.
+  function prepare () {
+    if (closed || !cache) return Promise.resolve()
+    if (bootstrap) return bootstrap.ready.promise
+    const attempt = bootstrap = { ready: Promise.withResolvers() }
+    const generation = cacheGeneration
+    const current = () => !closed && generation === cacheGeneration
+    const finish = () => { clearTimeout(attempt.timer); attempt.ready.resolve() }
+    attempt.timer = setTimeout(finish, cacheTimeout)
+    Promise.resolve().then(() => current() ? cache.read() : []).then(values => {
+      if (!current()) return
       bootstrapFailed = false
-      if (closed) return
       if (values.length) hadProjection = true
-      const restored = {}
-      for (const { peer, ...value } of values) {
-        const previous = records.get(peer)
-        if (!wanted.has(peer) || previous?.messageReady || (previous?.event && compareChatMessages(previous.event, value.event) > 0)) continue
-        const record = { ...value, state: 'cached', verified: false, messageReady: false }
-        records.set(peer, record); projection.set(peer, value); restored[peer] = record
-      }
-      if (onRestore) onRestore(restored)
-      else for (const [peer, value] of Object.entries(restored)) onChange(peer, value)
-      // A slow cache read may finish after ordinary readers were opened. Its
-      // adoption must not depend on their EOSE or reference work completing.
-      for (const peer of Object.keys(restored)) {
-        const entry = entries.get(peer)
-        if (entry?.filter) admitCache(entry).catch(error => { if (active(entry)) onError(error) })
-      }
-    }).catch(error => { bootstrapFailed = true; if (!closed) onError(error) })
-    let timer
-    try { await Promise.race([bootstrap, new Promise(resolve => { timer = setTimeout(resolve, cacheTimeout) })]) } finally { clearTimeout(timer) }
+      cacheValues = values
+      applyCache()
+    }).catch(error => { if (current()) { bootstrapFailed = true; onError(error) } }).finally(finish)
+    return attempt.ready.promise
+  }
+  function suspend () {
+    cacheGeneration++
+    clearTimeout(bootstrap?.timer)
+    bootstrap?.ready.resolve()
+    bootstrap = null; cacheValues = null; wanted = null
+    bootstrapFailed = false
   }
   // Existence checks use the exact source IDs, account and conversation. They
   // admit cached plaintext without repeating its signer decryption, and never
@@ -241,8 +263,12 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
   async function setPeers (peers) {
     if (closed) return
     wanted = new Set([pubkey, ...peers].filter(peer => /^[0-9a-f]{64}$/.test(peer)))
-    await restore()
-    if (closed) return
+    const generation = cacheGeneration
+    const prepared = prepare()
+    applyCache()
+    await prepared
+    if (closed || generation !== cacheGeneration) return
+    applyCache()
     watchChanges()
     for (const [peer, entry] of entries) if (!wanted.has(peer)) { stop(entry); records.delete(peer); projection.delete(peer); onChange(peer, null); scheduleSave() }
     for (const peer of records.keys()) if (!wanted.has(peer)) { records.delete(peer); projection.delete(peer); onChange(peer, null) }
@@ -250,18 +276,19 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
     return Promise.all([...entries.values()].map(entry => entry.ready.promise))
   }
   return {
+    prepare,
+    suspend,
     setPeers,
     flush,
-    recover () {
+    recover (peers = [...entries.keys()]) {
       if (closed) return Promise.resolve()
-      const peers = [...entries.keys()]
       for (const entry of entries.values()) stop(entry)
       changes?.return().catch(() => {}); changes = null
-      if (bootstrapFailed) bootstrap = null
+      if (bootstrapFailed) { bootstrap = null; cacheValues = null }
       return setPeers(peers)
     },
     async close () {
-      closed = true; clearTimeout(saveTimer)
+      closed = true; suspend(); clearTimeout(saveTimer)
       for (const entry of entries.values()) stop(entry)
       changes?.return().catch(() => {}); changes = null; records.clear()
       await flush()

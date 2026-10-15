@@ -1,6 +1,7 @@
 import { createConversationPrefetch } from '#services/conversation-prefetch.js'
 import { createChatWorkers } from '#services/chat-history.js'
 import { createConversationSummaries } from '#services/conversation-summaries.js'
+import { createHomeStartup } from '#services/home-startup.js'
 import { createContacts } from '#services/contacts.js'
 import { createPrivateChats } from '#services/private-chats.js'
 import { createReadState, createUnreadCounter } from '#services/read-state.js'
@@ -59,13 +60,14 @@ export function useInitAccount () {
   const queue = useMemo(() => ({ run: createChatWorkers(), foreground: null, opened: new Set() }))
   useInitAvatars(account)
   useInitProfiles(account)
-  useInitPrivateChats(account, queue)
   useInitConversationSummaries(account)
+  useInitPrivateChats(account, queue)
   useInitConversationOrder(account)
   useInitReadState(account)
   const runtime = useMemo(() => ({ chat: null, opened: false }))
   useInitConversationPrefetch(account, queue, runtime)
   account.openSelfConversation = () => {
+    account.releaseHomeStartup()
     runtime.opened = true
     account.focusConversation(account.pubkey$())
     account.prefetchContentKeys(account.pubkey$())
@@ -148,12 +150,24 @@ export function useInitAccount () {
 
 function useInitConversationSummaries (account) {
   const runtime = useMemo(() => ({ summaries: null, recovery: -1 }))
+  const startup = useMemo(() => createHomeStartup({
+    prepare: () => runtime.summaries?.prepare(),
+    onError: error => console.warn('Could not prepare home conversations', error)
+  }))
+  account.prepareConversationSummaries = () => startup.start()
+  account.deferHomeStartup = (key, work) => startup.defer(key, work)
+  account.releaseHomeStartup = () => startup.release()
+  account.homeConversationPresented = () => startup.presented()
+  account.suspendConversationSummaries = () => { startup.pause(); runtime.summaries?.suspend() }
   useTask(({ track, cleanup }) => {
     const owner = track(() => account.pubkey$())
     if (!owner) return
     const summaries = createConversationSummaries({
       pubkey: owner, signer: window.nostr, eventStore: window.napp.eventStore,
-      onRestore: records => account.summaries$(previous => ({ ...previous, ...records })),
+      onRestore: records => {
+        if (Object.values(records).some(record => record.event)) startup.expectRows()
+        account.summaries$(previous => ({ ...previous, ...records }))
+      },
       onChange: (peer, summary) => account.summaries$(previous => {
         const next = { ...previous }
         if (summary) next[peer] = summary
@@ -169,6 +183,7 @@ function useInitConversationSummaries (account) {
     window.addEventListener('pagehide', flush)
     document.addEventListener('visibilitychange', hidden)
     cleanup(() => {
+      startup.pause()
       window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', hidden)
       summaries.close().catch(error => console.warn('Could not close conversation previews', error))
       runtime.summaries = null; account.summaries$({})
@@ -177,11 +192,15 @@ function useInitConversationSummaries (account) {
   useTask(({ track }) => {
     const [owner, ready, contactsOwner, contacts, state, signer, recovery] = track(() => [account.pubkey$(), account.ready$(), account.contactsOwner$(), account.contacts$(), account.contactsState$(), account.signerState$(), account.recovery$()])
     if (!owner || !ready || !runtime.summaries || contactsOwner !== owner || state !== 'loaded' || !isAccountAvailable(signer)) return
+    const peers = contacts.map(contact => contact.pubkey)
+    let recovering = false
     if (runtime.recovery !== recovery) {
-      if (runtime.recovery >= 0) runtime.summaries.recover().catch(() => {})
+      if (runtime.recovery >= 0) { recovering = true; runtime.summaries.recover(peers).catch(() => {}) }
       runtime.recovery = recovery
     }
-    runtime.summaries.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
+    if (!recovering) runtime.summaries.setPeers(peers).catch(() => {})
+    // setPeers adopts prepared records before the priority gate yields a frame.
+    startup.ready()
   })
 }
 
@@ -237,7 +256,10 @@ function useInitReadState (account) {
   useTask(({ track }) => {
     const [owner, contacts] = track(() => [account.pubkey$(), account.contacts$()])
     if (!owner || !runtime.reads) return
-    runtime.reads.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
+    const reads = runtime.reads
+    account.deferHomeStartup('read-anchors', () => {
+      if (runtime.reads === reads) return reads.setPeers(contacts.map(contact => contact.pubkey))
+    })
   })
   useTask(({ track }) => {
     const [owner, ready, contacts, summaries, anchors, conversations] = track(() => [
@@ -281,7 +303,7 @@ function useInitReadState (account) {
 
 function useInitConversationPrefetch (account, queue, self) {
   const runtime = useMemo(() => ({ prefetch: null }))
-  account.focusConversation = peer => { queue.foreground = peer; queue.opened.add(peer); runtime.prefetch?.focus() }
+  account.focusConversation = peer => { account.releaseHomeStartup(); queue.foreground = peer; queue.opened.add(peer); runtime.prefetch?.focus() }
   account.prefetchConversations = peers => {
     if (peers.length) queue.foreground = null
     runtime.prefetch?.setVisible(peers)
@@ -446,6 +468,7 @@ function useInitPrivateChats (account, queue) {
     return runtime.chats.get(peer)
   }
   account.openConversation = peer => {
+    account.releaseHomeStartup()
     account.prefetchContentKeys(peer)
     runtime.transport?.preparePeer(peer).catch(() => { console.warn(`Could not prepare peer ${peer} for private chat. Continuing...`) })
     const chat = account.ensureConversation(peer)
@@ -486,6 +509,7 @@ function useInitPrivateChats (account, queue) {
     const owner = track(() => account.pubkey$())
     if (!owner || demoEnabled) return
     let closed = false
+    let channelsKnown = false
     account.signerState$(null)
     account.contactsState$('loading')
     runtime.transport = createPrivateChats({
@@ -507,7 +531,14 @@ function useInitPrivateChats (account, queue) {
         account.selfPinned$(selfPinned)
         account.contactsOwner$(owner)
         account.contacts$(contacts)
-        runtime.transport.setPeers(contacts.map(contact => contact.pubkey)).catch(() => {})
+        const reconcileChannels = () => {
+          if (closed) return
+          channelsKnown = true
+          return runtime.transport.setPeers(contacts.map(contact => contact.pubkey))
+        }
+        // Once admitted, membership changes (especially removals) stay immediate.
+        if (channelsKnown) reconcileChannels().catch(() => {})
+        else account.deferHomeStartup('channels', reconcileChannels)
       },
       onState: state => { if (!closed) account.contactsState$(state) },
       onError: error => { if (!closed) console.warn('Could not load contacts', error) }
@@ -522,9 +553,14 @@ function useInitPrivateChats (account, queue) {
           ? state.supportsContentKeyMethods !== false && hasContentKeyMethods(window.nostr)
           : null
       }
-      account.signerState$(state)
       const available = isAccountAvailable(state)
       const changed = available !== availableApplied
+      // A new unlock must confirm membership again before publishing prepared
+      // previews; signer notifications run reactive tasks synchronously.
+      if (available && changed) account.contactsState$('loading')
+      if (available) account.prepareConversationSummaries()
+      else account.suspendConversationSummaries()
+      account.signerState$(state)
       if (!changed && !resume) return
       availableApplied = available
       // Begin local transport readiness and cached contacts independently.

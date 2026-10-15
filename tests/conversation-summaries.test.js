@@ -505,7 +505,7 @@ test('mobile restores a 600ms cache before source readers start, without repeati
   assert.deepEqual(f.decrypted, [])
 })
 
-test('mobile cache timeout is capped at one second and does not change during resize', async t => {
+test('mobile cache timeout is capped at 1.5 seconds and does not change during resize', async t => {
   const resize = mobileViewport(t)
   t.mock.timers.enable({ apis: ['setTimeout'] })
   const gate = Promise.withResolvers()
@@ -514,7 +514,7 @@ test('mobile cache timeout is capped at one second and does not change during re
   const reading = f.summaries.setPeers([peer])
   await flush()
   resize()
-  t.mock.timers.tick(999); await flush()
+  t.mock.timers.tick(1499); await flush()
   assert.equal(f.subscriptions.length, 0)
   t.mock.timers.tick(1)
   await reading
@@ -527,4 +527,79 @@ test('a ready mobile snapshot has no minimum bootstrap wait', async t => {
   const f = fixture(t, [], { cache: { read: async () => [], write: async () => {}, close: async () => {} } })
   await f.summaries.setPeers([peer])
   assert.ok(f.subscriptions.some(value => value.options?.initial), 'ready cache starts readers without advancing timers')
+})
+
+test('early preparation decrypts once without publishing until current contacts are confirmed', async t => {
+  const message = inner('Prepared before contacts', 100, peer)
+  const unknown = inner('Removed contact', 110, other)
+  const row = (event, contact) => ({ peer: contact, context: `dm:${contact}`, event: identified(event), copies: [{ id: copy(event, contact).id, created_at: event.created_at }], references: {}, sources: {} })
+  let reads = 0
+  const f = fixture(t, [copy(message, peer)], { cache: { read: async () => { reads++; return [row(message, peer), row(unknown, other)] }, write: async () => {}, close: async () => {} } })
+  await f.summaries.prepare()
+  assert.equal(reads, 1)
+  assert.equal(f.records.size, 0)
+  assert.equal(f.subscriptions.length, 0, 'preparation never opens source subscriptions')
+  const reading = f.summaries.setPeers([peer])
+  assert.equal(f.records.get(peer).event.content, 'Prepared before contacts', 'prepared rows publish immediately on membership confirmation')
+  assert.equal(f.records.has(other), false)
+  assert.equal(f.records.get(peer).verified, false)
+  await reading
+  assert.equal(reads, 1)
+  assert.deepEqual(f.decrypted, [])
+})
+
+test('waiting for contacts does not restart the cache budget', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const cache = Promise.withResolvers()
+  const f = fixture(t, [], { cacheTimeout: 250, cache: { read: () => cache.promise, write: async () => {}, close: async () => {} } })
+  t.after(() => cache.resolve([]))
+  const preparing = f.summaries.prepare()
+  await flush()
+  t.mock.timers.tick(250); await preparing
+  const reading = f.summaries.setPeers([peer])
+  await flush()
+  assert.ok(f.subscriptions.some(value => value.options?.initial), 'ordinary readers start without another 250ms wait')
+  await reading
+})
+
+test('locking invalidates pending cache plaintext and allows a fresh preparation on unlock', async t => {
+  const first = Promise.withResolvers()
+  const second = Promise.withResolvers()
+  const restored = []
+  let reads = 0
+  const f = fixture(t, [], { cache: { read: () => ++reads === 1 ? first.promise : second.promise, write: async () => {}, close: async () => {} }, onRestore: values => restored.push(values) })
+  const old = f.summaries.setPeers([peer])
+  await flush()
+  f.summaries.suspend()
+  await old
+  const message = inner('Old pending plaintext', 100, peer)
+  first.resolve([{ peer, context: `dm:${peer}`, event: identified(message), copies: [{ id: copy(message, peer).id, created_at: 100 }], references: {}, sources: {} }])
+  await flush()
+  assert.deepEqual(restored, [])
+  assert.equal(f.subscriptions.length, 0)
+  const prepared = f.summaries.prepare()
+  await flush()
+  assert.equal(reads, 2)
+  second.resolve([]); await prepared
+  assert.deepEqual(restored, [], 'a renewed warm read also waits for membership confirmation')
+  await f.summaries.setPeers([])
+  assert.deepEqual(restored, [{}])
+})
+
+test('recovery adopts prepared cache only for the newly confirmed contact set', async t => {
+  const restored = []
+  const message = inner('Current contact', 100, peer)
+  const removed = inner('Removed during lock', 110, other)
+  const row = (event, contact) => ({ peer: contact, context: `dm:${contact}`, event: identified(event), copies: [{ id: copy(event, contact).id, created_at: event.created_at }], references: {}, sources: {} })
+  let stored = []
+  const f = fixture(t, [copy(message, peer)], { cache: { read: async () => stored, write: async () => {}, close: async () => {} }, onRestore: values => restored.push(values) })
+  await f.summaries.setPeers([other])
+  f.summaries.suspend()
+  stored = [row(message, peer), row(removed, other)]
+  await f.summaries.prepare()
+  restored.length = 0
+  await f.summaries.recover([peer])
+  assert.deepEqual(Object.keys(restored[0]), [peer])
+  assert.equal(f.records.has(other), false)
+  assert.ok(f.records.get(peer).event)
 })

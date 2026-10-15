@@ -1,5 +1,5 @@
 export const INITIAL_HOME_CACHE_TIMEOUT_MS = 250
-const MOBILE_HOME_CACHE_TIMEOUT_MS = 1000
+const MOBILE_HOME_CACHE_TIMEOUT_MS = 1500
 
 // A maximum bootstrap wait, never a minimum delay for an available cache.
 export function getHomeCacheTimeout () {

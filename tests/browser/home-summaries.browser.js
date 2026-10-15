@@ -31,6 +31,10 @@ test('cold and cached summaries order chats and prefetch independently of pendin
             .replaceAll('window.napp.eventStore', 'window.contactBoot.observeStore(window.napp.eventStore)'),
           loader: 'js', resolveDir: path.dirname(args.path)
         }))
+        build.onLoad({ filter: /src\/services\/conversation-summaries\.js$/ }, async args => ({
+          contents: (await readFile(args.path, 'utf8')).replace("from './conversation-summary-cache.js'", "from '../../tests/browser/fixtures/home-cache-probe.js'"),
+          loader: 'js', resolveDir: path.dirname(args.path)
+        }))
       }
     })
     await esbuild.build(options)
@@ -68,6 +72,8 @@ test('cold and cached summaries order chats and prefetch independently of pendin
       await browser.evaluate('document.querySelector("passkey-fallback-dialog [data-choice=local]")?.click()', vaultOrigin)
       return browser.evaluate(`Boolean(document.querySelector('account-avatar[pubkey="${pubkey}"]'))`, vaultOrigin)
     }, 'imported test account', 45000)
+    await browser.evaluate('document.querySelector("vault-lock-button:not([hidden])")?.click()', vaultOrigin)
+    await browser.until(() => browser.evaluate('Boolean(document.querySelector("lock-overlay .lock-unlock"))', vaultOrigin), 'test account starts locked')
 
     const session = [...browser.contexts.values()].find(context => context.origin === 'http://localhost:10000' && context.auxData?.isDefault).sessionId
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 780, deviceScaleFactor: 1, mobile: true }, session)
@@ -76,11 +82,18 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     const url = await browser.until(() => browser.evaluate('[...document.querySelectorAll("app-window iframe")].map(frame => frame.src).find(src => src.startsWith("http:") && /^[0-9]+[.]localhost$/.test(new URL(src).hostname))'), 'app frame')
     const origin = new URL(url).origin
     const evaluate = expression => browser.evaluate(expression, origin)
+    const collect = async () => {
+      for (const context of browser.contexts.values()) if (context.auxData?.isDefault) await browser.send('HeapProfiler.collectGarbage', {}, context.sessionId)
+    }
     await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("lock-overlay .lock-unlock"))', vaultOrigin), 'vault unlock UI')
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("vault-lock-button") && !document.querySelector("vault-lock-button").hidden)', vaultOrigin), 'unlocked vault')
     await browser.until(() => evaluate('contactBoot.account.contactsState$() === "loaded"'), 'initial local contacts')
+    // Opening the vault can dismiss pending setup permissions. Recover through
+    // the real account coordinator after that UI transition, before seeding.
+    await browser.until(() => evaluate(`['loaded','unavailable'].includes(contactBoot.account.summaries$()['${pubkey}']?.state)`), 'initial summary setup settles')
+    if (await evaluate(`contactBoot.account.summaries$()['${pubkey}']?.state==='unavailable'`)) await evaluate('contactBoot.account.recovery$(value=>value+1)')
     await browser.until(() => evaluate(`contactBoot.account.summaries$()['${pubkey}']?.state==='loaded'`), 'initial self summary permission settles before navigation')
     // Seed source history away from home so ordinary visible prefetch does not
     // compete with fixture creation. Both tested home openings follow below.
@@ -105,6 +118,7 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     await evaluate('window.dispatchEvent(new Event("pagehide"))')
     await browser.until(async () => (await evaluate('contactBoot.readSummaryCache()')).some(record => record.peer === other), 'fixture cache exists before the cold-cache opening')
     await evaluate('contactBoot.clearSummaryCache()')
+    await collect()
     console.log('Reloading cold home')
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 320, deviceScaleFactor: 1, mobile: true }, session)
     await browser.evaluate(`(() => {
@@ -123,6 +137,7 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     assert.equal(await evaluate('contactBoot.queueFinished'), false)
     const histories = () => evaluate("contactBoot.reads.filter(read => read.method === 'subscribe' && read.options?.initial && read.filter.limit === 25 && read.filter['#k']?.includes('9'))")
     console.log('Checking visible prefetch')
+    await collect()
     const visible = await evaluate(`(() => {
       const home = document.querySelector('.route-page[data-active=true] .home');
       const top = home.querySelector('.contacts-divider').getBoundingClientRect().bottom;
@@ -201,14 +216,27 @@ test('cold and cached summaries order chats and prefetch independently of pendin
       const snapshot = await evaluate('contactBoot.readSummaryCache()')
       return Object.entries(warmIds).every(([peer, id]) => snapshot.some(record => record.peer === peer && record.event.id === id))
     }, 'complete projection is persisted through the real encrypted cache')
+    // Reclaim discarded startup/visited-route objects before the warm phase;
+    // all Chrome, vault and watcher processes share the guarded 3 GiB budget.
+    await collect()
     await browser.evaluate(`(() => {
       const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>new URL(frame.src).origin===${JSON.stringify(origin)});
-      const url=new URL(frame.src);url.pathname='/';url.search='?holdOutbox=1&holdSummaries=1';frame.src=url.href;
+      const url=new URL(frame.src);url.pathname='/';url.search='?holdContacts=1&holdOutbox=1&holdSummaries=1';frame.src=url.href;
     })()`)
+    await browser.until(() => evaluate('contactBoot.cacheFinished !== undefined && contactBoot.contactReads === 1'), 'real cache decrypts while contact membership is still held', 5000)
+    assert.equal(await evaluate('contactBoot.account.contactsState$()'), 'loading')
+    assert.equal(await evaluate('Object.keys(contactBoot.account.summaries$()).length'), 0, 'decrypted previews stay private until membership is confirmed')
+    assert.equal(await evaluate('(contactBoot.channelPreparations || []).length'), 0, 'bulk channel preparation waits for the cached list')
+    assert.equal(await evaluate('contactBoot.reads.some(read=>read.filter["#k"]?.includes("30078"))'), false, 'bulk read anchors also wait')
+    assert.equal(await evaluate('contactBoot.cacheReads'), 1)
+    await evaluate('contactBoot.releaseContacts()')
     await browser.until(() => evaluate('contactBoot.summaryFrames.length>0'), 'encrypted projection restores home rows while source summaries wait', 5000)
     const firstFrame = await evaluate('contactBoot.summaryFrames[0]')
     assert.deepEqual(firstFrame.rows, warmRows, 'the first restored frame keeps previews and latest-message order')
     assert.ok(firstFrame.at < 5000)
+    await browser.until(() => evaluate('(contactBoot.channelPreparations || []).length > 0'), 'bulk channels resume after cached rows render')
+    assert.deepEqual(await evaluate('contactBoot.channelPreparations[0].rows'), warmRows.map(row => row.id), 'cached rows render before bulk channels start')
+    assert.equal(await evaluate('contactBoot.cacheReads'), 1, 'membership confirmation reuses the prepared snapshot')
     assert.equal(await evaluate(`contactBoot.account.summaries$()['${empty}']?.state`), 'loading', 'an empty offscreen contact remains pending')
     await browser.until(() => evaluate('contactBoot.reads.some(read=>read.method==="subscribe" && read.filter.limit===25)'), 'visible prefetch starts without waiting for every summary')
     console.log(`Warm summaries: first cached rows in ${Math.round(firstFrame.at)} ms; all source summaries still held.`)
@@ -219,12 +247,15 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     await browser.until(() => evaluate(`['${pubkey}', '${peer}', '${other}', '${empty}'].every(peer=>contactBoot.account.summaries$()[peer]?.state==='loaded')`), 'warm summaries revalidate after release')
     await evaluate('contactBoot.releaseQueue()')
   } catch (error) {
+    console.error(error)
     console.log('Summary errors:', summaryErrors.slice(-5))
     for (const context of browser?.contexts.values() ?? []) {
       if (!/^http:\/\/[0-9]+[.]localhost:10000$/.test(context.origin) || !context.auxData?.isDefault) continue
       console.log('Summary cache diagnostic:', await browser.evaluate(`(async()=>({
         summaries:Object.fromEntries(Object.entries(contactBoot.account.summaries$()).map(([peer,record])=>[peer,{state:record.state,id:record.event?.id,at:record.event?.created_at,copies:record.copies?.length}])),
-        cached:await contactBoot.readSummaryCache().then(records=>records.map(record=>({peer:record.peer,id:record.event.id,at:record.event.created_at}))).catch(error=>({error:error.message})),
+        cache:{started:contactBoot.cacheStarted,finished:contactBoot.cacheFinished,reads:contactBoot.cacheReads},
+        channels:contactBoot.channelPreparations,
+        frames:contactBoot.summaryFrames.slice(0,2),
         reads:contactBoot.reads.slice(-5)
       }))()`, context.origin).catch(() => null))
       break

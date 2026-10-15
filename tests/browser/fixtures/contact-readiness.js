@@ -13,7 +13,7 @@ new MutationObserver(() => {
 }).observe(document.documentElement, { childList: true, subtree: true })
 
 export function createPrivateChats (options) {
-  return privateChats({
+  const transport = privateChats({
     ...options,
     openOutbox: async options => {
       boot.queueStarted = true
@@ -23,6 +23,15 @@ export function createPrivateChats (options) {
       return result
     }
   })
+  const setPeers = transport.setPeers
+  transport.setPeers = peers => {
+    ;(boot.channelPreparations ||= []).push({
+      at: performance.now() - boot.started, peers,
+      rows: [...document.querySelectorAll('.route-page[data-active=true] .conversation button')].map(button => button.dataset.contactId)
+    })
+    return setPeers(peers)
+  }
+  return transport
 }
 
 export function createContacts (options) {

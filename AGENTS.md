@@ -693,17 +693,32 @@ needed; empty folders mark the initial structure.
   Coalesce writes for 250ms; hidden/pagehide/root teardown request a flush.
   Cache failure never fails authoritative history; late reads cannot update a
   closed account, and teardown finishes its own scoped flush before queue close.
-  Root recovery restores only after matching loaded
-  contact membership and allowed, unlocked account availability.
+  Begin reading/decrypting after allowed, unlocked account availability, in
+  parallel with local contacts. Hold prepared plaintext inside the account-owned
+  service until matching loaded contact membership is confirmed; preparation
+  never opens source subscriptions or publishes rows. Lock/owner teardown fences
+  pending cache results and unlock can prepare again. Mark membership loading
+  before publishing renewed signer availability; recover with the newly
+  confirmed peers rather than the previous session's reader set.
 - Restore the encrypted projection in one atomic account-store update, with a
-  maximum bootstrap wait of 1s at widths up to 718px, otherwise 250ms, with
+  maximum bootstrap wait of 1.5s at widths up to 718px, otherwise 250ms, with
   no minimum delay and late-result fencing. Select this budget once for the
-  account-owned service; resize cannot change an in-flight bootstrap. Cached display remains
+  account-owned service; its deadline starts on early preparation and is never
+  restarted by contact confirmation or resize. Cached display remains
   `verified: false` until exact IDs are checked in the account/context store.
   Validate reference source IDs as well, dropping missing metadata. Only verified
   messages can seed foreground bubbles/prefetch; reuse admitted ciphertext IDs
   to avoid repeat decryption. `chat-references.js` tracks private/public source
   IDs for this projection. Loaded source messages supersede late cache results.
+- `home-startup.js` gives restored rows a paint opportunity before initial bulk
+  channel membership and read-anchor work. Wait only for the bounded cache
+  preparation, never authoritative histories or network recovery; the paint
+  yield waits for restored row DOM commits and a subsequent paint opportunity,
+  with a 250ms fallback for hidden/throttled documents. Contacts and transport
+  availability start independently. Explicit foreground navigation releases the
+  gate immediately. Coalesce pending work to current membership and discard it
+  on lock/owner teardown; once channels are admitted, membership changes and
+  removals remain immediate.
 - `conversation-order.js` owns a single account startup cohort and stable row
   ledger, seeded from restored rows ordered by latest timestamp. Keep empty
   self last while other previews arrive. Release the freeze on initial message
@@ -781,8 +796,10 @@ needed; empty folders mark the initial structure.
   Opening completed prefetch must not restart history; opening held prefetch
   shares its subscription and keeps the latest bubble's DOM node as the earlier
   messages arrive before EOSE. Visiting a chat must not repair its row.
-  Its warm reload holds all source-summary delivery and verifies first-frame
-  cached ordering/captions, independent visible prefetch and verified bubble
+  Its warm reload holds contact confirmation and all source-summary delivery,
+  verifies real cache decryption before membership without publishing rows, and
+  checks that bulk channels start after restored rows mount. It verifies
+  first-frame cached ordering/captions, independent visible prefetch and verified bubble
   handoff through the real cache, signer and event-store APIs. Logic/cache tests
   cover ciphertext-only persistence, size/owner limits, early previews, missing
   sources, late/failed cache work, finite startup order and retained history.
@@ -1622,7 +1639,7 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   startup cohort from the first nonempty, locally loaded contact list. Before
   rendering peers, seed the ledger alphabetically from shared local profile
   snapshots and current petnames, including the implicit owner's `user` id.
-  Local reads have a maximum wait of 1s at widths up to 718px, otherwise 250ms,
+  Local reads have a maximum wait of 1.5s at widths up to 718px, otherwise 250ms,
   selected once per account coordinator by `helpers/home-cache.js`, with no
   minimum delay and no new profile IO;
   missed/failed/pending reads use the normal name fallback. Keep self visible
