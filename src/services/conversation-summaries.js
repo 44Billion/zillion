@@ -4,10 +4,11 @@ import { createChatReferences, decryptPersonalCopy, isResolvableChatReference } 
 import { chatMessageReferences } from '#helpers/chat-timeline.js'
 import { compareChatMessages } from '#helpers/conversation-preview.js'
 import { createConversationSummaryCache } from './conversation-summary-cache.js'
+import { getHomeCacheTimeout } from '#helpers/home-cache.js'
 
 // The list owns one latest-message snapshot per known conversation, independent
 // of the paged histories opened by chat routes. No media bytes are requested.
-export function createConversationSummaries ({ pubkey, signer, eventStore, onChange, onRestore, onError = () => {}, cache = globalThis.indexedDB ? createConversationSummaryCache({ owner: pubkey, signer }) : null }) {
+export function createConversationSummaries ({ pubkey, signer, eventStore, onChange, onRestore, onError = () => {}, cache = globalThis.indexedDB ? createConversationSummaryCache({ owner: pubkey, signer }) : null, cacheTimeout = getHomeCacheTimeout() }) {
   const entries = new Map()
   const records = new Map()
   const workers = createChatWorkers(4)
@@ -68,7 +69,7 @@ export function createConversationSummaries ({ pubkey, signer, eventStore, onCha
       }
     }).catch(error => { bootstrapFailed = true; if (!closed) onError(error) })
     let timer
-    try { await Promise.race([bootstrap, new Promise(resolve => { timer = setTimeout(resolve, 250) })]) } finally { clearTimeout(timer) }
+    try { await Promise.race([bootstrap, new Promise(resolve => { timer = setTimeout(resolve, cacheTimeout) })]) } finally { clearTimeout(timer) }
   }
   // Existence checks use the exact source IDs, account and conversation. They
   // admit cached plaintext without repeating its signer decryption, and never

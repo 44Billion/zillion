@@ -477,3 +477,54 @@ test('a late cache restore validates independently of held initial-summary deliv
   assert.equal(f.records.get(peer).state, 'loaded')
   assert.deepEqual(f.decrypted, [])
 })
+
+function mobileViewport (t) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia')
+  let mobile = true
+  Object.defineProperty(globalThis, 'matchMedia', { configurable: true, value: () => ({ matches: mobile }) })
+  t.after(() => { if (original) Object.defineProperty(globalThis, 'matchMedia', original); else delete globalThis.matchMedia })
+  return () => { mobile = false }
+}
+const flush = async () => { for (let n = 0; n < 8; n++) await new Promise(resolve => setImmediate(resolve)) }
+
+test('mobile restores a 600ms cache before source readers start, without repeating message decryption', async t => {
+  mobileViewport(t)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const gate = Promise.withResolvers()
+  t.after(() => gate.resolve([]))
+  const message = inner('Cached mobile message', 100, peer)
+  const wrapper = copy(message, peer)
+  const f = fixture(t, [wrapper], { cache: { read: () => gate.promise, write: async () => {}, close: async () => {} } })
+  const reading = f.summaries.setPeers([peer])
+  await flush()
+  t.mock.timers.tick(600); await flush()
+  assert.equal(f.subscriptions.length, 0)
+  gate.resolve([{ peer, context: `dm:${peer}`, event: identified(message), copies: [{ id: wrapper.id, created_at: 100 }], references: {}, sources: {} }])
+  await reading
+  assert.equal(f.records.get(peer).event.id, identified(message).id)
+  assert.deepEqual(f.decrypted, [])
+})
+
+test('mobile cache timeout is capped at one second and does not change during resize', async t => {
+  const resize = mobileViewport(t)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const gate = Promise.withResolvers()
+  t.after(() => gate.resolve([]))
+  const f = fixture(t, [], { cache: { read: () => gate.promise, write: async () => {}, close: async () => {} } })
+  const reading = f.summaries.setPeers([peer])
+  await flush()
+  resize()
+  t.mock.timers.tick(999); await flush()
+  assert.equal(f.subscriptions.length, 0)
+  t.mock.timers.tick(1)
+  await reading
+  assert.ok(f.subscriptions.some(value => value.options?.initial))
+})
+
+test('a ready mobile snapshot has no minimum bootstrap wait', async t => {
+  mobileViewport(t)
+  t.mock.timers.enable({ apis: ['setTimeout'] })
+  const f = fixture(t, [], { cache: { read: async () => [], write: async () => {}, close: async () => {} } })
+  await f.summaries.setPeers([peer])
+  assert.ok(f.subscriptions.some(value => value.options?.initial), 'ready cache starts readers without advancing timers')
+})

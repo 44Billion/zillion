@@ -3,6 +3,19 @@ import { test } from 'node:test'
 import { createContactOrder, orderHomeContacts, INITIAL_CONTACT_CACHE_TIMEOUT_MS } from '#services/contact-order.js'
 
 const flush = async () => { for (let n = 0; n < 3; n++) await new Promise(resolve => setImmediate(resolve)) }
+function mobileViewport (t) {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'matchMedia')
+  let mobile = true
+  Object.defineProperty(globalThis, 'matchMedia', {
+    configurable: true,
+    value: query => {
+      assert.equal(query, '(max-width: 718px)')
+      return { matches: mobile }
+    }
+  })
+  t.after(() => { if (original) Object.defineProperty(globalThis, 'matchMedia', original); else delete globalThis.matchMedia })
+  return () => { mobile = false }
+}
 const contact = (pubkey, extra = {}) => ({ pubkey, ...extra })
 function fixture (t, options = {}) {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
@@ -205,4 +218,31 @@ test('fully cached peers still wait for the local own name, with no minimum prep
   assert.equal(f.latest().localPending, false)
   assert.equal(f.latest().alphabetical, true)
   assert.deepEqual(f.latest().ids, ['a', 'user', 'b'])
+})
+
+test('mobile includes names arriving after 250ms and finishes immediately when local reads settle', async t => {
+  const resize = mobileViewport(t)
+  const f = cachedFixture(t)
+  f.order.reconcile([contact('b', { pinned: true }), contact('a', { pinned: true }), contact('c')])
+  await f.advance(600)
+  assert.equal(f.latest().localPending, true)
+  resize()
+  f.local.get('b').resolve({ name: 'Zulu' }); f.local.get('a').resolve({ name: 'Aaron' })
+  f.local.get('c').resolve(null); f.local.get('owner').resolve({ name: 'Mona' })
+  await flush()
+  assert.equal(f.latest().localPending, false, 'ready names do not wait the full second')
+  assert.deepEqual(f.latest().ids, ['a', 'user', 'c', 'b'])
+})
+
+test('mobile bootstrap has a one-second maximum and resize cannot shorten it', async t => {
+  const resize = mobileViewport(t)
+  const f = cachedFixture(t)
+  f.order.reconcile([contact('b'), contact('a'), contact('c')])
+  await f.advance(250)
+  resize()
+  await f.advance(749)
+  assert.equal(f.latest().localPending, true)
+  await f.advance(1)
+  assert.equal(f.latest().localPending, false)
+  assert.equal(f.latest().alphabetical, false)
 })

@@ -696,7 +696,9 @@ needed; empty folders mark the initial structure.
   Root recovery restores only after matching loaded
   contact membership and allowed, unlocked account availability.
 - Restore the encrypted projection in one atomic account-store update, with a
-  250ms maximum bootstrap wait and late-result fencing. Cached display remains
+  maximum bootstrap wait of 1s at widths up to 718px, otherwise 250ms, with
+  no minimum delay and late-result fencing. Select this budget once for the
+  account-owned service; resize cannot change an in-flight bootstrap. Cached display remains
   `verified: false` until exact IDs are checked in the account/context store.
   Validate reference source IDs as well, dropping missing metadata. Only verified
   messages can seed foreground bubbles/prefetch; reuse admitted ciphertext IDs
@@ -1620,7 +1622,9 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
   startup cohort from the first nonempty, locally loaded contact list. Before
   rendering peers, seed the ledger alphabetically from shared local profile
   snapshots and current petnames, including the implicit owner's `user` id.
-  Local reads have a 250ms maximum wait, no minimum delay, and no new profile IO;
+  Local reads have a maximum wait of 1s at widths up to 718px, otherwise 250ms,
+  selected once per account coordinator by `helpers/home-cache.js`, with no
+  minimum delay and no new profile IO;
   missed/failed/pending reads use the normal name fallback. Keep self visible
   during preparation. Preserve pinned priority in both stages. Then freeze the
   ledger until every initial member is ready or the absolute 30s deadline from

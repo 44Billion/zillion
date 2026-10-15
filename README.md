@@ -99,6 +99,9 @@ date and update on new messages and deletions, before any chat is visited.
 An account-scoped encrypted snapshot restores up to 128 recent chat summaries
 after unlock and confirmed local contacts. It keeps complete latest messages,
 their reference metadata and source-copy IDs; eventStore remains authoritative.
+Initial cache reads for contact order and chat summaries have a maximum wait
+of 1 second at widths up to 718px, or 250ms otherwise. Ready caches render without
+a minimum delay; resizing does not restart the selected budget.
 Source existence is checked before cached messages seed bubbles or prefetch.
 Missing/corrupt caches fall back to ordinary reads. New previews appear before
 their reference metadata finishes, using translated placeholders when necessary.

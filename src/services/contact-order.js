@@ -1,9 +1,11 @@
+import { getHomeCacheTimeout, INITIAL_HOME_CACHE_TIMEOUT_MS } from '#helpers/home-cache.js'
+
 export const INITIAL_CONTACT_ORDER_TIMEOUT_MS = 30000
-export const INITIAL_CONTACT_CACHE_TIMEOUT_MS = 250
+export const INITIAL_CONTACT_CACHE_TIMEOUT_MS = INITIAL_HOME_CACHE_TIMEOUT_MS
 
 // One local name snapshot seeds a stable order before the first peer paint.
 // Profile interests belong to the shared coordinator, including remote recovery.
-export function createContactOrder ({ initialReady, localReady, nameFor, self, onChange, timeout = INITIAL_CONTACT_ORDER_TIMEOUT_MS, localTimeout = INITIAL_CONTACT_CACHE_TIMEOUT_MS }) {
+export function createContactOrder ({ initialReady, localReady, nameFor, self, onChange, timeout = INITIAL_CONTACT_ORDER_TIMEOUT_MS, localTimeout = getHomeCacheTimeout() }) {
   let ids = []
   let started = false
   let alphabetical = false
