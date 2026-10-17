@@ -1,4 +1,4 @@
-const scalarFields = ['name', 'message', 'code', 'category', 'closeCode', 'closeReason', 'wasClean', 'relay', 'operation', 'eventId', 'eventKind', 'receivedEventCount', 'elapsedMs']
+const scalarFields = ['name', 'message', 'code', 'category', 'closeCode', 'closeReason', 'wasClean', 'relay', 'operation', 'eventId', 'eventKind', 'receivedEventCount', 'elapsedMs', 'stage', 'channelPubkey', 'senderPubkey', 'receiverPubkey', 'ownContentPubkey', 'peerContentPubkey', 'hasOwnContentKey']
 const pick = (value, fields) => Object.fromEntries(fields.filter(key => ['string', 'number', 'boolean'].includes(typeof value?.[key])).map(key => [key, value[key]]))
 
 // Error.message/cause/AggregateError.errors are not enumerable. Explicitly

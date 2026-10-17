@@ -155,11 +155,14 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
       await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', vaultOrigin)
       await browser.until(() => evaluate('sendTest.account.signerState$()?.isLocked === false'), 'unlocked account notification')
       await push(`/chat/${peer}`)
+      const sendChannel = await evaluate(`nostr.withSharedKey('${peer}', 'dm').getPublicKey()`)
       const id = await send('Text after locked startup')
       await browser.until(async () => (await messages()).find(message => message.id === id)?.status === 'saved', 'healthy publication after unlock', 30000)
-      const measurement = await evaluate(`(() => { const first = dmTest.publicationBatches.find(value => value.kind === 3560); return { clicked: sendClickedAt, local: localSendMeasurements.find(value => value.id === '${id}')?.at, first: first?.at, accepted: dmTest.acceptances.find(value => value.id === first?.id)?.at, settled: performance.now(), instances: pauseTestMessengers.length, reasons: pauseTestMessengers[0].readStatus().pauseReasons } })()`)
+      // Other channels can publish presence during unlock. Measure only this
+      // conversation after the click, excluding background announcements.
+      const measurement = await evaluate(`(() => { const first = dmTest.publicationBatches.find(value => value.kind === 3560 && value.pubkey === '${sendChannel}' && value.at >= sendClickedAt); return { clicked: sendClickedAt, local: localSendMeasurements.find(value => value.id === '${id}')?.at, first: first?.at, accepted: dmTest.acceptances.find(value => value.id === first?.id)?.at, settled: performance.now(), instances: pauseTestMessengers.length, reasons: pauseTestMessengers[0].readStatus().pauseReasons } })()`)
       assert.ok(measurement.local >= measurement.clicked, 'personal copy persists after click')
-      assert.ok(measurement.first >= measurement.local, 'publication follows local persistence')
+      assert.ok(measurement.first >= measurement.local, `publication follows local persistence: ${JSON.stringify(measurement)}`)
       assert.ok(measurement.accepted - measurement.clicked <= 5000, JSON.stringify(measurement))
       assert.equal(measurement.instances, 1)
       assert.deepEqual(measurement.reasons, [])

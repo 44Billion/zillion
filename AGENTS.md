@@ -20,6 +20,15 @@ foundations, and build/publishing tooling. Do not describe planned features as a
 
 ## Nostr and messaging
 
+- The coordinated 0.11.22 library owns legacy index migration and the separate
+  16 MiB pending-decryption FIFO. The stable account root subscribes once to
+  onContentKeysChanged when available, deduplicates revisions and waits for
+  signer availability/contact membership before requesting a retry. Cleanup
+  releases the subscription. Older launchers keep startup/unlock recovery.
+  Keep crypto retry/storage policy in the library, never in avatar/chat views.
+  Error JSON includes only selected public crypto coordinates, without raw
+  scopes, ciphertext, plaintext or unsanitized error-object logging.
+
 - Before implementing any Nostr behavior, check the public exports and
   implementation of the installed `libp2r2p` and, when needed, the sibling
   repository `../../libp2r2p`.

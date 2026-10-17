@@ -521,7 +521,7 @@ function useInitPrivateChats (account, queue) {
         account.outbox$(entries)
         for (const chat of runtime.chats.values()) chat.applyOutbox(entries)
       },
-      onError: error => { if (!closed) console.warn(`Private chat operation failed ${JSON.stringify(privateChatDiagnostic(error, owner))}`, error) }
+      onError: error => { if (!closed) console.warn(`Private chat operation failed ${JSON.stringify(privateChatDiagnostic(error, owner))}`) }
     })
     runtime.contacts = createContacts({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
@@ -534,7 +534,7 @@ function useInitPrivateChats (account, queue) {
         const reconcileChannels = () => {
           if (closed) return
           channelsKnown = true
-          return runtime.transport.setPeers(contacts.map(contact => contact.pubkey))
+          return runtime.transport.setPeers(contacts.map(contact => contact.pubkey)).then(() => retryPendingKeys())
         }
         // Once admitted, membership changes (especially removals) stay immediate.
         if (channelsKnown) reconcileChannels().catch(() => {})
@@ -545,6 +545,16 @@ function useInitPrivateChats (account, queue) {
     })
     let availableApplied = false
     let wasAvailable = false
+    let keysPending = true
+    let keysRevision
+    const retryPendingKeys = async () => {
+      if (closed || !keysPending || !availableApplied || !channelsKnown) return
+      keysPending = false
+      try { await runtime.transport?.retryPendingDecryptions() } catch (error) {
+        keysPending = true
+        if (!closed) console.warn('Could not retry pending decryptions', error)
+      }
+    }
     const stateChanged = async (state, { resume = false } = {}) => {
       if (closed) return
       state = {
@@ -577,15 +587,24 @@ function useInitPrivateChats (account, queue) {
       if (wasAvailable) for (const [peer, chat] of runtime.chats) if (queue.opened.has(peer)) reads.push(chat.start())
       wasAvailable = true
       await Promise.all([delivery, ...reads])
+      await retryPendingKeys()
     }
     const stopState = window.napp.onSignerStateChanged(stateChanged)
     stopState.ready?.catch(error => { if (!closed) console.warn('Signer state unavailable', error) })
+    const stopKeys = window.napp.onContentKeysChanged?.(state => {
+      if (closed || state.pubkey !== owner || state.revision === keysRevision) return
+      keysRevision = state.revision
+      keysPending = true
+      retryPendingKeys()
+    })
+    stopKeys?.ready?.catch(error => { if (!closed) console.warn('Content key notifications unavailable', error) })
     const stopOnline = onOnline(async () => {
       if (!closed) await stateChanged(await window.napp.getSignerState(), { resume: true })
     })
     cleanup(() => {
       closed = true
       stopState(); stopOnline()
+      stopKeys?.()
       account.signerState$(null)
       runtime.contacts?.close(); runtime.contacts = null
       runtime.transport?.close().catch(() => {}); runtime.transport = null

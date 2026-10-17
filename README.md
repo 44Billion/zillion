@@ -1,5 +1,12 @@
 # Zillion
 
+With libp2r2p 0.11.22, missing content keys and MAC failures are retained as
+ciphertext in a separate 16 MiB FIFO, allowing later history to continue.
+Startup/unlock and committed content-key notifications retry pending packets;
+old launchers retain startup/unlock recovery. MAC retries stop after three
+attempts, retaining the ciphertext until FIFO eviction or explicit cleanup.
+No database reset is needed for the library's known legacy queue index.
+
 A private chat inspired by WhatsApp and Signal, built as a Nostr client.
 Messaging uses `libp2r2p/private-messenger`, with shared self/peer chat
 presentation, personal copies and an encrypted durable outbox. Real contacts are
