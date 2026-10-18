@@ -849,8 +849,9 @@ needed; empty folders mark the initial structure.
   `/chat/user` never falls back to fixture messages, including when signed out.
 - `src/services/self-chat.js` uses unsigned kind-9 text templates and unsigned
   kind-1063 file templates, explicit context `dm:<own hex pubkey>`,
-  `addPersonalCopy` and query/subscribe. No relay sends or private-messenger
-  transport are involved. Only owner-authored direct/signed copies in that
+  `addPersonalCopy` and query/subscribe. Real self sends use the shared encrypted
+  session outbox and its independent local processor; they never publish to relays.
+  A committed local save emits saved before independent outbox cleanup finishes. Only owner-authored direct/signed copies in that
   exact context are rendered; hearsay/other authors are excluded. The feed
   subscribes to inner kind 9 only; file metadata is resolved through the
   references of those messages instead of becoming a bubble.

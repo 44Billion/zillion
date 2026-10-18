@@ -2,7 +2,7 @@ import { createQueue } from 'libp2r2p/idb-queue'
 
 // Only ciphertext and opaque event IDs are persisted here. Chunks are committed
 // to the launcher's ordinary file store before an entry is accepted.
-export async function createChatOutbox ({ owner, signer, indexedDB = globalThis.indexedDB, namespace = 'outbox' }) {
+export async function createChatOutbox ({ owner, signer, indexedDB = globalThis.indexedDB, namespace = 'outbox', onDebug }) {
   const queue = await createQueue({
     prefix: `zillion:${namespace}:${owner}`,
     indexes: { byId: { keyPath: 'id', unique: true } },
@@ -11,8 +11,10 @@ export async function createChatOutbox ({ owner, signer, indexedDB = globalThis.
   })
   return {
     async put (entry, { existing = false } = {}) {
+      const startedAt = Date.now()
       const bytes = new TextEncoder().encode(JSON.stringify(entry)).buffer
       const ciphertext = await signer.nip44v3.encrypt(owner, 9, `zillion:${namespace}`, bytes)
+      try { onDebug?.({ stage: existing ? 'outbox-checkpoint-encryption' : 'outbox-encryption', eventId: entry.id, elapsedMs: Date.now() - startedAt }) } catch {}
       return queue.putBy('byId', { id: entry.id, ciphertext }, { existingOnly: existing })
     },
     async list () {

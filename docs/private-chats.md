@@ -415,3 +415,21 @@ and daily D candidates. Grants never use r root references. Revocation is privat
 kind 5; local removal/expiry is not a distributed deletion. Sync never renews a
 share. The vault's own synchronization messenger retains local seeds to avoid a
 recursive sync loop. NostrDB quota, signer lock and storage errors remain visible.
+
+## Independent persistence and publication
+
+The shared encrypted session outbox now has independent serial local and remote
+processors. Local self sends never wait behind relay publication, channel setup
+or the network pause. Remote entries wait for committed local checkpoints before
+publication. Self messages become saved on event-store commit; remote messages
+become saved after the first suitable relay ACK for each required event.
+Cleanup is independent and cannot revert a committed self bubble to pending/error.
+Interrupted removal replays the same inner identity through idempotent storage.
+
+Development builds emit bounded `[messaging-performance]` traces grouped by
+event ID, with send/preparation, outbox encryption/admission, local persistence,
+publication and bubble completion times. Launcher traces separately expose
+request/parent IDs, queue waits, vault duration and global quota-lock contention.
+These are developer diagnostics, not a new scheduling API. No scope prefixes
+are interpreted by the launcher; kind-9 cache operations therefore also receive
+message priority in this first heuristic. Production tracing is disabled.

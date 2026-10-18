@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { bytesToBase16 } from 'libp2r2p/base16'
 
-export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
+export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, pubkey, performanceOnly = false }) {
   const secret = generateSecretKey(); const peer = getPublicKey(secret)
   const vault = 'http://localhost:4000'
   await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
@@ -22,7 +22,15 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
     localStorage.setItem(key, newValue); window.dispatchEvent(new StorageEvent('storage', {key, newValue, storageArea:localStorage}));
   })()`)
   await browser.until(() => evaluate(`window.napp.getPersonaPublicKeys().then(keys => keys.includes('${peer}'))`), 'peer available through persona')
-  assert.deepEqual(await evaluate(`window.napp.getSignerState({pubkey:'${peer}'})`), { pubkey: peer, connection: 'connected', access: 'allowed', isLocked: false, isReadOnly: false })
+  assert.deepEqual(await evaluate(`window.napp.getSignerState({pubkey:'${peer}'}).then(({pubkey, connection, access, isLocked, isReadOnly}) => ({pubkey, connection, access, isLocked, isReadOnly}))`), { pubkey: peer, connection: 'connected', access: 'allowed', isLocked: false, isReadOnly: false })
+  // Settle real read/signing grants before concurrent messenger startup. Each
+  // call waits for the native permission dialog close, not just its API result.
+  for (const target of [pubkey, peer]) {
+    for (const kind of [9, 1063, 3560, 26300, 26400, 34601, 30078]) {
+      await grant(`window.napp.getWindowNappEventStoreFor('${target}').query({ kinds: [${kind}], limit: 1 })`)
+      await grant(`window.napp.getWindowNappEventStoreFor('${target}').query({ kinds: [1006], '#k': ['${kind}'], limit: 1 })`)
+    }
+  }
   console.log('Private chats: both real identities authorized')
   await evaluate('installPrivateChatFixture()')
   assert.deepEqual(await evaluate('dmTest.checkTemporaryLeaves()'), { count: 130, otherCount: 130 })
@@ -32,7 +40,12 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
   await browser.until(() => evaluate(`selfChatAccount.contacts$().some(contact => contact.pubkey === '${peer}')`), 'persistent contact')
   await evaluate(`selfChatAccount.openConversation('${peer}')`)
   const sent = await evaluate(`selfChatAccount.chatFor('${peer}').send('Private hello')`)
-  await browser.until(() => evaluate(`dmTest.messages.some(event => event.id === '${sent}' && event.content === 'Private hello')`), 'encrypted channel received by second account', 60000)
+  try {
+    await browser.until(() => evaluate(`dmTest.messages.some(event => event.id === '${sent}' && event.content === 'Private hello')`), 'encrypted channel received by second account', 60000)
+  } catch (error) {
+    console.error('Private send state:', await evaluate('JSON.stringify({ errors: dmTest.errors, outbox: selfChatAccount.outbox$().map(({id,status,failed,localSaved,index}) => ({id,status,failed,localSaved,index})), relayKinds: [...dmTest.events.values()].map(event => event.kind), peerState: dmTest.messenger.readStatus(), signer: selfChatAccount.signerState$() })'))
+    throw error
+  }
   assert.equal(await evaluate('dmTest.messages[0].pubkey'), pubkey)
   await browser.until(() => evaluate(`Object.values(dmTest.messenger.readState().channels).some(channel => channel.mode === 'seeder' && channel.seeders.includes('${pubkey}') && channel.seederActivity?.['${pubkey}']?.announcedAt > 0)`), 'peer runs as seeder and receives the primary participant seeder announcement', 60000)
   await browser.until(() => evaluate(`Array.fromAsync(dmTest.messenger.seedStorage.iterate()).then(seeds => seeds.some(seed => seed.innerEventId === '${sent}'))`), 'peer retains encrypted recovery data for the received message', 60000)
@@ -42,6 +55,11 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
     await evaluate('dmTest.holdAcknowledgements = true')
     const delayed = await evaluate(`selfChatAccount.chatFor('${peer}').send('Message with delayed relay acknowledgement')`)
     await browser.until(() => evaluate('dmTest.pendingAcknowledgements() > 0'), 'relay has received a publication and holds its OK', 20000)
+    const local = await evaluate("selfChatAccount.send('Self while a relay ACK is held')")
+    await browser.until(() => evaluate(`selfChatAccount.messages$().some(event => event.id === '${local}' && event.status === 'saved')`), 'self commits while remote publication waits', 10000)
+    assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${delayed}')?.status`), 'pending')
+    const incoming = await evaluate("dmTest.chat.send('Incoming while a relay ACK is held')")
+    await browser.until(() => evaluate(`selfChatAccount.conversations$()['${peer}']?.messages.some(event => event.id === '${incoming}')`), 'live reception while outgoing publication waits', 10000)
     await evaluate('new Promise(resolve => setTimeout(resolve, 3500))')
     assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${delayed}')?.status`), 'pending', 'the old three-second cutoff must not mark the pending message as failed')
     await evaluate('dmTest.holdAcknowledgements = false; dmTest.releaseAcknowledgements()')
@@ -54,6 +72,43 @@ export async function checkPrivateChats ({ browser, evaluate, pubkey }) {
     assert.equal(await evaluate(`selfChatAccount.conversations$()['${peer}'].messages.find(event => event.id === '${reply}').pubkey`), peer)
     assert.equal(await evaluate('dmTest.messenger.presenceTimers.size'), 1, 'peer keeps its seeder presence publisher active')
     assert.equal(await evaluate('JSON.stringify([...dmTest.events.values()]).includes("Private hello")'), false, 'relay receives encrypted content')
+  }
+  if (performanceOnly) {
+    const summaries = []
+    const sample = async label => {
+      console.log('Messaging performance sample:', label)
+      const values = []
+      for (let index = 0; index < 8; index++) {
+        const value = await evaluate(`(async () => {
+          const started = performance.now();
+          const self = await selfChatAccount.send('Performance self ${index}');
+          const remote = await selfChatAccount.chatFor('${peer}').send('Performance remote ${index}');
+          const times = {};
+          while (!times.self || !times.remote) {
+            if (!times.self && selfChatAccount.messages$().some(event => event.id === self && event.status === 'saved')) times.self = performance.now() - started;
+            if (!times.remote && selfChatAccount.conversations$()['${peer}']?.messages.some(event => event.id === remote && event.status === 'saved')) times.remote = performance.now() - started;
+            if (performance.now() - started > 20000) throw Error('PERFORMANCE_SEND_TIMEOUT');
+            await new Promise(resolve => setTimeout(resolve, 5));
+          }
+          return times;
+        })()`)
+        console.log('Messaging performance timing:', label, index, JSON.stringify(value))
+        values.push(value)
+      }
+      const summary = { label }
+      for (const type of ['self', 'remote']) {
+        const sorted = values.map(value => value[type]).sort((a, b) => a - b)
+        summary[type] = { medianMs: (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2, p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1] }
+      }
+      summaries.push(summary)
+    }
+    await sample('idle')
+    await evaluate(`(async () => { const copies = (await window.napp.eventStore.query({ kinds: [1006], '#k': ['9'], limit: 25 })).results; window.__performanceHistory = Promise.all(copies.map(copy => window.nostr.nip44v3.decrypt('${pubkey}', 9, '', copy.content))); })()`)
+    await sample('history')
+    await evaluate("(async () => { const attachment = await dmTest.prepareAttachment(new File([new Uint8Array(1048577).fill(29)], 'performance.bin', {type:'application/octet-stream'})); window.__performanceFileId = dmTest.chat.send('Performance transfer', undefined, attachment); })()")
+    await sample('file-transfer')
+    console.log('Messaging performance:', JSON.stringify(summaries))
+    return
   }
   await evaluate('document.querySelector(".chat-back").click()')
   await browser.until(() => evaluate(`!!document.querySelector('.conversation [data-contact-id="${peer}"]')`), 'real peer row on home')

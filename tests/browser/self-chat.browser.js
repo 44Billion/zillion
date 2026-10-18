@@ -25,6 +25,8 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
   let browser
   let permissions
   let allowPermissions = true
+  const performanceRecords = []
+  const sendErrors = []
   let offline = true
   const requests = []
   const held = []
@@ -51,6 +53,14 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     const app = await prepareTestApp(files, { identifier: 'self-chat-test', name: 'Self chat test' })
     files = null
     browser = await launchChrome({
+      onEvent: ({ method, params }) => {
+        const value = params?.args?.[0]?.value
+        if (method === 'Runtime.consoleAPICalled' && typeof value === 'string' && value.includes('Private chat operation failed')) { sendErrors.push(value); if (sendErrors.length > 20) sendErrors.shift() }
+        if (method === 'Runtime.consoleAPICalled' && typeof value === 'string' && value.startsWith('[messaging-performance] {')) {
+          performanceRecords.push(value)
+          if (performanceRecords.length > 200) performanceRecords.shift()
+        }
+      },
       intercept: request => {
         const url = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(url.hostname)) return null
@@ -132,6 +142,27 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     permissions = setInterval(() => {
       if (allowPermissions) browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {})
     }, 100)
+    const grant = async expression => {
+      const previous = allowPermissions
+      allowPermissions = false
+      const state = { finished: false }
+      const result = evaluate(expression).finally(() => { state.finished = true })
+      result.catch(() => {})
+      try {
+        while (!state.finished || await browser.evaluate('Boolean(document.querySelector("permission-dialog dialog[open]"))')) {
+          await browser.evaluate(`(() => {
+            const button = document.querySelector('.permission-button.allow-button:not(:disabled)');
+            if (!button) return;
+            const dialog = button.closest('dialog');
+            window.__permissionClosed ??= new Promise(resolve => dialog.addEventListener('close', resolve, {once:true}));
+            button.click();
+          })()`)
+          await new Promise(resolve => setTimeout(resolve, 100))
+        }
+        await browser.evaluate('(async () => { await window.__permissionClosed; window.__permissionClosed = null; await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))); })()')
+        return await result
+      } finally { allowPermissions = previous }
+    }
     // Reloading the launcher also reloads the vault; unlock through its real UI.
     await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
     await browser.until(() => browser.evaluate('Boolean(document.querySelector("lock-overlay .lock-unlock"))', vaultOrigin), 'vault unlock UI')
@@ -148,11 +179,11 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     // the app's real retry control before testing write permission separately.
     await browser.until(() => evaluate('document.querySelector(".chat-date .retry-btn")?.click(); document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial history before menu interactions')
 
-    if (process.env.ZILLION_PRIVATE_ONLY === '1') {
+    if (process.env.ZILLION_PRIVATE_ONLY === '1' || process.argv.includes('--private-performance-only')) {
       // This phase exercises remote relay failures, not offline parking. Keep
       // the real connectivity monitor and answer its HTTP probes positively.
       offline = false
-      await checkPrivateChats({ browser, evaluate, pubkey })
+      await checkPrivateChats({ browser, evaluate, grant, pubkey, performanceOnly: process.argv.includes('--private-performance-only') })
       return
     }
 
@@ -604,6 +635,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     if (process.env.ZILLION_CHAT_ONLY !== '1' && !process.argv.includes('--skip-attachments')) await checkMessageDeletion()
   } catch (error) {
     console.error('Self chat browser failure:', error.message)
+    if (process.argv.includes('--private-performance-only')) console.error('Performance tail:', JSON.stringify(performanceRecords.slice(-30)), 'Send errors:', JSON.stringify(sendErrors))
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/self-chat'))
     throw error
   } finally {

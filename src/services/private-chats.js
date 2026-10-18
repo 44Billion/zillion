@@ -1,3 +1,4 @@
+import { recordMessagingPerformance } from './messaging-performance.js'
 import { createPrivateMessageSession } from 'libp2r2p/private-messenger/session'
 import { createEventStoreChunkStorage, createPersonalCopyRecoveryStorage } from 'libp2r2p/private-messenger/event-store'
 import { attachPrivateMediaTransport, reportPrivateMedia } from './private-media.js'
@@ -15,6 +16,7 @@ export function createPrivateChats (options) {
   const local = createLocalMediaAccess(chunkStorage)
   const session = createPrivateMessageSession({
     ...options,
+    onDebug: options.onDebug ?? (typeof IS_DEVELOPMENT !== 'undefined' && IS_DEVELOPMENT ? recordMessagingPerformance : undefined),
     fallbackRelays: options.fallbackRelays === undefined ? ['wss://relay.44billion.net'] : options.fallbackRelays,
     fallbackDelayMs: options.fallbackDelayMs === undefined ? 3000 : options.fallbackDelayMs,
     chunkStorage,

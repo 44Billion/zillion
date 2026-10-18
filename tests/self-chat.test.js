@@ -856,3 +856,25 @@ test('canceling failed preparation releases its retained attachment without enqu
   f.chat.close()
   assert.equal(attachment.closes, 1)
 })
+
+test('self completion survives pending or failed cleanup snapshots, remote still waits for publication', async () => {
+  for (const remote of [false, true]) {
+    const peer = remote ? 'b'.repeat(64) : pubkey
+    const sent = []
+    const f = fixture([], { peer, transport: { enqueue: async entry => { sent.push(entry) } } })
+    const id = f.chat.send('Local completion contract')
+    await until(() => sent.length === 1)
+    const row = { id, peer, event: { ...sent[0].event, id }, localSaved: [true] }
+    f.chat.applyOutbox([{ ...row, status: 'pending' }])
+    assert.equal(f.messages.find(message => message.id === id).status, 'pending')
+    f.chat.applyOutbox([{ ...row, status: 'saved' }])
+    assert.equal(f.messages.find(message => message.id === id).status, 'saved')
+    if (!remote) {
+      for (const status of ['pending', 'error']) {
+        f.chat.applyOutbox([{ ...row, status }])
+        assert.equal(f.messages.find(message => message.id === id).status, 'saved')
+      }
+    }
+    f.chat.close()
+  }
+})

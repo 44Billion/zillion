@@ -1,3 +1,4 @@
+import { recordMessagingPerformance } from './messaging-performance.js'
 import { prefetchChatMedia } from './chat-media-prefetch.js'
 import { chatMessageReferences } from '#helpers/chat-timeline.js'
 import { compareChatMessages as compareMessages } from '#helpers/conversation-preview.js'
@@ -27,12 +28,17 @@ const storageFailure = (stage, saved) => Object.assign(new Error(`${stage} stora
 
 export function createSelfChat (options) { return createChat(options) }
 
-export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onSendError = () => {}, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, onNewerState = () => {}, verifyFile = verifyLocalFile, workers = createChatWorkers() }) {
+export function createChat ({ pubkey, peer = pubkey, transport, eventStore, signer, onMessages, onError, onSendError = () => {}, onDebug = typeof IS_DEVELOPMENT !== 'undefined' && IS_DEVELOPMENT ? recordMessagingPerformance : undefined, onReference = () => {}, onDelete = () => {}, onInitialLoad = () => {}, onHistoryState = () => {}, onOlderState = () => {}, onNewerState = () => {}, verifyFile = verifyLocalFile, workers = createChatWorkers() }) {
   const context = `dm:${peer}`
   const references = createChatReferences({ pubkey, eventStore, signer, context, onResolved: onReference, workers })
   const catalog = createChatReferences({ pubkey, eventStore, signer, context: '' })
   const catalogWrites = new Map()
   const messages = new Map()
+  const sentAt = new Map()
+  const debug = (id, stage, startedAt) => {
+    if (!onDebug) return
+    try { onDebug({ stage, eventId: id, at: Date.now(), ...(startedAt != null ? { elapsedMs: Date.now() - startedAt } : {}) }) } catch {}
+  }
   const deleted = new Set()
   const outbox = new Map()
   const preparations = new Map()
@@ -52,7 +58,12 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     if (!latest || compareMessages(latest, event) < 0) latest = { id: event.id, created_at: event.created_at }
   }
   const emit = () => {
-    if (!closed) onMessages([...messages.values()].sort(compareMessages))
+    if (!closed) {
+      onMessages([...messages.values()].sort(compareMessages))
+      for (const [id, startedAt] of sentAt) {
+        if (messages.get(id)?.status === 'saved') { debug(id, 'bubble-saved', startedAt); sentAt.delete(id) }
+      }
+    }
   }
   const confirm = (id, event, notify = true) => {
     if (closed || deleted.has(id) || messages.get(id)?.status === 'saved') return
@@ -311,6 +322,8 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     messages.set(id, { ...messages.get(id), status: 'pending' })
     emit()
     entry.work = Promise.resolve().then(async () => {
+      const startedAt = Date.now()
+      debug(id, 'preparation-start')
       await prepareEntry(entry, signal)
       const context = []
       if (entry.reply) {
@@ -324,6 +337,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       }
       signal.throwIfAborted()
       if (entry.fileEvent) context.push(entry.fileEvent)
+      debug(id, 'preparation-complete', startedAt)
       entry.enqueuing = true
       await transport.enqueue({ peer, event: { ...entry.event, pubkey }, context, requiredFiles: entry.fileEvent ? [getEventHash({ ...entry.fileEvent, pubkey })] : [] })
       entry.accepted = true
@@ -355,6 +369,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   function send (content, replyTo, attachment) {
     if (closed) throw new Error('Self chat is closed')
     if (typeof content !== 'string' || (!content.trim() && !attachment)) return
+    const sendStartedAt = Date.now()
     content = compactWhitespace(content)
     if (!content && !attachment) return
     if (replyTo && !messages.has(replyTo)) throw new Error('Unknown reply target')
@@ -401,6 +416,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       saltTag[1] = getRandomId()
       id = getEventHash({ ...event, pubkey })
     }
+    if (onDebug) { sentAt.set(id, sendStartedAt); if (sentAt.size > 128) sentAt.delete(sentAt.keys().next().value); debug(id, 'send', sendStartedAt) }
     rememberOrder({ ...event, id })
     messages.set(id, { ...event, pubkey, id, status: 'pending', localSource: attachment?.source, localAttachment: attachment?.metadata })
     if (fileEvent) {
@@ -419,6 +435,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
   }
   function close () {
     closed = true
+    sentAt.clear()
     generation++
     controller.abort()
     for (const entry of preparations.values()) {
@@ -498,7 +515,8 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
         }
         outbox.set(entry.id, entry)
         rememberOrder(entry.event)
-        messages.set(entry.id, { ...entry.event, status: entry.status, uploadProgress: entry.uploadProgress })
+        const status = peer === pubkey && messages.get(entry.id)?.status === 'saved' ? 'saved' : entry.status
+        messages.set(entry.id, { ...entry.event, status, uploadProgress: entry.uploadProgress })
       }
       for (const [id, preparation] of preparations) {
         if (preparation.accepted && !preparation.work) {
