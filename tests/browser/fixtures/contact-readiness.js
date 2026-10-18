@@ -23,6 +23,16 @@ export function createPrivateChats (options) {
       return result
     }
   })
+  const setReady = transport.setPendingDecryptionReady
+  transport.setPendingDecryptionReady = ready => {
+    ;(boot.decryptionAdmissions ||= []).push({ ready, at: performance.now() - boot.started, rows: [...document.querySelectorAll('.route-page[data-active=true] .conversation button')].map(button => button.dataset.contactId) })
+    return setReady(ready)
+  }
+  const setPriority = transport.setPendingDecryptionPriority
+  transport.setPendingDecryptionPriority = peer => {
+    ;(boot.decryptionPriorities ||= []).push(peer)
+    return setPriority(peer)
+  }
   const setPeers = transport.setPeers
   transport.setPeers = peers => {
     ;(boot.channelPreparations ||= []).push({

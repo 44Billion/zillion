@@ -437,9 +437,19 @@ function useInitProfiles (account) {
 }
 
 function useInitPrivateChats (account, queue) {
-  const runtime = useMemo(() => ({ chats: new Map(), transport: null, contacts: null, outbox: [] }))
+  const runtime = useMemo(() => ({ chats: new Map(), transport: null, contacts: null, outbox: [], decryptionPriority: null }))
   const patch = (peer, values) => account.conversations$(previous => ({ ...previous, [peer]: { ...previous[peer], ...values } }))
   account.delivery = () => { if (!runtime.transport) throw new Error('Account unavailable'); return runtime.transport }
+  account.prioritizePendingDecryptions = peer => {
+    const priority = { peer }
+    runtime.decryptionPriority = priority
+    runtime.transport?.setPendingDecryptionPriority(peer)
+    return () => {
+      if (runtime.decryptionPriority !== priority) return
+      runtime.decryptionPriority = null
+      runtime.transport?.setPendingDecryptionPriority(null)
+    }
+  }
   // Opening a chat warms the content-key lookup cache so the first send does
   // not pay the relay round trip. Best-effort: prefetchContentKeys never rejects.
   account.prefetchContentKeys = peer => {
@@ -513,7 +523,7 @@ function useInitPrivateChats (account, queue) {
     account.signerState$(null)
     account.contactsState$('loading')
     runtime.transport = createPrivateChats({
-      owner, signer: dynamicContentKeySigner(window.nostr), eventStore: window.napp.eventStore,
+      owner, signer: dynamicContentKeySigner(window.nostr), eventStore: window.napp.eventStore, pendingDecryptionReady: false,
       onSendError: (error, attempt) => { if (!closed) account.reportSendError(error, attempt) },
       onOutbox: entries => {
         if (closed) return
@@ -523,6 +533,7 @@ function useInitPrivateChats (account, queue) {
       },
       onError: error => { if (!closed) console.warn(`Private chat operation failed ${JSON.stringify(privateChatDiagnostic(error, owner))}`) }
     })
+    runtime.transport.setPendingDecryptionPriority(runtime.decryptionPriority?.peer ?? null)
     runtime.contacts = createContacts({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
       onChange: (contacts, { selfPinned }) => {
@@ -547,13 +558,14 @@ function useInitPrivateChats (account, queue) {
     let wasAvailable = false
     let keysPending = true
     let keysRevision
-    const retryPendingKeys = async () => {
+    const retryPendingKeys = () => {
       if (closed || !keysPending || !availableApplied || !channelsKnown) return
       keysPending = false
-      try { await runtime.transport?.retryPendingDecryptions() } catch (error) {
+      runtime.transport.retryPendingDecryptions().catch(error => {
+        if (closed) return
         keysPending = true
-        if (!closed) console.warn('Could not retry pending decryptions', error)
-      }
+        console.warn('Could not retry pending decryptions', error)
+      })
     }
     const stateChanged = async (state, { resume = false } = {}) => {
       if (closed) return
@@ -565,14 +577,21 @@ function useInitPrivateChats (account, queue) {
       }
       const available = isAccountAvailable(state)
       const changed = available !== availableApplied
+      availableApplied = available
       // A new unlock must confirm membership again before publishing prepared
       // previews; signer notifications run reactive tasks synchronously.
-      if (available && changed) account.contactsState$('loading')
+      if (changed) runtime.transport.setPendingDecryptionReady(false)
+      if (available && changed) {
+        account.contactsState$('loading')
+        const transport = runtime.transport
+        account.deferHomeStartup('pending-decryption', () => {
+          if (!closed && runtime.transport === transport && availableApplied) transport.setPendingDecryptionReady(true)
+        })
+      }
       if (available) account.prepareConversationSummaries()
       else account.suspendConversationSummaries()
       account.signerState$(state)
       if (!changed && !resume) return
-      availableApplied = available
       // Begin local transport readiness and cached contacts independently.
       // Individual channels and remote recovery continue in the background.
       const delivery = runtime.transport.setState(state).catch(error => { if (!closed) console.warn('Could not resume message delivery', error) })
@@ -587,7 +606,7 @@ function useInitPrivateChats (account, queue) {
       if (wasAvailable) for (const [peer, chat] of runtime.chats) if (queue.opened.has(peer)) reads.push(chat.start())
       wasAvailable = true
       await Promise.all([delivery, ...reads])
-      await retryPendingKeys()
+      retryPendingKeys()
     }
     const stopState = window.napp.onSignerStateChanged(stateChanged)
     stopState.ready?.catch(error => { if (!closed) console.warn('Signer state unavailable', error) })
@@ -645,6 +664,10 @@ export function useConversation (id$, { open = false, active$ = () => true } = {
     recover () { return this.self$() ? account.recover() : account.openConversation(this.peer$()) },
     retry$ () { this.recover() }
   }))
+  useTask(({ track, cleanup }) => {
+    const [peer, owner, active] = track(() => [view.peer$(), account.pubkey$(), active$()])
+    if (open && active && owner && /^[0-9a-f]{64}$/.test(peer || '') && !demoEnabled) cleanup(account.prioritizePendingDecryptions(peer))
+  })
   useTask(({ track, cleanup }) => {
     const peer = track(() => active$() && view.peer$())
     if (!peer || peer === account.pubkey$()) return

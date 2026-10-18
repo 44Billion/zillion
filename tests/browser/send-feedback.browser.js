@@ -27,6 +27,9 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
         build.onLoad({ filter: /private-messenger\/index\.js$/ }, async args => ({
           contents: (await readFile(args.path, 'utf8')).replace('this.initialized = false', 'this.initialized = false; (window.pauseTestMessengers ||= []).push(this)'), loader: 'js'
         }))
+        build.onLoad({ filter: /src\/components\/hooks\/use-account\.js$/ }, async args => ({
+          contents: (await readFile(args.path, 'utf8')).replace('if (!closed) account.reportSendError(error, attempt)', 'if (!closed) { (window.sendFailureDiagnostics ||= []).push({ code: error.code, message: error.message, cause: error.cause?.message }); account.reportSendError(error, attempt) }'), loader: 'js'
+        }))
         if (readinessOnly) {
           build.onLoad({ filter: /private-messenger\/session\/index\.js$/ }, async args => ({
             contents: (await readFile(args.path, 'utf8')).replace('entry.localSaved[index] = true', 'entry.localSaved[index] = true; (window.localSendMeasurements ||= []).push({ id: entry.id, at: performance.now() })'), loader: 'js'
@@ -301,7 +304,7 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
   } catch (error) {
     for (const context of browser?.contexts.values() || []) {
       if (/^http:\/\/[0-9]+\.localhost:10000$/.test(context.origin)) {
-        console.error('Pause state', await browser.evaluate('({ status: window.pauseTestMessengers?.map(value => value.readStatus()), signer: window.sendTest?.account.signerState$(), outbox: window.sendTest?.account.outbox$().map(({ status, failed }) => ({ status, failed })), batches: window.dmTest?.publicationBatches?.length, measurements: window.localSendMeasurements, channels: window.pauseTestMessengers?.map(value => ({ channels: value.channels.size, jobs: value.channelBackground.size })), contacts: window.sendTest?.account.contacts$().length, pendingReads: window.dmTest?.pendingPrivateReads })', context.origin).catch(() => null))
+        console.error('Pause state', await browser.evaluate('({ status: window.pauseTestMessengers?.map(value => value.readStatus()), signer: window.sendTest?.account.signerState$(), outbox: window.sendTest?.account.outbox$().map(({ status, failed }) => ({ status, failed })), batches: window.dmTest?.publicationBatches?.length, measurements: window.localSendMeasurements, failures: window.sendFailureDiagnostics, channels: window.pauseTestMessengers?.map(value => ({ channels: value.channels.size, jobs: value.channelBackground.size })), contacts: window.sendTest?.account.contacts$().length, pendingReads: window.dmTest?.pendingPrivateReads })', context.origin).catch(() => null))
       }
     }
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/send-feedback'))

@@ -168,6 +168,7 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     assert.equal(await evaluate('!!document.querySelector(\'.route-page[data-active=true] .chat-date[role=status]:not([hidden])\')'), false)
     await evaluate('document.querySelector(".route-page[data-active=true] .chat-back").click()')
     await browser.until(() => evaluate('!!document.querySelector(".route-page[data-active=true] .conversations")'), 'return to home')
+    assert.equal(await evaluate('contactBoot.decryptionPriorities.at(-1)'), null, 'leaving the active chat clears its retry priority')
 
     const selfContext = await evaluate(`window.nostr.obfuscate('dm:${pubkey}', '1006', '')`)
     const selfHistories = async () => (await histories()).filter(read => read.filter['#c']?.includes(selfContext))
@@ -219,6 +220,8 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     // Reclaim discarded startup/visited-route objects before the warm phase;
     // all Chrome, vault and watcher processes share the guarded 3 GiB budget.
     await collect()
+    const appContext = [...browser.contexts.values()].find(context => context.origin === origin && context.auxData?.isDefault)
+    await browser.send('Emulation.setCPUThrottlingRate', { rate: 4 }, appContext.sessionId)
     await browser.evaluate(`(() => {
       const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>new URL(frame.src).origin===${JSON.stringify(origin)});
       const url=new URL(frame.src);url.pathname='/';url.search='?holdContacts=1&holdOutbox=1&holdSummaries=1';frame.src=url.href;
@@ -228,6 +231,7 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     assert.equal(await evaluate('Object.keys(contactBoot.account.summaries$()).length'), 0, 'decrypted previews stay private until membership is confirmed')
     assert.equal(await evaluate('(contactBoot.channelPreparations || []).length'), 0, 'bulk channel preparation waits for the cached list')
     assert.equal(await evaluate('contactBoot.reads.some(read=>read.filter["#k"]?.includes("30078"))'), false, 'bulk read anchors also wait')
+    assert.equal(await evaluate('(contactBoot.decryptionAdmissions || []).some(entry=>entry.ready)'), false, 'pending decryption stays suspended while membership is held')
     assert.equal(await evaluate('contactBoot.cacheReads'), 1)
     await evaluate('contactBoot.releaseContacts()')
     await browser.until(() => evaluate('contactBoot.summaryFrames.length>0'), 'encrypted projection restores home rows while source summaries wait', 5000)
@@ -236,13 +240,16 @@ test('cold and cached summaries order chats and prefetch independently of pendin
     assert.ok(firstFrame.at < 5000)
     await browser.until(() => evaluate('(contactBoot.channelPreparations || []).length > 0'), 'bulk channels resume after cached rows render')
     assert.deepEqual(await evaluate('contactBoot.channelPreparations[0].rows'), warmRows.map(row => row.id), 'cached rows render before bulk channels start')
+    await browser.until(() => evaluate('(contactBoot.decryptionAdmissions || []).some(entry=>entry.ready)'), 'pending decryption is released after restored rows render')
+    assert.deepEqual(await evaluate('contactBoot.decryptionAdmissions.find(entry=>entry.ready).rows'), warmRows.map(row => row.id))
     assert.equal(await evaluate('contactBoot.cacheReads'), 1, 'membership confirmation reuses the prepared snapshot')
     assert.equal(await evaluate(`contactBoot.account.summaries$()['${empty}']?.state`), 'loading', 'an empty offscreen contact remains pending')
     await browser.until(() => evaluate('contactBoot.reads.some(read=>read.method==="subscribe" && read.filter.limit===25)'), 'visible prefetch starts without waiting for every summary')
-    console.log(`Warm summaries: first cached rows in ${Math.round(firstFrame.at)} ms; all source summaries still held.`)
+    console.log(`Warm summaries: first cached rows in ${Math.round(firstFrame.at)} ms with 4x CPU throttling; all source summaries still held.`)
     await evaluate(`document.querySelector('.conversation button[data-contact-id="${peer}"]').click()`)
     await browser.until(() => evaluate(`document.querySelector('.route-page[data-active=true] [data-message-id="${warmIds[peer]}"] .chat-bubble')?.textContent.includes('Latest contact text')`), 'verified persistent snapshot immediately seeds the foreground bubble')
     assert.equal(await evaluate(`Boolean(contactBoot.account.conversations$()['${peer}'].historyLoaded)`), false, 'the remaining first page is still held')
+    assert.equal(await evaluate('contactBoot.decryptionPriorities.at(-1)'), peer, 'the active conversation gets retry priority')
     await evaluate('contactBoot.releaseSummaries();contactBoot.releaseHistory();contactBoot.releaseEose();contactBoot.releaseQueue()')
     await browser.until(() => evaluate(`['${pubkey}', '${peer}', '${other}', '${empty}'].every(peer=>contactBoot.account.summaries$()[peer]?.state==='loaded')`), 'warm summaries revalidate after release')
     await evaluate('contactBoot.releaseQueue()')
