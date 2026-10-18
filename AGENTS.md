@@ -658,6 +658,14 @@ needed; empty folders mark the initial structure.
   Keep automated browser tests independent from real draft publication. Validate
   actual publishing and automatic draft updates separately when changing that
   workflow. Review README and AGENTS together whenever it changes.
+- The runtime avatar fixture mounts `useInitAccount` once so public profiles and
+  avatar preparation share the production account lifecycle, with keyed avatars
+  per identity like real contact rows. Await native permission-dialog closure
+  between separately granted signing/storage calls. Use a decodable PNG
+  with valid chunk checksums, assert the displayed photo's source/dimensions and
+  explicit fallback state, and verify the dedicated cache survives offline reload
+  and local build updates without reseeding. Omit sourcemaps only from this
+  disposable fixture build to keep installation within the guarded memory budget.
 
 ## Local app installation
 

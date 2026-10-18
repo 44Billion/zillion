@@ -410,6 +410,11 @@ npm run upload:draft      # build development files and confirm a draft upload
 npm run serve             # standalone production preview; stop the dev vault first
 ```
 
+The runtime browser regression checks decoded avatars and their dedicated cache
+across offline reload and local build updates, using the real account lifecycle
+and launcher/vault APIs. Its disposable fixture omits sourcemaps to reduce test
+installation memory; normal development builds keep them.
+
 `npm start` uses `http://localhost:10000`, esbuild on port 8080, and the existing
 vault origin at `http://localhost:4000`. It reuses a compatible running launcher;
 Ctrl+C stops only processes it started. Conflicting servers fail explicitly.

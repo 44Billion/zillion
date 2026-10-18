@@ -17,11 +17,20 @@ import { prepareTestApp } from '../../../../44billion/tests/browser/runtime/prep
 const launcherOrigin = 'http://localhost:10000'
 const vaultOrigin = 'http://localhost:4000'
 const imageUrl = 'https://zillion-fixture.invalid/avatar.png'
-const imageBytes = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX9sAAAAASUVORK5CYII='
+// Valid 1x1 PNG, including the IDAT checksum; the browser must decode it.
+const imageBytes = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg=='
+const displayedPhoto = `(() => {
+  const avatar = document.querySelector('a-avatar .avatar-presentation')
+  const image = avatar?.querySelector('img.avatar-picture')
+  return avatar?.dataset.avatarState === 'photo' && image?.complete &&
+    image.naturalWidth === 1 && image.naturalHeight === 1 &&
+    image.getAttribute('src') === 'data:image/png;base64,${imageBytes}' &&
+    getComputedStyle(image).display !== 'none'
+})()`
 
 async function testBuild (localSecret) {
   const files = await compile()
-  const options = buildOptions({ development: true, onEnd: extra => files.push(...extra.filter(file => file.name !== '.well-known/napp.json')) })
+  const options = buildOptions({ development: true, sourceMaps: false, onEnd: extra => files.push(...extra.filter(file => file.name !== '.well-known/napp.json')) })
   options.entryPoints = [{ in: 'tests/browser/fixture.js', out: '__tests__/fixture' }]
   options.entryNames = '[dir]/[name]'
   await esbuild.build(options)
@@ -30,15 +39,27 @@ async function testBuild (localSecret) {
   return prepareTestApp(files, { identifier: 'zillion-test', name: 'Zillion test' })
 }
 
-async function withPermissions (browser, expression, origin) {
+async function withPermissions (browser, expression, origin, evaluate = expression => browser.evaluate(expression, origin)) {
   const state = { finished: false }
-  const result = browser.evaluate(expression, origin).finally(() => { state.finished = true })
+  const result = evaluate(expression)
+    .catch(error => { throw new Error(`Fixture API failed: ${expression.split('(')[0]}`, { cause: error }) })
+    .finally(() => { state.finished = true })
   result.catch(() => {})
-  while (!state.finished) {
-    await browser.evaluate('document.querySelector(".permission-button.allow-button:not(:disabled)")?.click()').catch(() => {})
+  while (!state.finished || await browser.evaluate('Boolean(document.querySelector("permission-dialog dialog[open]"))')) {
+    await browser.evaluate(`(() => {
+      const button = document.querySelector('.permission-button.allow-button:not(:disabled)')
+      if (!button) return
+      const dialog = button.closest('dialog')
+      window.__zillionPermissionClosed ??= new Promise(resolve => {
+        dialog.addEventListener('close', () => resolve(), { once: true })
+      })
+      button.click()
+    })()`).catch(() => {})
     await new Promise(resolve => setTimeout(resolve, 100))
   }
-  return result
+  await browser.evaluate('(async () => { await window.__zillionPermissionClosed; window.__zillionPermissionClosed = null })()')
+  const value = await result
+  return value
 }
 
 for (const localDevelopment of [false, true]) {
@@ -118,12 +139,14 @@ for (const localDevelopment of [false, true]) {
       assert.equal(await browser.evaluate('__zillionTest.injectedBeforeEntry', origin), true)
       assert.equal(await browser.evaluate('__zillionTest.identity', origin), pubkey)
       assert.equal(typeof await browser.evaluate('__zillionTest.locale', origin), 'string')
+      await withPermissions(browser, '__zillionTest.account.recover()', origin)
+      assert.equal(await browser.evaluate('__zillionTest.account.pubkey$()', origin), pubkey)
 
       const profileKey = generateSecretKey()
       const profile = finalizeEvent({ kind: 0, created_at: Math.floor(Date.now() / 1000), tags: [], content: JSON.stringify({ name: 'Offline Alice', picture: imageUrl }) }, profileKey)
       await withPermissions(browser, `window.napp.eventStore.add(${JSON.stringify(profile)})`, origin)
       await withPermissions(browser, `__zillionTest.view.pk$(${JSON.stringify(profile.pubkey)}); __zillionTest.getProfile(${JSON.stringify(profile.pubkey)})`, origin)
-      await browser.until(() => browser.evaluate('Boolean(document.querySelector("a-avatar img")?.src.startsWith("data:image") && document.querySelector("a-avatar img").naturalWidth > 0)', origin), 'cached avatar')
+      await browser.until(() => browser.evaluate(displayedPhoto, origin), 'decoded cached avatar')
       assert.equal(imageRequests, 1)
       const avatarImage = await browser.evaluate(`__zillionTest.avatarCache.get(${JSON.stringify(imageUrl)})`, origin)
       assert.deepEqual(avatarImage, { source: `data:image/png;base64,${imageBytes}`, width: 1, height: 1 })
@@ -134,9 +157,11 @@ for (const localDevelopment of [false, true]) {
       const coordinate = `zillion:test:${runId}:${instance.instanceKey}`
       const now = Math.floor(Date.now() / 1000)
       const checkpoint = { kind: CUSTOM_APP_DATA, created_at: now, tags: [['d', coordinate], ['expiration', String(now + 86400)]], content: JSON.stringify({ step: 'before-reload', expected: profile.id }) }
-      await withPermissions(browser, `window.nostr.signEvent(${JSON.stringify(checkpoint)}).then(event => window.napp.eventStore.add(event))`, origin)
+      const signedCheckpoint = await withPermissions(browser, `window.nostr.signEvent(${JSON.stringify(checkpoint)})`, origin)
+      await withPermissions(browser, `window.napp.eventStore.add(${JSON.stringify(signedCheckpoint)})`, origin)
       const updated = { ...checkpoint, created_at: now + 1, content: JSON.stringify({ step: 'updated', expected: profile.id }) }
-      await withPermissions(browser, `window.nostr.signEvent(${JSON.stringify(updated)}).then(event => window.napp.eventStore.add(event))`, origin)
+      const signedUpdate = await withPermissions(browser, `window.nostr.signEvent(${JSON.stringify(updated)})`, origin)
+      await withPermissions(browser, `window.napp.eventStore.add(${JSON.stringify(signedUpdate)})`, origin)
       const token = await browser.evaluate('__zillionTest.token', origin)
       offline = true
       if (localDevelopment) {
@@ -146,6 +171,8 @@ for (const localDevelopment of [false, true]) {
         await publishLocal(prepareLocalApp(files, { secret: localSecret, identifier: 'zillion-local-test', name: 'Zillion test' }))
       } else await browser.evaluate('location.reload()', origin)
       await browser.until(() => browser.evaluate(`Boolean(window.__zillionTest && __zillionTest.token !== ${JSON.stringify(token)})`, origin), 'new document')
+      await browser.until(() => browser.evaluate('Boolean(__zillionTest.view)', origin), 'remounted account fixture')
+      await withPermissions(browser, '__zillionTest.account.recover()', origin)
       const query = { kinds: [CUSTOM_APP_DATA], '#d': [coordinate] }
       const stored = await withPermissions(browser, `window.napp.eventStore.query(${JSON.stringify(query)})`, origin)
       assert.equal(stored.results.length, 1)
@@ -156,25 +183,37 @@ for (const localDevelopment of [false, true]) {
       const recovered = await withPermissions(browser, `__zillionTest.getProfile(${JSON.stringify(profile.pubkey)})`, origin)
       assert.equal(recovered.name, 'Offline Alice')
       await browser.evaluate(`__zillionTest.view.pk$(${JSON.stringify(profile.pubkey)})`, origin)
-      await browser.until(() => browser.evaluate('Boolean(document.querySelector("a-avatar img")?.src.startsWith("data:image") && document.querySelector("a-avatar img").naturalWidth > 0)', origin), 'offline avatar')
+      await browser.until(() => browser.evaluate(displayedPhoto, origin), 'decoded offline avatar')
       assert.equal(imageRequests, 1)
       const missingProfile = finalizeEvent({ kind: 0, created_at: now, tags: [], content: JSON.stringify({ picture: 'https://zillion-fixture.invalid/missing.png' }) }, generateSecretKey())
       await withPermissions(browser, `window.napp.eventStore.add(${JSON.stringify(missingProfile)})`, origin)
       await browser.evaluate(`__zillionTest.view.pk$(${JSON.stringify(missingProfile.pubkey)})`, origin)
-      await browser.until(() => browser.evaluate('!document.querySelector("a-avatar img") && Boolean(document.querySelector("a-avatar svg"))', origin), 'offline fallback')
+      await browser.until(() => browser.evaluate(`Boolean(
+        __zillionTest.account.avatarStates$()[${JSON.stringify(missingProfile.pubkey)}]?.initial === false &&
+        document.querySelector('a-avatar .avatar-presentation[data-avatar-state="fallback"] .avatar-fallback svg')
+      )`, origin), 'offline fallback')
       assert.equal(imageRequests, 1)
       if (localDevelopment) {
         const { targetId } = await browser.send('Target.createTarget', { url: `${launcherOrigin}/${app.app}/__tests__/index.html` })
         const appContexts = () => [...browser.contexts.values()].filter(context => context.origin === origin && context.auxData?.isDefault)
         await browser.until(() => appContexts().length >= 2, 'second local app instance')
-        const evaluateContext = async (context, expression) => {
-          const response = await browser.send('Runtime.evaluate', { expression, contextId: context.id, returnByValue: true, awaitPromise: true }, context.sessionId, 1000)
-          if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails))
-          return response.result.value
+        const evaluateContext = async (context, expression, timeout = 1000) => {
+          const objectGroup = `zillion-runtime-fixture-${randomUUID()}`
+          try {
+            const response = await browser.send('Runtime.evaluate', { expression, objectGroup, contextId: context.id, returnByValue: true, awaitPromise: true, userGesture: true }, context.sessionId, timeout)
+            if (response.exceptionDetails) throw new Error(JSON.stringify(response.exceptionDetails))
+            return response.result.value
+          } finally { await browser.send('Runtime.releaseObjectGroup', { objectGroup }, context.sessionId, 1000).catch(() => {}) }
         }
         const fixtureContexts = async () => (await Promise.all(appContexts().map(async context => {
           try { return await evaluateContext(context, 'Boolean(window.__zillionTest)') ? context : null } catch { return null }
         }))).filter(Boolean)
+        const fixtureApi = async expression => {
+          // Several tabs and trusted bridge documents share this origin.
+          const context = (await fixtureContexts())[0]
+          assert.ok(context, 'mounted browser fixture')
+          return evaluateContext(context, expression, 10000)
+        }
         await browser.until(async () => (await fixtureContexts()).length >= 2, 'both local fixtures')
         const tokens = await Promise.all((await fixtureContexts()).map(context => evaluateContext(context, '__zillionTest.token')))
         const nextFiles = app.files.map(file => file.name === '__tests__/fixture.js'
@@ -201,7 +240,7 @@ for (const localDevelopment of [false, true]) {
         await browser.evaluate('document.querySelector("local-dev-reset-button button").click()')
         await browser.until(() => browser.evaluate('Boolean(document.querySelector("dialog[open] #confirmation-dialog-card .deny-button:not(:disabled)"))'), 'reset confirmation')
         await browser.evaluate('document.querySelector("dialog[open] #confirmation-dialog-card .deny-button").click()')
-        const beforeReset = await withPermissions(browser, `window.napp.eventStore.query(${JSON.stringify(query)})`, origin)
+        const beforeReset = await withPermissions(browser, `window.napp.eventStore.query(${JSON.stringify(query)})`, origin, fixtureApi)
         assert.equal(beforeReset.results.length, 1)
         await openMenu()
         await browser.until(() => browser.evaluate('Boolean(document.querySelector("local-dev-reset-button button:not(:disabled)"))'), 'reset action enabled')
@@ -214,7 +253,7 @@ for (const localDevelopment of [false, true]) {
           if (contexts.length < 2) return false
           try { return (await Promise.all(contexts.map(context => evaluateContext(context, 'window.__zillionTest?.token')))).every(value => value && !resetTokens.includes(value)) } catch { return false }
         }, 'both fixtures resumed after reset')
-        const afterReset = await withPermissions(browser, `window.napp.eventStore.query(${JSON.stringify(query)})`, origin)
+        const afterReset = await withPermissions(browser, `window.napp.eventStore.query(${JSON.stringify(query)})`, origin, fixtureApi)
         assert.equal(afterReset.results.length, 0)
         await openMenu()
         await browser.until(() => browser.evaluate('Boolean(document.querySelector("local-dev-reset-button button:not(:disabled)"))'), 'reset completed')
