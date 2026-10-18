@@ -650,7 +650,7 @@ test('elapsed-time exhaustion rebuilds the attachment and pointers before accept
   let time = 0
   t.mock.method(performance, 'now', () => { time += 5; return time })
   const id = f.chat.send('Same caption', null, { metadata: fileMetadata() })
-  assert.equal(time, 10, 'the elapsed-time limit stops the search before another salt attempt')
+  assert.equal(time, 15, 'the send timestamp precedes the bounded salt search')
   const pending = f.messages.at(-1)
   assert.equal(pending.created_at, 2001)
   const [pointer] = parseChatContent(pending.content)
@@ -869,11 +869,10 @@ test('self completion survives pending or failed cleanup snapshots, remote still
     assert.equal(f.messages.find(message => message.id === id).status, 'pending')
     f.chat.applyOutbox([{ ...row, status: 'saved' }])
     assert.equal(f.messages.find(message => message.id === id).status, 'saved')
-    if (!remote) {
-      for (const status of ['pending', 'error']) {
-        f.chat.applyOutbox([{ ...row, status }])
-        assert.equal(f.messages.find(message => message.id === id).status, 'saved')
-      }
+    assert.ok(Number.isFinite(sent[0].attemptStartedAt))
+    for (const status of ['pending', 'error']) {
+      f.chat.applyOutbox([{ ...row, status }])
+      assert.equal(f.messages.find(message => message.id === id).status, 'saved')
     }
     f.chat.close()
   }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { bytesToBase16 } from 'libp2r2p/base16'
 
-export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, pubkey, performanceOnly = false }) {
+export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, pubkey, performanceOnly = false, readDiagnostics = () => [] }) {
   const secret = generateSecretKey(); const peer = getPublicKey(secret)
   const vault = 'http://localhost:4000'
   await browser.evaluate('document.querySelector("#toolbar-active-avatar-button").click()')
@@ -74,12 +74,27 @@ export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, 
     assert.equal(await evaluate('JSON.stringify([...dmTest.events.values()]).includes("Private hello")'), false, 'relay receives encrypted content')
   }
   if (performanceOnly) {
+    await evaluate('dmTest.holdRecoveryArchive = true')
+    const archiveHeld = await evaluate(`selfChatAccount.chatFor('${peer}').send('Confirmed before recovery archival')`)
+    await browser.until(() => evaluate('dmTest.pendingArchives() > 0'), 'indexed recovery write held at the real event-store boundary', 20000)
+    await browser.until(() => evaluate(`selfChatAccount.conversations$()['${peer}']?.messages.some(event => event.id === '${archiveHeld}' && event.status === 'saved')`), 'ACK confirms while indexed archival is blocked', 10000)
+    const next = await evaluate(`selfChatAccount.chatFor('${peer}').send('Next text passes blocked archival')`)
+    await browser.until(() => evaluate(`selfChatAccount.conversations$()['${peer}']?.messages.some(event => event.id === '${next}' && event.status === 'saved')`), 'consecutive text confirms while archival is blocked', 10000)
+    assert.equal(await evaluate(`selfChatAccount.outbox$().filter(entry => ['${archiveHeld}', '${next}'].includes(entry.id) && entry.status === 'saved').length`), 2)
+    assert.equal(await evaluate(`!!document.querySelector('[data-message-id="${next}"] .message-status[data-status=pending]')`), false)
+    await evaluate('dmTest.holdRecoveryArchive = false; dmTest.releaseArchives()')
+    await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => ['${archiveHeld}', '${next}'].includes(entry.id))`), 'both confirmed entries clean up after archival resumes', 20000)
+    console.log('Private chats: consecutive ACKs and bubble completion are independent of blocked recovery archival')
     const summaries = []
     const sample = async label => {
       console.log('Messaging performance sample:', label)
       const values = []
+      const phases = new Map()
       for (let index = 0; index < 8; index++) {
-        const value = await evaluate(`(async () => {
+        const result = await evaluate(`(async () => {
+          dmTest.publicationBatches ||= [];
+          const batchStart = dmTest.publicationBatches.length;
+          const channel = Object.keys(dmTest.messenger.readState().channels)[0];
           const started = performance.now();
           const self = await selfChatAccount.send('Performance self ${index}');
           const remote = await selfChatAccount.chatFor('${peer}').send('Performance remote ${index}');
@@ -90,16 +105,29 @@ export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, 
             if (performance.now() - started > 20000) throw Error('PERFORMANCE_SEND_TIMEOUT');
             await new Promise(resolve => setTimeout(resolve, 5));
           }
-          return times;
+          const batches = dmTest.publicationBatches.slice(batchStart).filter(batch => batch.kind === 3560 && batch.pubkey === channel);
+          const ack = dmTest.acceptances.find(value => batches.some(batch => batch.id === value.id));
+          if (!ack) throw Error('PERFORMANCE_ACK_MISSING');
+          times.ack = ack.at - started;
+          return {...times, eventId: remote};
         })()`)
+        const { eventId, ...value } = result
+        for (const entry of readDiagnostics().filter(entry => entry.eventId === eventId && Number.isFinite(entry.elapsedMs))) {
+          if (!phases.has(entry.stage)) phases.set(entry.stage, [])
+          phases.get(entry.stage).push(entry.elapsedMs)
+        }
         console.log('Messaging performance timing:', label, index, JSON.stringify(value))
         values.push(value)
       }
       const summary = { label }
-      for (const type of ['self', 'remote']) {
+      for (const type of ['self', 'remote', 'ack']) {
         const sorted = values.map(value => value[type]).sort((a, b) => a - b)
         summary[type] = { medianMs: (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2, p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1] }
       }
+      summary.phases = Object.fromEntries([...phases].map(([stage, durations]) => {
+        const sorted = durations.sort((a, b) => a - b); const middle = Math.floor(sorted.length / 2)
+        return [stage, { samples: sorted.length, medianMs: sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2, p95Ms: sorted[Math.ceil(sorted.length * 0.95) - 1] }]
+      }))
       summaries.push(summary)
     }
     await sample('idle')

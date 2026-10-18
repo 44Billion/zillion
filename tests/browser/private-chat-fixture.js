@@ -34,6 +34,15 @@ export function installPrivateChatFixture () {
     return { result: select(filter).map(event => ({ event, relay })), errors: [], success: true, relays }
   }
   const acknowledgements = []
+  const archiveWaiters = []
+  const originalAddPersonalCopy = window.napp.eventStore.addPersonalCopy
+  window.napp.eventStore.addPersonalCopy = async (...args) => {
+    const event = args[0]
+    if (event.kind === 30078 && event.tags.some(tag => tag[0] === 'd' && tag[1].startsWith('libp2r2p:recovery:seed:')) && window.dmTest?.holdRecoveryArchive) {
+      await new Promise(resolve => archiveWaiters.push(resolve))
+    }
+    return originalAddPersonalCopy(...args)
+  }
   const publisher = new RelayPool({
     WebSocket: class ControlledRelaySocket {
       constructor (url) {
@@ -152,6 +161,8 @@ export function installPrivateChatFixture () {
   }
   fixture.pendingAcknowledgements = () => acknowledgements.length
   fixture.releaseAcknowledgements = () => { for (const acknowledge of acknowledgements.splice(0)) acknowledge() }
-  fixture.close = async () => { fixture.stopState?.(); fixture.chat?.close(); await fixture.transport?.close(); await publisher.disconnectAll(); acknowledgements.length = 0 }
+  fixture.pendingArchives = () => archiveWaiters.length
+  fixture.releaseArchives = () => { for (const resolve of archiveWaiters.splice(0)) resolve() }
+  fixture.close = async () => { window.napp.eventStore.addPersonalCopy = originalAddPersonalCopy; fixture.releaseArchives(); fixture.stopState?.(); fixture.chat?.close(); await fixture.transport?.close(); await publisher.disconnectAll(); acknowledgements.length = 0 }
   window.dmTest = fixture
 }

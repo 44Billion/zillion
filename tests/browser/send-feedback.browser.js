@@ -18,6 +18,7 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
   const runtime = await ensureRuntime({ log: () => {} })
   let browser
   let permissions
+  const probeTimeline = []
   let offlineProbes = false
   try {
     let files
@@ -46,6 +47,7 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
       intercept: request => {
         const { hostname } = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(hostname)) return null
+        if (['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(hostname)) { probeTimeline.push({ at: Date.now(), offline: offlineProbes }); if (probeTimeline.length > 128) probeTimeline.shift() }
         if (offlineProbes && ['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(hostname)) return false
         if (['www.gstatic.com', 'connectivitycheck.gstatic.com', 'captive.apple.com', 'connectivity-check.ubuntu.com'].includes(hostname)) return { responseCode: 204, responseHeaders: [{ name: 'Access-Control-Allow-Origin', value: '*' }], body: '' }
         return false
@@ -186,7 +188,9 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
       const opening = hedgeBatches.find(batch => batch.kind === 3560)
       const alternate = hedgeBatches.find(batch => batch.id === opening.id && batch.relays.includes(fallbackRelay))
       assert.ok(alternate)
-      assert.ok(alternate.at - opening.at >= 2900 && alternate.at - opening.at < 6000, 'fallback starts at the single three-second deadline')
+      const clickedAt = await evaluate('sendClickedAt')
+      const expectedAt = Math.max(clickedAt + 3000, opening.at)
+      assert.ok(alternate.at >= expectedAt - 100 && alternate.at < expectedAt + 1500, 'fallback consumes preparation time from the click budget')
       assert.ok(Date.now() - started < 12000, 'no primary-exhaustion wait')
       assert.equal(await toast(), '')
       await evaluate('dmTest.heldRelays = []; dmTest.releaseAcknowledgements()')
@@ -195,7 +199,8 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
       const fast = await send('Fast primaries skip fallback')
       await browser.until(async () => (await messages()).find(message => message.id === fast)?.status === 'saved', 'fast primary send')
       assert.equal(await evaluate(`dmTest.publicationBatches.some(batch => batch.relays.includes('${fallbackRelay}'))`), false)
-      console.log('Three-second fallback, immediate primary success and unchanged signed events verified')
+      console.log('Click-based fallback timing (ms)', { preparation: opening.at - clickedAt, fallback: alternate.at - clickedAt })
+      console.log('Three-second send-attempt budget, immediate primary success and unchanged signed events verified')
       return
     }
     await evaluate('dmTest.rejectionReason = \'blocked: only accepts some kinds that support public mentions well\'')
@@ -296,15 +301,19 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
     await evaluate("sendTest.account.send('Self chat stays local while paused')")
     await browser.until(() => evaluate("sendTest.account.messages$().some(message => message.content === 'Self chat stays local while paused' && message.status === 'saved')"), 'self-chat persists during network pause')
     offlineProbes = false
+    const restoredAt = Date.now()
     // No second native online event: the shared monitor must recover on its own.
     await push(`/chat/${peer}`)
-    await browser.until(async () => (await messages()).find(message => message.id === paused)?.status === 'saved', 'automatic network-pause recovery', 25000)
+    // The existing connectivity monitor includes jittered offline backoff. The
+    // published 0.11.24 control already takes ~25s here; this is not a send budget.
+    await browser.until(async () => (await messages()).find(message => message.id === paused)?.status === 'saved', 'automatic network-pause recovery', 45000)
     assert.equal(await toast(), '')
+    console.log('Network recovery timing (ms)', Date.now() - restoredAt)
     console.log('Send feedback, native network pause, local self-chat and recovery without a second online event verified')
   } catch (error) {
     for (const context of browser?.contexts.values() || []) {
       if (/^http:\/\/[0-9]+\.localhost:10000$/.test(context.origin)) {
-        console.error('Pause state', await browser.evaluate('({ status: window.pauseTestMessengers?.map(value => value.readStatus()), signer: window.sendTest?.account.signerState$(), outbox: window.sendTest?.account.outbox$().map(({ status, failed }) => ({ status, failed })), batches: window.dmTest?.publicationBatches?.length, measurements: window.localSendMeasurements, failures: window.sendFailureDiagnostics, channels: window.pauseTestMessengers?.map(value => ({ channels: value.channels.size, jobs: value.channelBackground.size })), contacts: window.sendTest?.account.contacts$().length, pendingReads: window.dmTest?.pendingPrivateReads })', context.origin).catch(() => null))
+        console.error('Pause state', JSON.stringify(await browser.evaluate('({ status: window.pauseTestMessengers?.map(value => value.readStatus()), signer: window.sendTest?.account.signerState$(), outbox: window.sendTest?.account.outbox$().map(({ status, failed }) => ({ status, failed })), batches: window.dmTest?.publicationBatches?.length, measurements: window.localSendMeasurements, failures: window.sendFailureDiagnostics, channels: window.pauseTestMessengers?.map(value => ({ channels: value.channels.size, jobs: value.channelBackground.size, automatic: [...value.automaticPauses], checking: !!value.pauseOnlineWork, recoveries: [...value.pauseRecoveries.keys()] })), contacts: window.sendTest?.account.contacts$().length, pendingReads: window.dmTest?.pendingPrivateReads })', context.origin).catch(() => null)), 'Probes:', JSON.stringify(probeTimeline))
       }
     }
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/send-feedback'))

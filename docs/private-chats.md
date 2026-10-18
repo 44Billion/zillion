@@ -423,7 +423,10 @@ processors. Local self sends never wait behind relay publication, channel setup
 or the network pause. Remote entries wait for committed local checkpoints before
 publication. Self messages become saved on event-store commit; remote messages
 become saved after the first suitable relay ACK for each required event.
-Cleanup is independent and cannot revert a committed self bubble to pending/error.
+Cleanup and recovery archival are independent and cannot revert confirmed bubbles
+to pending/error. Remote entries journal prepared signed envelopes in the same
+encrypted outbox before transmission, then archive recovery personal copies in
+the background. Old entries retain their progress through the same current flow.
 Interrupted removal replays the same inner identity through idempotent storage.
 
 Development builds emit bounded `[messaging-performance]` traces grouped by
@@ -433,3 +436,10 @@ request/parent IDs, queue waits, vault duration and global quota-lock contention
 These are developer diagnostics, not a new scheduling API. No scope prefixes
 are interpreted by the launcher; kind-9 cache operations therefore also receive
 message priority in this first heuristic. Production tracing is disabled.
+
+Send captures a monotonic attempt start before preparation and forwards it to the
+session. The three-second fallback budget includes preparation; an overdue
+envelope can start primary and fallback together when ready. This is not a
+three-second delivery guarantee. Retries/reloads and individual file chunks get
+fresh attempt budgets. Traces correlate main event, publication and recovery
+record IDs with archive/checkpoint/first-ACK and bubble timings.

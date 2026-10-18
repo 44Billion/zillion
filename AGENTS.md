@@ -1137,7 +1137,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.20`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.25`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1821,13 +1821,16 @@ extras only from loaded messages. Draft, reply and outbox survive retained route
 
 - `private-chats.js` defaults `fallbackDelayMs` to 3000, forwarding explicit null
   unchanged for sequential fallback. Keep this routing in libp2r2p 0.11.20, not
-  UI tasks. The deadline is per signed outer event; primary attempts remain live
+  UI tasks. Pass monotonic attemptStartedAt from send() through the session;
+  preparation consumes the initial text attempt's budget. Retries/reloads and
+  each upload chunk receive fresh budgets; timestamps never enter persistence.
+  Primary attempts remain live
   and fast primary acceptance avoids fallback. Honor connectivity, exclusions,
   cooldowns and complete encrypted recipient coverage without public new tags.
 - The browser send fixture controls only transport/remote probes, measures the
-  fallback from the initial EVENT and preserves real signer/store/route behavior.
+  fallback from the send click and preserves real signer/store/route behavior.
   It reuses the feedback fixture in a separate guarded browser unit to stay within
-  3 GiB; signing preparation precedes the relay deadline.
+  3 GiB; compare the fallback start with max(click + 3000, envelope ready).
   Use the installed release, maintain quiet intermediate outcomes, and validate
   cancellation, same-ID bytes and pending outbox recovery under the 3 GiB runner.
 

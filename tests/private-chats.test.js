@@ -40,7 +40,13 @@ function fixture ({ beforeOpen = async () => {}, fileAuthorize = async () => {},
       next.reserved = true
       return { message: next.message, ack: async () => { next.acked = true; queue.splice(queue.indexOf(next), 1) }, nack: async () => { next.reserved = false } }
     },
-    broadcastRumor: async options => { sends.push(structuredClone(options)); return publish(options) }
+    broadcastRumor: async options => {
+      const data = { ...options }
+      delete data.onPreparedSeed
+      delete data.onDebug
+      sends.push(structuredClone(data))
+      return publish(options)
+    }
   }
   let callbacks
   const transport = createPrivateChats({

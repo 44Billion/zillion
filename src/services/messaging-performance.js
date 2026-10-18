@@ -3,7 +3,10 @@ const traces = new Map()
 
 export function recordMessagingPerformance (entry) {
   if (!enabled) return
-  const value = Object.fromEntries(['stage', 'eventId', 'at', 'elapsedMs'].filter(key => entry[key] !== undefined).map(key => [key, entry[key]]))
+  const ids = ['stage', 'eventId', 'publicationId', 'seedRecordId', 'requestId', 'parentId']
+  const value = Object.fromEntries([...ids, 'at', 'elapsedMs'].filter(key => ids.includes(key)
+    ? typeof entry[key] === 'string' && /^[a-zA-Z0-9:_-]{1,160}$/.test(entry[key])
+    : Number.isFinite(entry[key])).map(key => [key, entry[key]]))
   if (!value.eventId) return
   const trace = traces.get(value.eventId) ?? []
   trace.push(value)

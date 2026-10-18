@@ -57,7 +57,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
         const value = params?.args?.[0]?.value
         if (method === 'Runtime.consoleAPICalled' && typeof value === 'string' && value.includes('Private chat operation failed')) { sendErrors.push(value); if (sendErrors.length > 20) sendErrors.shift() }
         if (method === 'Runtime.consoleAPICalled' && typeof value === 'string' && value.startsWith('[messaging-performance] {')) {
-          performanceRecords.push(value)
+          performanceRecords.push(JSON.parse(value.slice('[messaging-performance] '.length)))
           if (performanceRecords.length > 200) performanceRecords.shift()
         }
       },
@@ -183,7 +183,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       // This phase exercises remote relay failures, not offline parking. Keep
       // the real connectivity monitor and answer its HTTP probes positively.
       offline = false
-      await checkPrivateChats({ browser, evaluate, grant, pubkey, performanceOnly: process.argv.includes('--private-performance-only') })
+      await checkPrivateChats({ browser, evaluate, grant, pubkey, performanceOnly: process.argv.includes('--private-performance-only'), readDiagnostics: () => performanceRecords })
       return
     }
 

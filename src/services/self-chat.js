@@ -339,7 +339,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       if (entry.fileEvent) context.push(entry.fileEvent)
       debug(id, 'preparation-complete', startedAt)
       entry.enqueuing = true
-      await transport.enqueue({ peer, event: { ...entry.event, pubkey }, context, requiredFiles: entry.fileEvent ? [getEventHash({ ...entry.fileEvent, pubkey })] : [] })
+      await transport.enqueue({ peer, attemptStartedAt: entry.attemptStartedAt, event: { ...entry.event, pubkey }, context, requiredFiles: entry.fileEvent ? [getEventHash({ ...entry.fileEvent, pubkey })] : [] })
       entry.accepted = true
     }).catch(error => {
       if (signal.aborted || entry.observed) return
@@ -370,6 +370,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     if (closed) throw new Error('Self chat is closed')
     if (typeof content !== 'string' || (!content.trim() && !attachment)) return
     const sendStartedAt = Date.now()
+    const attemptStartedAt = performance.now()
     content = compactWhitespace(content)
     if (!content && !attachment) return
     if (replyTo && !messages.has(replyTo)) throw new Error('Unknown reply target')
@@ -425,7 +426,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     }
     references.locals.set(id, { ...event, pubkey, id })
     if (transport) {
-      preparations.set(id, { event, fileEvent, attachment, reply, controller: new AbortController(), work: null, accepted: false, observed: false })
+      preparations.set(id, { event, fileEvent, attachment, reply, attemptStartedAt, controller: new AbortController(), work: null, accepted: false, observed: false })
       prepareSend(id)
     } else {
       outbox.set(id, { event, fileEvent, attachment, work: null })
@@ -477,7 +478,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     }
     return Promise.resolve().then(async () => {
       await transport?.cancel(id)
-      if (everyone && transport) await transport.enqueue({ peer, event: { ...request, pubkey }, deletion: true })
+      if (everyone && transport) await transport.enqueue({ peer, attemptStartedAt: performance.now(), event: { ...request, pubkey }, deletion: true })
       return eventStore.addPersonalCopy(request, { context })
     })
       .then(result => result?.result?.ok === true)
@@ -515,7 +516,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
         }
         outbox.set(entry.id, entry)
         rememberOrder(entry.event)
-        const status = peer === pubkey && messages.get(entry.id)?.status === 'saved' ? 'saved' : entry.status
+        const status = messages.get(entry.id)?.status === 'saved' ? 'saved' : entry.status
         messages.set(entry.id, { ...entry.event, status, uploadProgress: entry.uploadProgress })
       }
       for (const [id, preparation] of preparations) {
