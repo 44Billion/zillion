@@ -141,3 +141,80 @@ passed through the normal launcher preparation/install/vault-build sequence and
 the Zillion build. The installed library's 113 files match the published archive
 in each consumer. No real PC hibernation or low-powered-device production
 benchmark was performed here.
+
+
+## Connectivity and quota coordination: 0.11.26 (2026-10-19)
+
+Five protected Chrome recovery cycles used real vault/signer/event-store/outbox
+and controlled connectivity without a native online event. Development diagnostics
+correlate network confirmation and first ACK to the same outgoing event; probes
+from other realms are not used as its detection timestamp. Median / nearest-rank
+p95 from network restoration, in milliseconds:
+
+| Confirmed connectivity | Observed pause release | First ACK | Saved bubble |
+|---:|---:|---:|---:|
+| 4230 / 4322 | 4258 / 4379 | 4285 / 4360 | 4367 / 4418 |
+
+The previous 0.11.25 control captured one 25,281 ms bubble sample, not a comparable
+five-sample distribution. The new run also exercises manual retry, cancellation
+of one of multiple durable network waits and self-chat while paused. A separate
+sample restores connectivity more than 31 seconds after the last manual retry:
+backoff probes explicitly report zero remaining urgency; detection takes 3835 ms
+and bubble confirmation 3960 ms in that sample. An outage beyond the window waits
+for ordinary backoff or new user intent. These are controlled observations, not a
+five-second delivery guarantee. Pause release is polled and can be observed just
+after an ACK; the session resumes publication before the next browser poll.
+
+The same eight-pair fixture as 0.11.25 produced these median / p95 values (ms):
+
+| Scenario | Previous first ACK | New first ACK | Previous remote bubble | New remote bubble | New self |
+|---|---:|---:|---:|---:|---:|
+| idle | 396.7 / 449.6 | 379.7 / 543.7 | 404.2 / 457.4 | 387.6 / 554.6 | 134.1 / 202.6 |
+| history | 425.4 / 690.0 | 466.2 / 601.1 | 431.6 / 698.0 | 474.8 / 609.1 | 271.1 / 317.3 |
+| file-transfer | 696.8 / 922.4 | 704.7 / 833.2 | 713.8 / 928.5 | 714.8 / 844.1 | 366.2 / 631.2 |
+
+These small distributions do not establish a uniform send-latency improvement
+from the conservative quota changes. The bounded trace captured quota-wait p95s
+of 102.8 / 34.1 / 201.0 ms with only 6 / 3 / 2 samples, respectively. Compare them
+cautiously with the previous incomplete history sample (134.8 ms p95, n=5).
+They are not complete quota-wait distributions and stages overlap. Admission still
+sums cross-account counters under its global lock; crypto/vault queues, disk and
+physical relay recovery remain independent sources of delay.
+
+Deterministic tests and two-tab Chrome tests establish that access statistics
+finish while the global quota lock is held, use transactions of at most 25,
+discard old connection generations and revalidate LRU races. Periodic cleanup
+releases its lock after at most 100 examinations / 25 deletions; admission remains
+atomic. Other protected runs verified read-only/removal lifecycle, live reception
+while outgoing ACK is held, consecutive sends with archival blocked and direct
+vault synchronization with lock/unlock, overflow and reload. Peak browser memory
+stayed below 2.3 GiB under the 3 GiB/no-swap guard.
+
+Complete deterministic suites passed in all four projects. Changed-source lint
+passed, as did Zillion's configured lint and tracked-JS lint in library/vault.
+Broader launcher src/bin/tests lint reports 14 pre-existing errors in five files
+unchanged from HEAD (old loader/layout and unrelated tests); no unrelated lint
+cleanup is included. The exact 0.11.26 archive was compared against all 113 installed package files in each
+consumer. Archive integrity, raw aggregates and publication instructions are in
+`/tmp/zillion-recovery-quota-release/RELEASE.md`.
+
+The version was published manually. Its downloaded registry archive matches the
+validated tarball byte-for-byte (SHA-256
+`ffe4246d8bc85956282b07626c9e440c0d9100947501de8708a81ad98a6fbbe4`).
+All three consumers now resolve 0.11.26 through npm URLs with the verified
+integrity and no local dependency references. All 113 packaged files were checked
+again after registry installation, including the installed package resolution.
+Normal production builds passed, including the launcher's ordinary preparation,
+installation and sibling-vault build sequence. Full consumer suites passed again
+after reinstalling from npm: launcher 1180 cases, vault 50 files, Zillion 46 files.
+The first launcher build loaded the old esbuild host before preparation replaced
+its binary; rerunning the normal build after installation completed passed without
+source or dependency changes. Real hardware hibernation and a low-powered device
+still require manual verification.
+
+Additional reproduction (run sequentially):
+
+```sh
+node ../../44billion/bin/run-browser-tests.js -- node tests/browser/send-feedback.browser.js
+node ../../44billion/bin/run-browser-tests.js -- env ZILLION_RECOVERY_AFTER_WINDOW=1 node tests/browser/send-feedback.browser.js
+```

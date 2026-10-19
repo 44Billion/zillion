@@ -920,3 +920,8 @@ separately from contact discovery. The library's default readiness is local;
 background failures cannot recreate a signer pause. The guarded
 `tests/browser/local-readiness.browser.js` scenario covers locked startup with
 persisted contacts and slow remote recovery, measuring local save and publication.
+
+
+Remote sends and manual retries can request up to 30 seconds of expedited
+connectivity detection through the library's shared monitor. Self-chat remains
+local; detection cadence is not a relay delivery guarantee.

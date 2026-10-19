@@ -19,10 +19,11 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
   let browser
   let permissions
   const probeTimeline = []
+  const performanceRecords = []
   let offlineProbes = false
   try {
     let files
-    const options = buildOptions({ sourceMaps: false, onEnd: result => { files = result } })
+    const options = buildOptions({ development: true, futureFeatures: false, sourceMaps: false, onEnd: result => { files = result } })
     options.plugins.push({
       name: 'pause-observation', setup (build) {
         build.onLoad({ filter: /private-messenger\/index\.js$/ }, async args => ({
@@ -44,6 +45,13 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
     html.bytes = new TextEncoder().encode(new TextDecoder().decode(html.bytes).replaceAll('z-app', 'z-send-feedback-fixture'))
     const app = await prepareTestApp(files, { identifier: 'send-feedback-test', name: 'Send feedback test' })
     browser = await launchChrome({
+      onEvent: ({ method, params }) => {
+        const value = params?.args?.[0]?.value
+        if (method === 'Runtime.consoleAPICalled' && typeof value === 'string' && value.startsWith('[messaging-performance] {')) {
+          performanceRecords.push(JSON.parse(value.slice('[messaging-performance] '.length)))
+          if (performanceRecords.length > 200) performanceRecords.shift()
+        }
+      },
       intercept: request => {
         const { hostname } = new URL(request.url)
         if (/^(?:[a-z0-9-]+\.)*localhost$/.test(hostname)) return null
@@ -290,25 +298,51 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
     await evaluate(`Promise.all(['${second}', '${third}', '${fourth}'].map(id => sendTest.account.delivery().cancel(id)))`)
     // Only remote probes are controlled. The native offline event, account,
     // messenger, encrypted outbox and event-store/vault bridges remain real.
-    offlineProbes = true
-    await evaluate("window.dispatchEvent(new Event('offline'))")
-    const paused = await send('Pending during network pause')
-    await browser.until(() => evaluate(`sendTest.account.outbox$().some(entry => entry.id === '${paused}' && entry.failed && entry.status === 'pending')`), 'paused outbox entry')
-    const pausedCount = await evaluate('dmTest.publicationBatches.length')
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    assert.equal(await evaluate('dmTest.publicationBatches.length'), pausedCount, 'a known pause does not republish blindly')
-    await push('/chat/user')
-    await evaluate("sendTest.account.send('Self chat stays local while paused')")
-    await browser.until(() => evaluate("sendTest.account.messages$().some(message => message.content === 'Self chat stays local while paused' && message.status === 'saved')"), 'self-chat persists during network pause')
-    offlineProbes = false
-    const restoredAt = Date.now()
-    // No second native online event: the shared monitor must recover on its own.
-    await push(`/chat/${peer}`)
-    // The existing connectivity monitor includes jittered offline backoff. The
-    // published 0.11.24 control already takes ~25s here; this is not a send budget.
-    await browser.until(async () => (await messages()).find(message => message.id === paused)?.status === 'saved', 'automatic network-pause recovery', 45000)
-    assert.equal(await toast(), '')
-    console.log('Network recovery timing (ms)', Date.now() - restoredAt)
+    const measurements = []
+    for (let sample = 0; sample < (process.env.ZILLION_RECOVERY_AFTER_WINDOW === '1' ? 1 : 5); sample++) {
+      offlineProbes = true
+      await evaluate("window.dispatchEvent(new Event('offline'))")
+      const paused = await send(`Pending during network pause ${sample}`)
+      await browser.until(() => evaluate(`sendTest.account.outbox$().some(entry => entry.id === '${paused}' && entry.failed && entry.status === 'pending')`), 'paused outbox entry')
+      const pausedCount = await evaluate('dmTest.publicationBatches.length')
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      assert.equal(await evaluate('dmTest.publicationBatches.length'), pausedCount, 'a known pause does not republish blindly')
+      await push('/chat/user')
+      await evaluate(`sendTest.account.send('Self chat stays local while paused ${sample}')`)
+      await browser.until(() => evaluate(`sendTest.account.messages$().some(message => message.content === 'Self chat stays local while paused ${sample}' && message.status === 'saved')`), 'self-chat persists during network pause')
+      if (sample === 0) {
+        await push(`/chat/${peer}`)
+        const cancelled = await send('Cancel one shared network wait')
+        await browser.until(() => evaluate(`sendTest.account.outbox$().some(entry => entry.id === '${cancelled}' && entry.failed)`), 'second durable network wait')
+        await evaluate(`sendTest.account.delivery().cancel('${cancelled}')`)
+        await evaluate(`sendTest.account.delivery().retry('${paused}')`)
+        await push('/chat/user')
+      }
+      if (process.env.ZILLION_RECOVERY_AFTER_WINDOW === '1') await new Promise(resolve => setTimeout(resolve, 31000))
+      offlineProbes = false
+      const restoredAt = Date.now()
+      // No second native online event: the shared monitor must recover on its own.
+      await push(`/chat/${peer}`)
+      await browser.until(() => evaluate("pauseTestMessengers.every(value => !value.readStatus().pauseReasons.includes('network'))"), 'automatic network pause release', process.env.ZILLION_RECOVERY_AFTER_WINDOW === '1' ? 70000 : 12000)
+      const releasedAt = Date.now()
+      await browser.until(() => performanceRecords.some(entry => entry.eventId === paused && entry.stage === 'network-confirmed' && entry.at >= restoredAt), 'correlated network confirmation')
+      const detected = performanceRecords.find(entry => entry.eventId === paused && entry.stage === 'network-confirmed' && entry.at >= restoredAt)
+      assert.ok(detected, 'this message received confirmed connectivity after restoration')
+      if (process.env.ZILLION_RECOVERY_AFTER_WINDOW !== '1') assert.ok(detected.at - restoredAt < 6500, 'urgent detection uses the next five-second opportunity')
+      else assert.ok(performanceRecords.some(entry => entry.eventId === paused && entry.stage === 'connectivity-probe' && entry.state === 'started' && entry.reason === 'backoff' && entry.expediteRemainingMs === 0 && entry.at >= restoredAt), 'post-window recovery uses ordinary backoff')
+      await browser.until(async () => (await messages()).find(message => message.id === paused)?.status === 'saved', 'automatic network-pause recovery', 45000)
+      assert.equal(await toast(), '')
+      const savedAt = Date.now()
+      await browser.until(() => performanceRecords.some(entry => entry.eventId === paused && entry.stage === 'first-ack'), 'correlated first ACK')
+      const ack = performanceRecords.find(entry => entry.eventId === paused && entry.stage === 'first-ack')
+      measurements.push({ detection: detected.at - restoredAt, pauseRelease: releasedAt - restoredAt, ack: ack.at - restoredAt, bubble: savedAt - restoredAt })
+      console.log('Network recovery timing (ms)', measurements.at(-1))
+    }
+    const summary = Object.fromEntries(['detection', 'pauseRelease', 'ack', 'bubble'].map(key => {
+      const values = measurements.map(value => value[key]).sort((a, b) => a - b)
+      return [key, { medianMs: values[Math.floor(values.length / 2)], p95Ms: values[Math.ceil(values.length * 0.95) - 1] }]
+    }))
+    console.log('Network recovery distribution (ms)', JSON.stringify(summary))
     console.log('Send feedback, native network pause, local self-chat and recovery without a second online event verified')
   } catch (error) {
     for (const context of browser?.contexts.values() || []) {

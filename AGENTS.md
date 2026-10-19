@@ -1137,7 +1137,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.25`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.26`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1849,3 +1849,13 @@ The 0.11.20 patch scopes connection cooldowns by EVENT/AUTH/REQ/COUNT. Keep temp
 parsing in the library; profile recovery consumes normalized retryAt. Before
 publication, test the exact prepared tarball through public imports. Final
 lockfiles use npm URLs and its actual integrity; publish that same archive.
+
+
+## Expedited network detection
+
+- libp2r2p owns the runtime-only 30s urgent window after a new remote send/manual
+  retry, one shared subscription and automatic pause ownership. Do not add app
+  polling or renew urgency from chunks, recovery, reload or automatic retries.
+- Development performance traces accept bounded probe reason/state and remaining
+  window fields alongside event IDs and durations. Production retains no traces.
+  Connectivity detection is separate from relay cooldown, first ACK and the bubble.
