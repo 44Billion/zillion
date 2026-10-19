@@ -1,3 +1,4 @@
+import { localPersistenceFailures } from '#services/local-persistence.js'
 import { createConversationPrefetch } from '#services/conversation-prefetch.js'
 import { createChatWorkers } from '#services/chat-history.js'
 import { createConversationSummaries } from '#services/conversation-summaries.js'
@@ -653,6 +654,15 @@ export function useConversation (id$, { open = false, active$ = () => true } = {
       if (this.self$()) return account.send(...args)
       if (account.contactsState$() !== 'loaded' || !account.personFor(this.peer$())?.saved) throw new Error('CHAT_UNAVAILABLE')
       return account.chatFor(this.peer$()).send(...args)
+    },
+    localPersistenceFailures$ () { return localPersistenceFailures(account.outbox$(), account.pubkey$(), this.peer$()) },
+    async retryLocalPersistence () {
+      const owner = account.pubkey$(); const peer = this.peer$()
+      const ids = this.localPersistenceFailures$().filter(entry => entry.localPersistence.retryable).map(entry => entry.id)
+      for (const id of ids) {
+        if (!active$() || owner !== account.pubkey$() || peer !== this.peer$() || !isAccountAvailable(account.signerState$())) return
+        await account.delivery()?.retry(id)
+      }
     },
     retryMessage (id) { return this.self$() ? account.retryMessage(id) : account.chatFor(this.peer$())?.retry(id) },
     deleteMessage (...args) { return this.self$() ? account.deleteMessage(...args) : account.chatFor(this.peer$())?.deleteMessage(...args) },

@@ -45,6 +45,14 @@ f('z-chat', ({ h, props }) => {
   const account = useConversation(() => props.person$().id, { open: true, active$: page.isActive$ })
   const feedback = useSendFeedback(account)
   const view = useStore(() => ({
+    retryingLocal$: false,
+    localFailure$ () { return this.real$() && account.localPersistenceFailures$().length > 0 },
+    canRetryLocal$ () { return account.localPersistenceFailures$().some(entry => entry.localPersistence.retryable) && isAccountAvailable(identity.signerState$()) },
+    async retryLocal () {
+      if (!page.isActive$() || this.retryingLocal$()) return
+      this.retryingLocal$(true)
+      try { await account.retryLocalPersistence() } finally { this.retryingLocal$(false) }
+    },
     timelineRef$: null,
     screenRef$: null,
     activeId$: null,
@@ -228,6 +236,7 @@ f('z-chat', ({ h, props }) => {
         </ol>
       </div>
       <div class="chat-footer">
+      ${view.localFailure$() ? h`<div class="chat-date local-persistence-notice" role="status">${t('Some sent messages could not yet be saved on this device.')}${view.canRetryLocal$() ? h` <button type="button" class="retry-btn" ?disabled=${view.retryingLocal$()} onclick=${view.retryLocal}>${t('Try again')}</button>` : null}</div>` : null}
       ${view.nonContact$() ? h`<z-contact-invitation props=${{ person$: props.person$ }} />` : h`<z-chat-composer props=${{ messages$: account.messages$, historyState$: account.historyState$, historyLoaded$: account.historyLoaded$, recover: account.recover, canAttach$: view.real$, canSend$: view.canSend$, send: view.send, reply$: view.reply$, clearReply: () => view.replyTo$(null), readFiles: account.readFiles, references$: account.references$ }} />`}
       </div></div>
     </main>

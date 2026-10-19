@@ -925,3 +925,7 @@ persisted contacts and slow remote recovery, measuring local save and publicatio
 Remote sends and manual retries can request up to 30 seconds of expedited
 connectivity detection through the library's shared monitor. Self-chat remains
 local; detection cadence is not a relay delivery guarantee.
+
+Remote relay confirmation is independent of local event-store persistence after
+durable admission. A conversation notice reports confirmed messages whose local
+save failed, with local-only retry; see [private chats](docs/private-chats.md).

@@ -35,9 +35,12 @@ export function installPrivateChatFixture () {
   }
   const acknowledgements = []
   const archiveWaiters = []
+  const localWaiters = []
   const originalAddPersonalCopy = window.napp.eventStore.addPersonalCopy
   window.napp.eventStore.addPersonalCopy = async (...args) => {
     const event = args[0]
+    if (event.kind === 9 && window.dmTest?.holdLocalWrites) await new Promise(resolve => localWaiters.push(resolve))
+    if (event.kind === 9 && window.dmTest?.failLocalWrites) throw new Error('LOCAL_TEST_FAILURE')
     if (event.kind === 30078 && event.tags.some(tag => tag[0] === 'd' && tag[1].startsWith('libp2r2p:recovery:seed:')) && window.dmTest?.holdRecoveryArchive) {
       await new Promise(resolve => archiveWaiters.push(resolve))
     }
@@ -161,8 +164,10 @@ export function installPrivateChatFixture () {
   }
   fixture.pendingAcknowledgements = () => acknowledgements.length
   fixture.releaseAcknowledgements = () => { for (const acknowledge of acknowledgements.splice(0)) acknowledge() }
+  fixture.pendingLocalWrites = () => localWaiters.length
+  fixture.releaseLocalWrites = () => { for (const resolve of localWaiters.splice(0)) resolve() }
   fixture.pendingArchives = () => archiveWaiters.length
   fixture.releaseArchives = () => { for (const resolve of archiveWaiters.splice(0)) resolve() }
-  fixture.close = async () => { window.napp.eventStore.addPersonalCopy = originalAddPersonalCopy; fixture.releaseArchives(); fixture.stopState?.(); fixture.chat?.close(); await fixture.transport?.close(); await publisher.disconnectAll(); acknowledgements.length = 0 }
+  fixture.close = async () => { window.napp.eventStore.addPersonalCopy = originalAddPersonalCopy; fixture.releaseArchives(); fixture.releaseLocalWrites(); fixture.stopState?.(); fixture.chat?.close(); await fixture.transport?.close(); await publisher.disconnectAll(); acknowledgements.length = 0 }
   window.dmTest = fixture
 }

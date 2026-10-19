@@ -218,3 +218,106 @@ Additional reproduction (run sequentially):
 node ../../44billion/bin/run-browser-tests.js -- node tests/browser/send-feedback.browser.js
 node ../../44billion/bin/run-browser-tests.js -- env ZILLION_RECOVERY_AFTER_WINDOW=1 node tests/browser/send-feedback.browser.js
 ```
+
+## Independent persistence and traffic scheduling: 0.11.27 (2026-10-19)
+
+The version was published manually. The downloaded npm archive matches the
+prepared tarball byte-for-byte (SHA-256
+`ac3c90592b5d33f1649c841f5b2525bfec9257d93ab388f8522fcb3fa3a1b17d`). All three
+consumers resolve 0.11.27 through npm URLs with the verified integrity, including
+their installed-package locks. All 113 packaged files match the archive in every
+consumer. The release record is `/tmp/zillion-send-cost-release/RELEASE.md`; raw
+before/after browser logs and aggregates are in the same directory.
+
+The before checkout uses the published 0.11.26 library and the previous launcher,
+vault and app sources. Both runs use the same protected Chrome harness, disposable
+profiles, actual permissions, vault, signer, encrypted outbox and IndexedDB. The
+remote boundary is controlled: accepted publications receive an immediate ACK.
+These figures therefore measure preparation and scheduling, not production relay
+latency. No other test suites ran during either measurement.
+
+There are eight paired self/remote samples per condition and eight isolated self
+samples. Each pair waits for its outbox cleanup before the next pair, so the faster
+remote completion does not change the next sample's initial backlog. The history
+case starts actual personal-copy decryptions; the upload case starts a 1 MiB IRFS
+transfer. Neither is a permanently saturated load. Durations begin at the session
+send call. Median averages the middle two; nearest-rank p95 is the maximum.
+
+| Condition | Before first ACK median / p95 ms | Candidate first ACK median / p95 ms | Before remote bubble median / p95 ms | Candidate remote bubble median / p95 ms |
+|---|---:|---:|---:|---:|
+| idle | 293.3 / 382.3 | 151.4 / 176.7 | 304.5 / 391.5 | 161.3 / 189.6 |
+| history | 394.2 / 437.6 | 179.9 / 277.5 | 403.3 / 446.8 | 192.2 / 301.6 |
+| file transfer | 552.8 / 760.0 | 266.3 / 403.5 | 564.8 / 768.9 | 292.0 / 419.6 |
+
+| Local completion condition | Before median / p95 ms | Candidate median / p95 ms |
+|---|---:|---:|
+| isolated self-chat | 58.3 / 121.1 | 65.1 / 111.6 |
+| paired, idle | 124.3 / 216.9 | 142.8 / 233.9 |
+| paired, history | 170.3 / 202.6 | 151.5 / 332.7 |
+| paired, file transfer | 249.1 / 360.5 | 319.6 / 477.2 |
+
+Remote ACK medians fell by roughly 48–54% in this controlled run. Local completion
+did not improve uniformly; the paired upload case worsened. Independent local and
+remote work competes for the same vault and disk, and these small samples do not
+establish a local speedup. The change removes the mandatory local-before-remote
+dependency; it does not eliminate local contention or guarantee delivery times.
+Bounded per-stage traces are partial and overlap, so they must not be summed or
+presented as complete queue/quotas distributions.
+
+The exact candidate passed Chrome checks for consecutive messages, live reception
+with an ACK held, ACK completion with local storage blocked, persistent notice
+after a local failure, and local-only retry without retransmitting the prepared
+envelopes. Recovery archival can remain blocked while bubbles stay confirmed.
+The measurement run peaked at 2402 MiB under the 3072 MiB/no-swap limit.
+
+A separate real-bridge Chrome scenario holds receive credits while history fills
+the queue. A correlated publication ACK bypasses queued history in both the app
+and vault shims; releasing credits still delivers every history event in order
+before EOSE. Deterministic tests cover host-wide weights/reservations, saturated
+normal progress, authentication, large frames, cancellation and credit ledgers.
+
+Session tests also cover failed checkpoints, old encrypted outbox fixtures,
+separate stage failures, monotonic delivery confirmation, shutdown and a local
+tombstone arriving while an envelope checkpoint is blocked. A local failure stays
+visible through retry admission until a successful commit; old permanent local
+failures preserve their manual-retry policy after upgrading.
+
+Cache tests use controlled buffers and nonces to verify crypto equivalence,
+fresh normal nonces, bounded LRU/expiry, protocol/signer isolation, zeroization,
+revocation during preparation, stable primitive references and absence of secret
+material in public properties or diagnostics. Personal-copy tests verify actual
+overlap, at most four operations per preparation and unchanged tag order.
+
+Full deterministic suites passed: library 73 test files, launcher 1188 cases,
+vault 388 cases and Zillion 385 cases. Changed/new-file lint passes, along with
+the vault/library JavaScript checks and Zillion's configured lint. Broad launcher
+lint still reports 14 pre-existing errors in five unchanged files. Production
+bundles passed using the exact candidate; only the launcher's preparation
+installer was replaced by a temporary test wrapper to prevent restoring 0.11.26.
+The ordinary preparation/build will be repeated after registry publication.
+
+Direct vault synchronization passed in two isolated real launcher/vault contexts,
+including private contacts, self-chat, old-key recovery, live overflow, lock/unlock
+and reload. Its protected Chrome run peaked at 2380 MiB without swap.
+The separate send-feedback run also passed repeated offline/reconnect cycles;
+its peak was 1972 MiB with no swap. All browser runs were sequential.
+
+Real PC hibernation, low-powered hardware and public-relay production timing still
+require manual verification. Ordinary production builds passed after registry
+installation, including the launcher's full dependency preparation and sibling
+vault build. Full consumer suites passed again: launcher 1188 cases, vault 388
+cases and Zillion 385 cases. Manifests and committed lockfiles changed only the
+library dependency from 0.11.26 to 0.11.27; no local library references remain.
+
+The protected Chrome scenario passed again after registry installation and normal
+production builds, with 2307 MiB peak and no swap. The repeated eight-sample
+measurements below are retained separately in `registry-performance.json` and
+`registry-browser.log`; earlier prepublication results above are not overwritten.
+The controlled boundary and small-sample limitations still apply. Isolated
+self-chat measured 40.3 / 122.0 ms median / p95 in this repeat.
+
+| Condition | Registry first ACK median / p95 ms | Registry remote bubble median / p95 ms | Registry paired self median / p95 ms |
+|---|---:|---:|---:|
+| idle | 136.3 / 378.1 | 153.7 / 400.9 | 148.9 / 289.7 |
+| history | 230.2 / 301.2 | 249.1 / 321.4 | 168.0 / 323.7 |
+| file transfer | 260.7 / 432.4 | 283.1 / 451.1 | 272.8 / 421.1 |

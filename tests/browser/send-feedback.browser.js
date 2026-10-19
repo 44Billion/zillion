@@ -48,8 +48,13 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
       onEvent: ({ method, params }) => {
         const value = params?.args?.[0]?.value
         if (method === 'Runtime.consoleAPICalled' && typeof value === 'string' && value.startsWith('[messaging-performance] {')) {
-          performanceRecords.push(JSON.parse(value.slice('[messaging-performance] '.length)))
-          if (performanceRecords.length > 200) performanceRecords.shift()
+          const record = JSON.parse(value.slice('[messaging-performance] '.length))
+          // Keep the stages asserted here; unrelated signer/cache traces must
+          // not evict an ACK while the test waits for the bubble to render.
+          if (['network-confirmed', 'network-pause-released', 'connectivity-probe', 'first-ack', 'bubble-saved'].includes(record.stage)) {
+            performanceRecords.push(record)
+            if (performanceRecords.length > 200) performanceRecords.shift()
+          }
         }
       },
       intercept: request => {

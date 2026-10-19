@@ -420,7 +420,7 @@ recursive sync loop. NostrDB quota, signer lock and storage errors remain visibl
 
 The shared encrypted session outbox now has independent serial local and remote
 processors. Local self sends never wait behind relay publication, channel setup
-or the network pause. Remote entries wait for committed local checkpoints before
+or the network pause. Remote entries use the exact prepared-envelope checkpoint before
 publication. Self messages become saved on event-store commit; remote messages
 become saved after the first suitable relay ACK for each required event.
 Cleanup and recovery archival are independent and cannot revert confirmed bubbles
@@ -443,3 +443,20 @@ envelope can start primary and fallback together when ready. This is not a
 three-second delivery guarantee. Retries/reloads and individual file chunks get
 fresh attempt budgets. Traces correlate main event, publication and recovery
 record IDs with archive/checkpoint/first-ACK and bubble timings.
+
+## Independent local persistence (0.11.27)
+
+After durable outbox admission, the local save and remote publication run
+independently using the same inner events. Remote ACK confirms the bubble even
+if event-store persistence is pending. The encrypted intent survives until local
+save, publication, recovery archival and cleanup all finish. Legacy entries
+normalize into this single flow without a database change.
+
+The session's copied localPersistence summary distinguishes normal pending work
+from a failed local write. Confirmed remote messages with local failures retain
+their successful status and show one persistent, translated conversation notice.
+Its Retry bypasses send feedback and repeats confirmed local work only, without
+republishing or extending network urgency. Availability, owner and active-route
+guards prevent obsolete actions. The notice clears after recovery; ordinary
+in-flight writes show no warning. A confirmed outbox message remains visible
+through reload until local history catches up.

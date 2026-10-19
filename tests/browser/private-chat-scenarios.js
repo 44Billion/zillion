@@ -85,6 +85,18 @@ export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, 
     await evaluate('dmTest.holdRecoveryArchive = false; dmTest.releaseArchives()')
     await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => ['${archiveHeld}', '${next}'].includes(entry.id))`), 'both confirmed entries clean up after archival resumes', 20000)
     console.log('Private chats: consecutive ACKs and bubble completion are independent of blocked recovery archival')
+    const isolatedSelf = []
+    for (let index = 0; index < 8; index++) {
+      const measurement = await evaluate(`(async () => {
+        const start = performance.now(); const id = await selfChatAccount.send('Isolated local sample ${index}');
+        while (!selfChatAccount.messages$().some(event => event.id === id && event.status === 'saved')) await new Promise(resolve => setTimeout(resolve, 5));
+        return { id, elapsedMs: performance.now() - start };
+      })()`)
+      isolatedSelf.push(measurement.elapsedMs)
+      await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => entry.id === '${measurement.id}')`), 'isolated self cleanup before next sample')
+    }
+    isolatedSelf.sort((a, b) => a - b)
+    console.log('Isolated self performance:', JSON.stringify({ samples: 8, medianMs: (isolatedSelf[3] + isolatedSelf[4]) / 2, p95Ms: isolatedSelf[7] }))
     const summaries = []
     const sample = async label => {
       console.log('Messaging performance sample:', label)
@@ -109,15 +121,16 @@ export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, 
           const ack = dmTest.acceptances.find(value => batches.some(batch => batch.id === value.id));
           if (!ack) throw Error('PERFORMANCE_ACK_MISSING');
           times.ack = ack.at - started;
-          return {...times, eventId: remote};
+          return {...times, eventId: remote, localEventId: self};
         })()`)
-        const { eventId, ...value } = result
+        const { eventId, localEventId, ...value } = result
         for (const entry of readDiagnostics().filter(entry => entry.eventId === eventId && Number.isFinite(entry.elapsedMs))) {
           if (!phases.has(entry.stage)) phases.set(entry.stage, [])
           phases.get(entry.stage).push(entry.elapsedMs)
         }
         console.log('Messaging performance timing:', label, index, JSON.stringify(value))
         values.push(value)
+        await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => ['${eventId}', '${localEventId}'].includes(entry.id))`), 'paired local work and cleanup before next sample', 20000)
       }
       const summary = { label }
       for (const type of ['self', 'remote', 'ack']) {
@@ -136,6 +149,26 @@ export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, 
     await evaluate("(async () => { const attachment = await dmTest.prepareAttachment(new File([new Uint8Array(1048577).fill(29)], 'performance.bin', {type:'application/octet-stream'})); window.__performanceFileId = dmTest.chat.send('Performance transfer', undefined, attachment); })()")
     await sample('file-transfer')
     console.log('Messaging performance:', JSON.stringify(summaries))
+    await browser.until(() => evaluate('!selfChatAccount.outbox$().some(entry => entry.id === window.__performanceFileId)'), 'performance upload finishes before the local-failure scenario', 60000)
+    await evaluate('document.querySelector(".chat-back").click()')
+    await browser.until(() => evaluate(`!!document.querySelector('.conversation [data-contact-id="${peer}"]')`), 'peer route for local persistence notice')
+    await evaluate(`document.querySelector('.conversation [data-contact-id="${peer}"]').click()`)
+    await browser.until(() => evaluate(`!!document.querySelector('z-chat .chat-screen[data-contact-id="${peer}"]')`), 'peer chat mounted')
+    await evaluate('dmTest.holdLocalWrites = true; dmTest.holdRecoveryArchive = true')
+    const localHeld = await evaluate(`selfChatAccount.chatFor('${peer}').send('Remote ACK before local persistence')`)
+    await browser.until(() => evaluate('dmTest.pendingLocalWrites() > 0'), 'local event-store write held')
+    await browser.until(() => evaluate(`selfChatAccount.outbox$().some(entry => entry.id === '${localHeld}' && entry.status === 'saved' && entry.localPersistence.state === 'pending')`), 'remote ACK independent of local persistence', 10000)
+    assert.equal(await evaluate("!!document.querySelector('.local-persistence-notice')"), false)
+    await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${localHeld}"]') && !document.querySelector('[data-message-id="${localHeld}"] .message-status[data-status=pending]')`), 'confirmed bubble renders while local storage is still blocked')
+    await evaluate('dmTest.failLocalWrites = true; dmTest.holdLocalWrites = false; dmTest.releaseLocalWrites()')
+    await browser.until(() => evaluate("!!document.querySelector('.local-persistence-notice button')"), 'persistent local failure notice')
+    assert.equal(await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${localHeld}').status`), 'saved')
+    const envelopeIds = await evaluate(`selfChatAccount.outbox$().find(entry => entry.id === '${localHeld}').prepared.publication.events.map(event => event.id)`)
+    const publications = await evaluate(`dmTest.publicationBatches.filter(entry => ${JSON.stringify(envelopeIds)}.includes(entry.id)).length`)
+    await evaluate('dmTest.failLocalWrites = false; dmTest.holdRecoveryArchive = false; dmTest.releaseArchives(); document.querySelector(".local-persistence-notice button").click()')
+    await browser.until(() => evaluate(`!selfChatAccount.outbox$().some(entry => entry.id === '${localHeld}') && !document.querySelector('.local-persistence-notice')`), 'local-only retry clears the notice and finishes cleanup', 10000)
+    assert.equal(await evaluate(`dmTest.publicationBatches.filter(entry => ${JSON.stringify(envelopeIds)}.includes(entry.id)).length`), publications)
+    console.log('Private chats: ACK precedes local persistence; local failure notice and local-only retry preserve confirmation')
     return
   }
   await evaluate('document.querySelector(".chat-back").click()')

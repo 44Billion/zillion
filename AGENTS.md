@@ -1859,3 +1859,13 @@ lockfiles use npm URLs and its actual integrity; publish that same archive.
 - Development performance traces accept bounded probe reason/state and remaining
   window fields alongside event IDs and durations. Production retains no traces.
   Connectivity detection is separate from relay cooldown, first ACK and the bubble.
+
+## Confirmed messages with pending local persistence
+
+The 0.11.27 session exposes localPersistence pending/saved/failed separately from
+relay-confirmed saved status. Keep confirmed bubbles monotonic through snapshots
+and reload until local storage catches up. A persistent conversation notice is
+shown only for actual local failures of confirmed remote messages. Retry directly
+uses delivery.retry for those entries, bypassing send feedback and network urgency;
+check owner, peer, active route and account readiness. Translate in all locales.
+The self-chat still confirms only at its local commit. No database or wrapper changes.

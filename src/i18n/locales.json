@@ -1905,5 +1905,31 @@
     "zh-TW": "取消",
     "ja": "キャンセル",
     "ko": "취소"
+  },
+  "Some sent messages could not yet be saved on this device.": {
+    "en": "Some sent messages could not yet be saved on this device.",
+    "fr": "Certains messages envoyés n’ont pas encore pu être enregistrés sur cet appareil.",
+    "it": "Alcuni messaggi inviati non sono ancora stati salvati su questo dispositivo.",
+    "de": "Einige gesendete Nachrichten konnten auf diesem Gerät noch nicht gespeichert werden.",
+    "es": "Algunos mensajes enviados aún no se han podido guardar en este dispositivo.",
+    "pt-BR": "Há mensagens enviadas que ainda não puderam ser salvas neste dispositivo.",
+    "ru": "Некоторые отправленные сообщения пока не удалось сохранить на этом устройстве.",
+    "zh-CN": "部分已发送的消息尚未能保存到此设备。",
+    "zh-TW": "部分已傳送的訊息尚未能儲存到此裝置。",
+    "ja": "送信済みのメッセージの一部をこの端末にまだ保存できていません。",
+    "ko": "일부 보낸 메시지를 아직 이 기기에 저장하지 못했습니다."
+  },
+  "Try again": {
+    "en": "Try again",
+    "fr": "Réessayer",
+    "it": "Riprova",
+    "de": "Erneut versuchen",
+    "es": "Volver a intentar",
+    "pt-BR": "Tentar novamente",
+    "ru": "Повторить попытку",
+    "zh-CN": "重试",
+    "zh-TW": "再試一次",
+    "ja": "再試行",
+    "ko": "다시 시도"
   }
 }
