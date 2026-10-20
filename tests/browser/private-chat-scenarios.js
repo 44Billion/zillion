@@ -276,7 +276,7 @@ export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, 
   await browser.until(() => evaluate('peerStates.length === 1'), 'scoped subscription initial state')
   await browser.evaluate('(() => { const key=\'local_appPersonaSelections\', newValue=\'{}\'; localStorage.setItem(key,newValue); window.dispatchEvent(new StorageEvent(\'storage\',{key,newValue,storageArea:localStorage})); })()')
   await browser.until(() => evaluate('peerStates.at(-1)?.access === "revoked"'), 'persona access revocation is terminal')
-  assert.deepEqual(await evaluate('peerStates.at(-1)'), { pubkey: peer, connection: 'unknown', access: 'revoked', isLocked: null, isReadOnly: null })
+  assert.deepEqual(await evaluate('peerStates.at(-1)'), { pubkey: peer, connection: 'unknown', access: 'revoked', isLocked: null, isReadOnly: null, isDefaultUser: null, supportsContentKeyMethods: null })
   await evaluate('stopPeer()')
   await evaluate('dmTest.close()')
   console.log('Private chats: two vault accounts, seeder presence and storage, scoped state, encrypted channel, contacts, reply and both deletions verified')

@@ -601,6 +601,7 @@ needed; empty folders mark the initial structure.
 
 - Follow `eslint.config.js`: JavaScript, single quotes, no semicolons,
   kebab-case filenames, and Node.js imports with the `node:` prefix.
+  Global lint exclusions come from `.gitignore` through neostandard.
 - Justify new dependencies with a concrete need. Initial runtime dependencies:
   `thenameisf` for UI, `libp2r2p` for Nostr/messaging/storage, and DiceBear
   core/styles for the copied avatar fallback. Build, lint, and upload
@@ -642,6 +643,10 @@ needed; empty folders mark the initial structure.
 - Keep fast logic tests in `tests/**/*.test.js`. `test:browser` runs separate
   `tests/browser/*.browser.js` files with Node and Chrome/CDP. No in-source test
   runner or test API is shipped with the app.
+  The protected runner forwards only selected environment variables. Put other
+  scenario selectors inside its command: `-- env ZILLION_PRIVATE_ONLY=1 node
+  tests/browser/self-chat.browser.js`; setting them only on the outer runner
+  does not select that scenario.
 - Browser tests use the full local launcher, its injected APIs, the real vault,
   and real permission dialogs. Prepare app files/manifests through the launcher's
   test installation helper, not a copied database schema in Zillion. Sibling
@@ -1507,6 +1512,12 @@ visible chats' first pages/reference metadata and up to five local media preview
 the media viewer still pages 1063
 independently and snapshots URL
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
+
+The browser history fixture holds UI pagination at the account method boundary
+to assert the initial 25 copies and release exactly one real older page. Capture
+the anchor after scroll/render geometry settles, before releasing that page;
+allowing automatic prefetch during these assertions makes them timing-dependent.
+Restore the method on teardown; do not replace signer or storage providers.
 
 ## Private media transport
 

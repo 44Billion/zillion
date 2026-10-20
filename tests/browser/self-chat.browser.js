@@ -307,12 +307,16 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'enabled Send')
     await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.initialLoading === "false"'), 'initial history processed')
     // Settle both explicit read grants before revoking kind 9 for the write test.
-    await evaluate("window.napp.eventStore.query({ kinds: [1006], '#k': ['9', '1063'] })")
-    await browser.until(() => browser.evaluate('!document.querySelector(".permission-button.allow-button:not(:disabled)")'), 'initial permission dialogs settled')
+    await grant("window.napp.eventStore.query({ kinds: [1006], '#k': ['9', '1063'] })")
     await browser.until(() => evaluate('document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial query and decryption completed')
     allowPermissions = false
-    // Reading history already grants kind-9 access. Revoke that real grant in
-    // this disposable profile so the next write waits on the actual dialog.
+    // Drain previously queued auto-grants and the native modal close before
+    // revoking permission. Its close handler must not reject the new request.
+    await browser.until(() => browser.evaluate('!document.querySelector("permission-dialog dialog[open]") && !document.querySelector("permission-dialog dialog")?.getAnimations().length'), 'initial permission modal fully closed')
+    await browser.evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    // Reading wrappers can grant broad personal access (-1), which also permits
+    // kind-9 outbox encryption. Revoke both it and the specific kind-9 grant so
+    // the dialog blocks durable admission, rather than a later local save.
     // No signer, event-store method or permission provider is substituted.
     await browser.evaluate(`(async () => {
       for (const {name} of await indexedDB.databases()) {
@@ -331,7 +335,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
             request.onsuccess = () => {
               const cursor = request.result;
               if (!cursor) return;
-              if (cursor.value.eKind === 9) cursor.delete();
+              if (cursor.value.eKind === 9 || cursor.value.eKind === -1) cursor.delete();
               cursor.continue();
             };
           });
@@ -340,15 +344,23 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     })()`)
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => browser.evaluate('!!document.querySelector(".permission-button.deny-button:not(:disabled)")'), 'real encryption permission held')
-    assert.equal(await evaluate('document.querySelectorAll(".message-row").length'), 0, 'no accepted bubble before encrypted outbox commit')
-    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), rawDraft)
+    await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "pending" && document.querySelector(".chat-composer textarea").value === ""'), 'optimistic bubble frees composer before durable admission')
+    const pendingId = await evaluate('document.querySelector(".message-row").dataset.messageId')
+    assert.equal(await evaluate('document.querySelectorAll(".message-row").length'), 1)
+    assert.equal(await evaluate(`selfChatAccount.outbox$().some(entry => entry.id === '${pendingId}')`), false, 'blocked encryption has not durably admitted the send')
     await browser.evaluate('document.querySelector(".permission-button.deny-button").click()')
-    await browser.until(() => evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'denied preparation restores Send')
-    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), rawDraft, 'denial preserves the draft')
+    await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "error"'), 'denied preparation remains retryable on the same bubble')
+    assert.equal(await evaluate('document.querySelector(".message-row").dataset.messageId'), pendingId)
+    await setText('Preserved retry draft')
     allowPermissions = true
-    await evaluate('document.querySelector(".compose-action").click()')
+    await evaluate('document.querySelector(".message-status[data-status=error] button").click()')
+    await browser.until(() => evaluate('!!document.querySelector(".message-actions .message-retry")'), 'failed bubble offers Retry')
+    await evaluate('document.querySelector(".message-actions .message-retry").click()')
     await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "saved"'), 'durably accepted message saved', 45000)
-    await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === ""'), 'draft cleared after durable acceptance')
+    assert.equal(await evaluate('document.querySelectorAll(".message-row").length'), 1, 'retry does not add another bubble')
+    assert.equal(await evaluate('document.querySelector(".message-row").dataset.messageId'), pendingId, 'retry preserves the message identity')
+    assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), 'Preserved retry draft', 'retry never overwrites a new draft')
+    await setText('')
     await browser.until(() => evaluate(`document.querySelector('.chat-composer textarea').clientHeight === ${emptyComposerHeight} && getComputedStyle(document.querySelector('.chat-composer textarea')).overflowY === 'hidden'`), 'composer releases its multiline height')
     await browser.until(() => evaluate('Boolean(document.querySelector(".chat-media a"))'), 'media link')
     assert.equal(await evaluate('document.querySelector(".chat-media a").href'), 'https://example.com/photo.png')
@@ -522,6 +534,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       await browser.until(() => evaluate('!!document.querySelector(".message-actions [aria-label=Reply]")'), 'reply action')
       await evaluate('document.querySelector(".message-actions [aria-label=Reply]").click()')
       await browser.until(() => evaluate(`document.querySelector('.reply-text')?.title === ${JSON.stringify(title)}`), 'selected reply')
+      await evaluate('settleHistoryLayout()')
     }
     await startReply('[...document.querySelectorAll(".chat-reference")].find(el => el.title === "+apps")', '+apps')
     assert.equal(await evaluate('document.querySelector(".reply-text").textContent'), 'Reply: +apps')
@@ -589,15 +602,20 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
           return text.height === 22 && Math.abs(text.top + text.height / 2 - button.top - button.height / 2) < 1;
         })()`), true, 'one-line reply stays vertically centered')
         await startReply(`[...document.querySelectorAll('.chat-content')].find(el => el.innerText === ${JSON.stringify(longReply)})`, longReply)
-        assert.equal(await evaluate(`(() => {
+        const clamp = await evaluate(`(() => {
           const text = document.querySelector('.reply-text');
           const button = document.querySelector('.cancel-reply').getBoundingClientRect();
           const composer = document.querySelector('.chat-composer').getBoundingClientRect();
-          return text.clientHeight === 44 && text.scrollHeight > text.clientHeight && getComputedStyle(text).webkitLineClamp === '2'
-            && button.width === 44 && button.height === 44 && button.right <= composer.right
-            && document.querySelector('.cancel-reply svg').getBoundingClientRect().width === 24
-            && composer.width === document.querySelector('.chat-composer').scrollWidth;
-        })()`), true, 'two-line clamp cannot push the cancel button out of view')
+          return {height:text.clientHeight, scrollHeight:text.scrollHeight, lines:getComputedStyle(text).webkitLineClamp,
+            buttonWidth:button.width, buttonHeight:button.height, buttonRight:button.right, composerRight:composer.right,
+            iconWidth:document.querySelector('.cancel-reply svg').getBoundingClientRect().width,
+            composerWidth:composer.width, composerClientWidth:document.querySelector('.chat-composer').clientWidth,
+            composerScrollWidth:document.querySelector('.chat-composer').scrollWidth};
+        })()`)
+        assert.ok(clamp.height === 44 && clamp.scrollHeight > clamp.height && clamp.lines === '2' &&
+          clamp.buttonWidth === 44 && clamp.buttonHeight === 44 && clamp.buttonRight <= clamp.composerRight &&
+          clamp.iconWidth === 24 && clamp.composerScrollWidth <= clamp.composerClientWidth,
+        `two-line clamp cannot push the cancel button out of view: ${JSON.stringify(clamp)}`)
         await writeFile(path.join(root, `tmp/browser-failures/reply-text-${width}-${theme}.png`), Buffer.from((await browser.send('Page.captureScreenshot', { format: 'png' }, session)).data, 'base64'))
         offline = true
         await startReply(`document.querySelector('[data-message-id="${id}"] .chat-bubble')`, 'Today\nhttps://example.com/photo.png #private')
@@ -635,6 +653,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     if (process.env.ZILLION_CHAT_ONLY !== '1' && !process.argv.includes('--skip-attachments')) await checkMessageDeletion()
   } catch (error) {
     console.error('Self chat browser failure:', error.message)
+    try { console.error('Self chat state:', await browser?.evaluate('JSON.stringify({history:window.selfChatAccount?.historyState$(),error:window.selfChatAccount?.error$(),signer:window.selfChatAccount?.signerState$(),messages:window.selfChatAccount?.messages$().map(({id,status})=>({id,status}))})', media.origin)) } catch {}
     if (process.argv.includes('--private-performance-only')) console.error('Performance tail:', JSON.stringify(performanceRecords.slice(-30)), 'Send errors:', JSON.stringify(sendErrors))
     await browser?.diagnose(path.join(root, 'tmp/browser-failures/self-chat'))
     throw error

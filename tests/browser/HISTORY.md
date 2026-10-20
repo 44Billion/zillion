@@ -13,6 +13,43 @@ recovery. The diagnostic comparison reads the same 25-message page with limits
 of 4, 8 and 16 outstanding decryptions, twice in opposite order; production keeps
 four. It waits for the home summary reader to finish first to avoid measuring
 that independent workload. This measures real API/history work, not DOM rendering.
+
+The test-only paging control holds the account's UI `loadOlder` requests until
+the opening assertion completes. A first page may already be near the top and
+otherwise prefetch another page before the assertion runs. For the anchor check,
+arm the control, move into the near-top region and verify a real UI request is
+waiting. Wait for fonts, native scroll handling and repeated stable rendered
+geometry before capturing the controller's first readable row. Assert the viewport
+is actually away from the bottom: assigning 80% of viewport height can clamp to
+the bottom when the first page is only slightly taller, correctly retaining
+bottom-following instead of a reading anchor. Release exactly one page, settle again,
+then require 50 messages and less than three pixels of anchor drift. Load the
+remaining pages explicitly through the original method and restore the UI method
+in `finally`. No signer, event-store or permission provider is replaced. Both
+measurement modes exercise these same assertions without fixed sleeps.
+
+The text/scroll matrix also waits for rendered geometry after changing the reply
+selection. Horizontal-overflow assertions compare `scrollWidth` to `clientWidth`,
+not a bounding box that includes borders. Its permission-denial scenario revokes
+both broad and kind-9 personal grants after the previous native modal closes.
+It checks the current optimistic-send contract: a pending bubble frees the
+composer before encrypted admission, denial leaves that identity retryable, and
+Retry preserves both the ID and a newer composer draft.
+
+Validation on 2026-10-20: both final history modes passed all 235-message,
+same-second pagination, draft, retained-route and deletion assertions. Anchor
+drift was 0.046875 px with measurements and 0.34375 px without measurements,
+below the unchanged 3 px limit. Protected cgroup peaks were 2818 MiB and
+2683 MiB. The text/scroll group also passed at 2100 MiB. Each run used a fresh
+profile, the unchanged 3 GiB cap and zero swap; these observations are regression
+checks, not a production latency or cross-machine stability guarantee.
+The full private-chat group also passed at 1942 MiB, including real permission
+grants, relay failure, reload/resume and the terminal revoked signer snapshot.
+Select that scenario inside the guarded command so its environment is preserved:
+
+```sh
+node ../../44billion/bin/run-browser-tests.js -- env ZILLION_PRIVATE_ONLY=1 node tests/browser/self-chat.browser.js
+```
 `home-summaries.browser.js` additionally holds EOSE delivery in the real bridge
 and verifies that self/peer bubbles appear before it, while readiness stays false.
 The account/profile is disposable; external network traffic stays blocked.

@@ -1,11 +1,10 @@
-import neostandard from 'neostandard'
+import neostandard, { resolveIgnoresFromGitignore } from 'neostandard'
 import globals from 'globals'
 import html from 'eslint-plugin-html'
 
 export default [
-  { ignores: ['.history/**', 'dist/**', 'landing/dist/**', 'tmp/**', 'node_modules/**'] },
   ...neostandard({
-    // options
+    ignores: resolveIgnoresFromGitignore()
   }), {
     files: ['**/*.js', '**/*.html'],
     plugins: { html },

@@ -413,6 +413,12 @@ npm run upload:draft      # build development files and confirm a draft upload
 npm run serve             # standalone production preview; stop the dev vault first
 ```
 
+Lint imports global exclusions from `.gitignore`, including `.history`, build
+outputs and temporary browser artifacts.
+The guarded browser runner forwards only selected environment variables; pass
+other scenario selectors inside its command (`-- env ZILLION_PRIVATE_ONLY=1 node
+tests/browser/self-chat.browser.js`).
+
 The runtime browser regression checks decoded avatars and their dedicated cache
 across offline reload and local build updates, using the real account lifecycle
 and launcher/vault APIs. Its disposable fixture omits sourcemaps to reduce test
@@ -784,6 +790,9 @@ page and its reference metadata; chat media preparation starts near visibility; 
 extras only from loaded messages. Draft, reply and outbox survive retained routes.
 
 See [history regression and real-vault measurements](tests/browser/HISTORY.md).
+The regression fixture holds UI pagination while checking the initial 25 copies,
+then releases one real page after scroll geometry settles to verify the anchor.
+This control is test-only; storage, decryption and permissions remain real.
 
 ### Private media channels
 

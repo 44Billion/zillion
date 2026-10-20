@@ -5,10 +5,14 @@ import { createFileMetadata } from 'libp2r2p/nip94'
 import { rememberAttachmentPreview } from '#services/attachment-previews.js'
 import { f, useStore, useClosestStore, useMemo } from '#f'
 import { useAccount } from '#hooks/use-account.js'
+import { controlHistoryPaging, settleHistoryLayout } from './history-controls.js'
 
 // Compare outstanding-call limits over the same initial page and real APIs.
 import { createChatHistory, createChatWorkers } from '#services/chat-history.js'
 import { decryptPersonalCopy } from '#services/chat-references.js'
+
+window.controlHistoryPaging = () => { window.historyPaging = controlHistoryPaging(window.selfChatAccount) }
+window.settleHistoryLayout = settleHistoryLayout
 
 // Test-only access to app state; launcher identity, storage and permissions stay real.
 f('z-self-chat-fixture', ({ h }) => {
