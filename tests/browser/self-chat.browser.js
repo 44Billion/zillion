@@ -426,7 +426,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate(`[...document.querySelectorAll('.chat-content')].some(el => el.innerText === ${JSON.stringify(compactHistory)})`), 'history renders compactly after reload')
     assert.equal((await evaluate(readMessages)).some(event => event.content === rawHistory), true, 'display compaction does not rewrite imported events')
     assert.ok(await evaluate('document.querySelector(".chat-timeline").innerText.includes("Today")'))
-    assert.equal(await evaluate('document.querySelectorAll(".message-quote").length'), 1)
+    await browser.until(() => evaluate('document.querySelectorAll(".message-quote").length === 1'), 'reply quote resolves after history reload')
     offline = false
     await evaluate('window.dispatchEvent(new Event("online"))')
     await browser.until(() => evaluate('document.querySelector(".chat-media img")?.naturalWidth > 0'), 'image renders after connectivity returns', 30000)
