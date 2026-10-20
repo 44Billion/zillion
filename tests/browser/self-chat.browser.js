@@ -210,13 +210,22 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
       const countWrappers = kind => evaluate(`window.napp.eventStore.query({ kinds: [1006], '#k': [${JSON.stringify(String(kind))}] }).then(({ results }) => results.length)`)
       const messageCountBefore = await countWrappers(9)
       const fileCountBefore = await countWrappers(1063)
-      const readFilesBefore = await evaluate('selfChatAccount.readFiles().then(files => files.length)')
-      // Reload prepares only visible references. Visit a referenced message
-      // before looking for its attachment menu, as a reader would.
-      await evaluate(`(() => {
-        const message = selfChatAccount.messages$().findLast(message => message.tags.some(tag => tag[0] === 'q'));
-        if (message) document.querySelector('[data-message-id="' + message.id + '"]').scrollIntoView({block:'center'});
+      const catalogIds = await evaluate('selfChatAccount.readFiles().then(files => files.map(file => file.id))')
+      const readFilesBefore = catalogIds.length
+      // The ordering/reload scenario leaves only the newest 25 messages loaded.
+      // Page through real history until an attachment with a retained catalog
+      // copy is present, then resolve its visible metadata before opening menus.
+      const targetId = await evaluate(`(async () => {
+        const files = new Set(${JSON.stringify(catalogIds)});
+        const find = () => selfChatAccount.messages$().findLast(message => message.tags.some(tag => tag[0] === 'q' && files.has(tag[1])));
+        while (!find() && selfChatAccount.older$().hasOlder) {
+          if (!await selfChatAccount.loadOlder()) throw new Error('Attachment history page failed');
+        }
+        return find()?.id;
       })()`)
+      assert.ok(targetId, 'a stored attachment with an independent catalog copy exists')
+      await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${targetId}"]')`), 'older attachment rendered')
+      await evaluate(`document.querySelector('[data-message-id="${targetId}"]').scrollIntoView({block:'center'})`)
       const deletedId = await browser.until(() => evaluate(`(() => {
         const rows = [...document.querySelectorAll('.message-row')].filter(row => row.querySelector('.message-status[data-status=saved]') && row.querySelector('.attachment-download') &&
           selfChatAccount.messages$().find(message => message.id === row.dataset.messageId)?.tags.some(tag => tag[0] === 'q' && selfChatAccount.references$()[tag[1]]?.kind === 1063))

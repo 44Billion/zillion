@@ -51,7 +51,15 @@ export async function checkGalleryRecovery ({ browser, evaluate, origin }) {
   const reload = async () => {
     const route = await evaluate('location.pathname')
     await browser.evaluate(`(() => { const frame = [...document.querySelectorAll('app-window iframe')].find(frame => new URL(frame.src).origin === ${JSON.stringify(origin)}); const url = new URL(frame.src); url.pathname = ${JSON.stringify(route)}; frame.src = url.href; })()`)
-    await browser.until(() => evaluate('selfChatAccount.historyState$() === "unavailable" && !!document.querySelector(".chat-composer")'), 'cold locked history unavailable', 60000)
+    // Cold routes wait for account availability before opening history. The
+    // catalog's explicit read below still exercises a real locked-vault error.
+    await browser.until(() => evaluate('window.selfChatAccount?.signerState$()?.isLocked === true && !!document.querySelector(".chat-composer") && selfChatAccount.historyState$() !== "loaded"'), 'cold chat waits for unlock', 60000)
+    assert.equal(await evaluate('document.querySelector(".compose-action").getAttribute("aria-disabled")'), 'true')
+    // Deliberately request the real history service while locked. Ordinary
+    // route startup correctly waits; this explicit failure makes Retry eligible
+    // without substituting the signer, store or account service.
+    await evaluate('selfChatAccount.openSelfConversation()')
+    await browser.until(() => evaluate('selfChatAccount.historyState$() === "unavailable"'), 'explicit locked history read fails')
   }
   await lock()
   await reload()
@@ -70,7 +78,7 @@ export async function checkGalleryRecovery ({ browser, evaluate, origin }) {
   assert.equal(await evaluate('document.querySelector(".gallery-retry > span").textContent.trim()'), 'Retry')
   assert.ok((await evaluate('galleryLoadingCounts')).includes(3), 'loading has three placeholders plus add-file')
   await evaluate('document.querySelector(".gallery-retry").click()')
-  await browser.until(() => evaluate('selfChatAccount.historyState$() === "unavailable" && !!document.querySelector(".gallery-retry")'), 'persistent failure stays retryable')
+  await browser.until(() => evaluate('selfChatAccount.signerState$()?.isLocked === true && !!document.querySelector(".gallery-retry")'), 'persistent failure stays retryable')
   await unlock()
   await evaluate('document.querySelector(".gallery-retry")?.click()')
   await browser.until(() => evaluate('selfChatAccount.historyState$() === "loaded" && document.querySelectorAll(".attachment-gallery button").length === 3'), 'Retry recovers catalog without app restart', 60000)

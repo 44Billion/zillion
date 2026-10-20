@@ -4,7 +4,11 @@ import assert from 'node:assert/strict'
 // history, encryption, permissions, routing and component updates remain real.
 export async function checkScrollScenarios ({ browser, evaluate, addNote, media }) {
   const previousIds = await evaluate('[...document.querySelectorAll(".message-row")].map(row => row.dataset.messageId)')
-  const timestamp = Math.floor(Date.now() / 1000) + 60
+  // Earlier attachment fixtures intentionally use future timestamps. Keep this
+  // cohort newest so the reload's 25-row page contains exactly these messages,
+  // rather than unrelated attachment preparation from the previous scenario.
+  const newest = await evaluate('Math.max(0, ...selfChatAccount.messages$().map(message => message.created_at))')
+  const timestamp = Math.max(Math.floor(Date.now() / 1000), newest) + 60
   await evaluate('window.savedChatDates = [...document.querySelectorAll(".message-list .chat-date")]')
   media.reject = true
   for (let i = 0; i < 24; i++) await addNote(`Scroll fixture ${i}\nhttps://example.com/scroll-${i}.png${i === 23 ? '#dim=1x1' : ''}`, timestamp + i)
@@ -55,9 +59,12 @@ export async function checkScrollScenarios ({ browser, evaluate, addNote, media 
         if (scrollProbe.dates[date.dataset.day] && scrollProbe.dates[date.dataset.day] !== date) scrollProbe.dateReplacements++;
         scrollProbe.dates[date.dataset.day] = date;
       }
-      requestAnimationFrame(sample);
+      // rAF runs before ResizeObserver, where the viewport controller applies
+      // its corrections. Sample after that rendering turn, not midway through
+      // layout before the frame has received its scroll compensation.
+      requestAnimationFrame(() => setTimeout(sample, 0));
     };
-    requestAnimationFrame(sample);
+    requestAnimationFrame(() => setTimeout(sample, 0));
   })()`)
   await browser.until(() => evaluate(`document.querySelector('.chat-timeline').dataset.historyLoaded === 'true' && selfChatAccount.messages$().length === ${Math.min(25, expectedIds.length)}`), 'scroll history recovered', 60000)
   await browser.until(() => evaluate('!!document.querySelector(\'.chat-media a[href$="#dim=1x1"]\')'), 'bounded image rendered after snapshot')

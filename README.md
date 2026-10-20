@@ -716,6 +716,12 @@ Run `npm run test:browser:attachments` for the focused integration checks, or
 separate guarded run so neither unit approaches the 3 GiB cap), or
 `node ../../44billion/bin/run-browser-tests.js -- node --test tests/browser/self-chat.browser.js`
 for the full self-chat regression.
+The browser scenarios bring newly sent attachments into view before checking
+captions, since offscreen reference metadata is resolved lazily.
+Cold locked startup waits for account availability; gallery Retry separately
+exercises locked reads and recovery after unlocking.
+Sending while the app knows the vault is locked stays disabled and preserves
+the prepared file for sending after unlock, without recompression.
 
 Incoming kind-1063 `download` intent is honored: a bare tag or value `1` makes
 image/video thumbnails download links; absence or `0` keeps normal media behavior.

@@ -8,6 +8,10 @@ export async function checkAttachmentPresentation ({ browser, evaluate, origin, 
   const pageSession = [...browser.contexts.values()].find(context => context.origin === 'http://localhost:10000' && context.auxData?.isDefault).sessionId
   const appSession = [...browser.contexts.values()].find(context => context.origin === origin && context.auxData?.isDefault).sessionId
   const settle = () => evaluate('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+  const untilLatest = (expression, label) => browser.until(async () => {
+    await evaluate('document.querySelectorAll(".route-page[data-active=true] .message-row").item(document.querySelectorAll(".route-page[data-active=true] .message-row").length - 1)?.scrollIntoView({block:"end"})')
+    return evaluate(expression)
+  }, label)
   const preview = () => evaluate(`(() => {
     const box = document.querySelector('.composer-attachment .chat-attachment');
     const parent = box.closest('.composer-attachment').getBoundingClientRect(); const rect = box.getBoundingClientRect();
@@ -87,10 +91,13 @@ export async function checkAttachmentPresentation ({ browser, evaluate, origin, 
       const data = await evaluate(`(() => { const c=document.createElement('canvas'); c.width=${width}; c.height=${height}; c.getContext('2d').fillRect(0,0,c.width,c.height); return c.toDataURL('image/png').split(',')[1]; })()`)
       const filename = `ratio-${width}-${height}.png`
       await select(filename, Buffer.from(data, 'base64'))
-      assert.equal(await evaluate('getComputedStyle(document.querySelector(".attachment-preview .attachment-frame img:not(.attachment-placeholder)")).objectFit'), 'contain')
+      await browser.until(() => evaluate(`(() => {
+        const image = document.querySelector('.composer-attachment .attachment-frame img:not(.attachment-placeholder)');
+        return image?.naturalWidth > 0 && getComputedStyle(image).objectFit === 'contain';
+      })()`), 'prepared extreme-ratio preview is decoded and contained')
       await evaluate('document.querySelector(".compose-action").click()')
       const row = `[...document.querySelectorAll('.message-row')].find(row => row.querySelector('.file-name')?.getAttribute('aria-label') === '${filename}')`
-      await browser.until(() => evaluate(`(${row})?.querySelector('.message-status')?.dataset.status === 'saved'`), 'extreme-ratio attachment saved')
+      await untilLatest(`(${row})?.querySelector('.message-status')?.dataset.status === 'saved'`, 'extreme-ratio attachment saved')
       await evaluate(`document.querySelector('.chat-timeline').dispatchEvent(new WheelEvent('wheel',{deltaY:-100,bubbles:true})); (${row}).scrollIntoView({block:'center'})`)
       await browser.until(() => evaluate(`(${row}).querySelector('img:not(.attachment-placeholder)')?.naturalWidth === ${width}`), 'original extreme image decoded')
       await settle()
@@ -118,7 +125,7 @@ export async function checkAttachmentPresentation ({ browser, evaluate, origin, 
     assert.equal(await evaluate(`(async () => (await window.napp.eventStore.addPersonalCopy(${JSON.stringify(file)}, {context:${JSON.stringify(context)}})).result.ok)()`), true)
     assert.equal(await evaluate(`(async () => (await window.napp.eventStore.addPersonalCopy(${JSON.stringify(message)}, {context:${JSON.stringify(context)}})).result.ok)()`), true)
     const row = `[...document.querySelectorAll('.message-row')].find(row => row.querySelector('.attachment-name')?.textContent.includes(${JSON.stringify(filename)}))`
-    await browser.until(() => evaluate(`!!(${row})?.querySelector('.attachment-download[href]')`), 'received file gets a fallback download name')
+    await untilLatest(`!!(${row})?.querySelector('.attachment-download[href]')`, 'received file gets a fallback download name')
     await browser.until(() => evaluate(`(${row})?.querySelector('.attachment-caption')?.textContent === ${JSON.stringify(caption)}`), 'received file caption renders below the download row')
     const href = await evaluate(`(${row}).querySelector('.attachment-download').href`)
     assert.equal(nfileDecode(new URL(href).pathname.slice('/~~nfile/'.length)).filename, filename)
@@ -139,7 +146,7 @@ export async function checkAttachmentPresentation ({ browser, evaluate, origin, 
     // Real bubbles keep the posted quote inside z-chat-content, so match the
     // row that contains the typed text and the quote instead of an exact text.
     const quote = '[...document.querySelectorAll(\'.message-row\')].find(row => row.querySelector(\'.chat-content\')?.innerText.includes(\'Reply presentation\') && row.querySelector(\'.message-quote\'))?.querySelector(\'.message-quote\')'
-    await browser.until(() => evaluate(`(${quote})?.querySelector('.file-name')?.getAttribute('aria-label') === '${filename}'`), 'posted quote retains filename before caption')
+    await untilLatest(`(${quote})?.querySelector('.file-name')?.getAttribute('aria-label') === '${filename}'`, 'posted quote retains filename before caption')
     await browser.send('Emulation.setDeviceMetricsOverride', { width: 320, height: 520, deviceScaleFactor: 1, mobile: true }, pageSession)
     await settle()
     assert.equal(await evaluate(`(() => {const q=${quote};const name=q.querySelector('.file-name').getBoundingClientRect(); const line=q.querySelector('.file-reply').getBoundingClientRect();return name.width<=line.width/2+1 && q.scrollWidth<=q.clientWidth+1})()`), true)

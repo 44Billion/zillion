@@ -1488,6 +1488,24 @@ requires the companion update. See `docs/private-chats.md` for that boundary.
   browser regressions. No separate media catalog is stored. Test drivers stay
   out of published builds.
 
+- Attachment browser assertions must bring newly sent rows near visibility
+  after returning from the viewer, before expecting resolved file metadata or
+  captions. A saved message alone does not eagerly resolve offscreen references.
+  Cold locked routes wait for account availability before opening history;
+  assert lock and disabled sending rather than requiring a failed history read.
+  Gallery Retry coverage explicitly requests the real history service while
+  locked, then attempts its catalog read; no providers or state are substituted.
+  Wait for the app's lock notification before asserting disabled Send. A blocked
+  click retains the prepared file; unlock sends it without recompression. Do not
+  rely on racing the lock notification to manufacture an accepted send failure.
+  Scroll fixtures seeded after attachments start beyond the newest observed
+  timestamp, since attachment fixtures deliberately include future events. Keep
+  the intended 25-row reload cohort independent of earlier scenario ordering.
+  Sample initial scroll gaps after the rendering turn: rAF precedes the
+  ResizeObserver compensation and can observe intermediate, unpainted layout.
+  Attachment deletion after an ordering/reload scenario pages through real
+  history to find a catalog-backed message; the newest 25 rows may be text only.
+
 ### Incremental self-chat history
 
 Uses libp2r2p 0.10.19 and the launcher's typed event-store subscriptions. Opening

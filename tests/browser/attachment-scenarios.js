@@ -242,7 +242,12 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     const captioned = `[...document.querySelectorAll('.message-row')].find(row =>
       row.querySelector('.attachment-name')?.textContent.includes('captioned.png') &&
       row.querySelector('.attachment-caption'))`
-    await browser.until(() => evaluate(`(${captioned})?.querySelector('.message-status')?.dataset.status === 'saved'`), 'captioned image saved', 60000)
+    // Returning from the viewer can leave the timeline above the newest row.
+    // Attachment metadata resolves only near visibility, as with catalog reuse.
+    await browser.until(() => evaluate(`(() => {
+      document.querySelectorAll('.route-page[data-active=true] .message-row').item(document.querySelectorAll('.route-page[data-active=true] .message-row').length - 1)?.scrollIntoView({block:'end'});
+      return (${captioned})?.querySelector('.message-status')?.dataset.status === 'saved';
+    })()`), 'captioned image saved', 60000)
     const captionState = `(() => { const el = (${captioned}).querySelector('.attachment-caption'); const size = (${captioned}).querySelector('.attachment-size'); const text = (${captioned}).querySelector('.attachment-name'); return { clamp: getComputedStyle(el).webkitLineClamp, italic: getComputedStyle(el).fontStyle, muted: getComputedStyle(el).color === getComputedStyle(size).color, smaller: parseFloat(getComputedStyle(el).fontSize) < parseFloat(getComputedStyle(text).fontSize), expanded: el.getAttribute('aria-expanded') } })()`
     assert.deepEqual(await evaluate(captionState), { clamp: '2', italic: 'italic', muted: true, smaller: true, expanded: 'false' })
     await evaluate(`(() => { const button = (${captioned}).querySelector('.attachment-caption'); button.scrollIntoView({block:'center'}); button.click(); })()`)
@@ -302,27 +307,28 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     await trace('video preview')
     await select('locked.wav', await readFile(new URL('./fixtures/media/compression.wav', import.meta.url)))
     await browser.until(() => evaluate('document.querySelector(".composer-attachment .file-name")?.getAttribute("title") === "locked.mp3"'), 'official MP3 encoder runs in launcher')
-    const workersBeforeRetry = await evaluate('previewWorkerCount')
+    const workersBeforeLock = await evaluate('previewWorkerCount')
     await browser.evaluate('document.querySelector("vault-lock-button button").click()', 'http://localhost:4000')
     await browser.until(() => browser.evaluate('!!document.querySelector("lock-overlay .lock-unlock")', 'http://localhost:4000'), 'vault locked')
+    await browser.until(() => evaluate('selfChatAccount.signerState$()?.isLocked === true && document.querySelector(".compose-action").getAttribute("aria-disabled") === "true"'), 'app disables sending after lock')
     await evaluate('document.querySelector(".compose-action").click()')
-    await browser.until(() => evaluate('!document.querySelector(".composer-attachment") && selfChatAccount.messages$().some(message => message.status === "error")'), 'failed preparation stays in the outgoing bubble')
-    const failedId = await evaluate('selfChatAccount.messages$().find(message => message.status === "error").id')
+    assert.equal(await evaluate('!!document.querySelector(".composer-attachment")'), true, 'blocked send retains the prepared attachment')
     await browser.evaluate('document.querySelector("lock-overlay .lock-unlock").click()', 'http://localhost:4000')
-    await browser.until(() => evaluate('selfChatAccount.signerState$()?.isLocked === false && selfChatAccount.historyState$() === "loaded"'), 'unlock automatically restores conversation')
-    await evaluate(`document.querySelector('[data-message-id="${failedId}"]').scrollIntoView({block:'center'})`)
-    await browser.until(() => evaluate(`!!document.querySelector('[data-message-id="${failedId}"] .transfer-action[aria-label="Retry"]')`), 'failed upload exposes retry in the bubble')
-    await evaluate(`document.querySelector('[data-message-id="${failedId}"] .transfer-action[aria-label="Retry"]').click()`)
-    await browser.until(() => evaluate('[...document.querySelectorAll(".message-row")].some(row => row.querySelector(".attachment-name")?.textContent.includes("locked.mp3") && row.querySelector(".message-status")?.dataset.status === "saved")'), 'prepared file saved after unlock')
-    assert.equal(await evaluate('previewWorkerCount'), workersBeforeRetry, 'retry reuses compression and preview')
+    await browser.until(() => evaluate('selfChatAccount.signerState$()?.isLocked === false && selfChatAccount.historyState$() === "loaded" && document.querySelector(".compose-action").getAttribute("aria-disabled") === "false"'), 'unlock automatically restores conversation')
+    await evaluate('document.querySelector(".compose-action").click()')
+    await browser.until(() => evaluate(`(() => {
+      document.querySelectorAll('.route-page[data-active=true] .message-row').item(document.querySelectorAll('.route-page[data-active=true] .message-row').length - 1)?.scrollIntoView({block:'end'});
+      return [...document.querySelectorAll('.message-row')].some(row => row.querySelector('.attachment-name')?.textContent.includes('locked.mp3') && row.querySelector('.message-status')?.dataset.status === 'saved');
+    })()`), 'prepared file saved after unlock')
+    assert.equal(await evaluate('previewWorkerCount'), workersBeforeLock, 'unlock reuses compression and preview')
     const compressedUrl = await browser.until(() => evaluate('[...document.querySelectorAll(\'.attachment-download\')].find(a => a.textContent.includes(\'locked.mp3\'))?.href'), 'compressed download link')
     const compressedBytes = await evaluate(`fetch(${JSON.stringify(compressedUrl)}).then(r => r.arrayBuffer()).then(b => [...new Uint8Array(b)])`)
     assert.ok(compressedBytes.length < 384078)
     await evaluate('[...document.querySelectorAll(\'.attachment-download\')].find(a => a.textContent.includes(\'locked.mp3\')).click()')
     await browser.until(async () => { try { return (await readFile(path.join(downloads, 'locked.mp3'))).equals(Buffer.from(compressedBytes)) } catch { return false } }, 'compressed native download matches final bytes')
     await browser.until(() => evaluate('navigator.storage.getDirectory().then(root => root.getDirectoryHandle(\'zillion-compression-v1\')).then(dir => Array.fromAsync(dir.keys())).then(names => names.length === 0)'), 'confirmed artifact released')
-    console.log('Attachments: compressed MP3, locked-vault retry and native download verified')
-    await trace('locked vault retry')
+    console.log('Attachments: compressed MP3, locked send guard, retained preparation and native download verified')
+    await trace('locked vault preparation')
     await checkGalleryRecovery({ browser, evaluate, origin })
     await trace('gallery recovery')
     await browser.until(() => evaluate('document.querySelectorAll(".chat-composer").length === 1 && [...document.querySelectorAll(".message-row")].filter(row => row.querySelector(".attachment-name")?.textContent.includes("photo.png") && row.querySelector(".message-status")?.dataset.status === "saved").length === 2'), 'confirmed file metadata reopens offline', 60000)
@@ -388,7 +394,10 @@ export async function checkAttachmentScenarios ({ browser, evaluate, origin, req
     })()`)
     await browser.until(() => evaluate('!!document.querySelector(".composer-attachment") && !document.querySelector(".compose-action").disabled'), 'catalog reuse ready')
     await evaluate('document.querySelector(".compose-action").click()')
-    const reusedId = await browser.until(() => evaluate('[...document.querySelectorAll(\'.message-row\')].find(row => row.querySelector(\'.attachment-caption\')?.textContent.trim() === \'Reuse after deletion\' && row.querySelector(\'.message-status\')?.dataset.status === \'saved\')?.dataset.messageId'), 'catalog reuse saved after deletion', 60000)
+    const reusedId = await browser.until(() => evaluate(`(() => {
+      document.querySelectorAll('.route-page[data-active=true] .message-row').item(document.querySelectorAll('.route-page[data-active=true] .message-row').length - 1)?.scrollIntoView({block:'end'});
+      return [...document.querySelectorAll('.message-row')].find(row => row.querySelector('.attachment-caption')?.textContent.trim() === 'Reuse after deletion' && row.querySelector('.message-status')?.dataset.status === 'saved')?.dataset.messageId;
+    })()`), 'catalog reuse saved after deletion', 60000)
     const reusedFileId = await evaluate(`selfChatAccount.messages$().find(message => message.id === ${JSON.stringify(reusedId)}).tags.findLast(tag => tag[0] === 'q')[1]`)
     assert.notEqual(reusedFileId, fileId)
     const catalogPhotoCount = await evaluate(`selfChatAccount.readFiles().then(events => events.filter(event => event.tags.some(tag => tag[0] === 'r' && tag[1] === ${JSON.stringify(photoRoot)})).length)`)
