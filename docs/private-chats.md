@@ -433,6 +433,10 @@ Development builds emit bounded `[messaging-performance]` traces grouped by
 event ID, with send/preparation, outbox encryption/admission, local persistence,
 publication and bubble completion times. Launcher traces separately expose
 request/parent IDs, queue waits, vault duration and global quota-lock contention.
+Recovery archive traces include one aggregate result per `putMany`, correlated
+with the publication and opaque recovery record IDs. Counts distinguish rows,
+unique records, already-existing records, inserted records, blocked/expired
+records and skipped local writes; no ciphertext, filters or payloads are logged.
 These are developer diagnostics, not a new scheduling API. No scope prefixes
 are interpreted by the launcher; kind-9 cache operations therefore also receive
 message priority in this first heuristic. Production tracing is disabled.

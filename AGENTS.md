@@ -35,6 +35,9 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Keep crypto retry/storage policy in the library, never in avatar/chat views.
   Error JSON includes only selected public crypto coordinates, without raw
   scopes, ciphertext, plaintext or unsanitized error-object logging.
+  Development messaging traces may include one aggregate recovery-archive result
+  per publication with opaque IDs and row/existing/inserted/blocked/expired/
+  stored/skipped counts. Never add ciphertext, record payloads, filters or keys.
 
 - Before implementing any Nostr behavior, check the public exports and
   implementation of the installed `libp2r2p` and, when needed, the sibling

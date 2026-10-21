@@ -24,6 +24,9 @@ to follow NIP-65; self-chat remains local.
 Publication waits up to 30 seconds for confirmation and returns immediately on
 the first accepting relay. Failed publications log relay-specific reasons with `MESSAGE_NOT_PUBLISHED` and
 the affected event ID; see [publication diagnostics](docs/private-chats.md#publication-diagnostics).
+Development traces also report sanitized recovery-archive counts and opaque
+publication/record IDs, allowing repeated local archives to be distinguished
+from distinct recovery records without logging payloads or ciphertext.
 Private-chat errors also log copyable nested causes, the instance owner and
 relay/operation context when provided by the library;
 [recovery diagnostics](docs/private-chats.md#recovery-diagnostics) explain incomplete
