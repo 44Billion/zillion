@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { noteEncode, appEncode, nfileEncode, neventEncode } from 'libp2r2p/nip19'
 import { extractMedia } from 'libp2r2p/nip27'
-import { augmentedContentItems, chatQuoteModel, chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
+import { augmentedContentItems, chatQuoteModel, chatTimeline, createChatTimelineProjector, groupChatDays } from '#helpers/chat-timeline.js'
 import { compareChatMessages, firstUnreadMessageId } from '#helpers/conversation-preview.js'
 import { finalizeEvent, getEventHash } from 'libp2r2p/event'
 import { createFileMetadata } from 'libp2r2p/nip94'
@@ -61,6 +61,83 @@ test('day groups retain their identity when older messages arrive ahead of the c
   assert.equal(after[0].key, before[0].key)
   assert.equal(after[0].label, before[0].label)
   assert.deepEqual(after[0].messages.map(message => message.id), ['older', 'newer'])
+})
+
+test('incremental timeline reuses unchanged messages and days across status and history updates', () => {
+  const at = new Date(2026, 8, 13, 12).getTime() / 1000
+  const first = { id: 'first', created_at: at - 86400, content: 'first', tags: [], status: 'saved' }
+  const second = { id: 'second', created_at: at, content: 'second', tags: [], status: 'saved' }
+  const changedKey = Symbol('changed')
+  const projector = createChatTimelineProjector({ eqKey: changedKey })
+  const initial = projector.project([first, second], { locale: 'en-US', now: at * 1000, owner: 'a'.repeat(64) })
+  const [initialFirst, initialSecond] = initial.messages
+  const [initialFirstDay, initialCurrentDay] = initial.days
+  const initialMessagesRevision = initial.messages[changedKey]
+  const initialDaysRevision = initial.days[changedKey]
+  const initialDayRevision = initialCurrentDay[changedKey]
+
+  const pendingSecond = { ...second, status: 'pending' }
+  const updated = projector.project([first, pendingSecond], { locale: 'en-US', now: at * 1000, owner: 'a'.repeat(64) })
+  assert.equal(updated.messages, initial.messages)
+  assert.equal(updated.days, initial.days)
+  assert.equal(updated.messages[0], initialFirst)
+  assert.notEqual(updated.messages[1], initialSecond)
+  assert.equal(updated.messages[1].status, 'pending')
+  assert.equal(updated.days[0], initialFirstDay)
+  assert.equal(updated.days[1], initialCurrentDay)
+  assert.notEqual(updated.messages[changedKey], initialMessagesRevision)
+  assert.notEqual(updated.days[changedKey], initialDaysRevision)
+  assert.notEqual(initialCurrentDay[changedKey], initialDayRevision)
+  const pendingSecondModel = updated.messages[1]
+
+  const older = { id: 'older', created_at: at - 172800, content: 'older', tags: [] }
+  const prepended = projector.project([older, first, pendingSecond], { locale: 'en-US', now: at * 1000, owner: 'a'.repeat(64) })
+  assert.equal(prepended.messages[1], initialFirst)
+  assert.equal(prepended.messages[2], pendingSecondModel)
+  assert.equal(prepended.days[1], initialFirstDay)
+  assert.equal(prepended.days[2], initialCurrentDay)
+  assert.equal(prepended.days[0].messages[0].id, 'older')
+
+  const removed = projector.project([first, pendingSecond], { locale: 'en-US', now: at * 1000, owner: 'a'.repeat(64) })
+  assert.equal(removed.messages[1], pendingSecondModel)
+  assert.equal(removed.days[1], initialCurrentDay)
+})
+
+test('incremental timeline reacts only to relevant references and day-label changes', () => {
+  const at = new Date(2026, 8, 13, 12).getTime() / 1000
+  const parent = { id: 'parent', created_at: at, content: '', tags: [['q', 'quote']] }
+  const independent = { id: 'independent', created_at: at + 1, content: 'independent', tags: [['q', 'unrelated']] }
+  const quote = { id: 'quote', created_at: at - 1, kind: 9, content: '', tags: [['q', 'file']] }
+  const file = { id: 'file', kind: 1063, created_at: at - 2, tags: [], content: '' }
+  const projector = createChatTimelineProjector()
+  const empty = {}
+  const initial = projector.project([parent, independent], { locale: 'en-US', now: at * 1000, references: empty })
+  const [initialParent, initialIndependent] = initial.messages
+
+  const unrelated = { other: {} }
+  const ignored = projector.project([parent, independent], { locale: 'en-US', now: at * 1000, references: unrelated })
+  assert.equal(ignored.messages[0], initialParent)
+  assert.equal(ignored.messages[1], initialIndependent)
+
+  const direct = projector.project([parent, independent], { locale: 'en-US', now: at * 1000, references: { quote } })
+  assert.notEqual(direct.messages[0], initialParent)
+  assert.equal(direct.messages[1], initialIndependent)
+  assert.equal(direct.messages[0].quoted.id, quote.id)
+  const directParent = direct.messages[0]
+
+  const nested = projector.project([parent, independent], { locale: 'en-US', now: at * 1000, references: { quote, file } })
+  assert.notEqual(nested.messages[0], directParent)
+  assert.equal(nested.messages[1], initialIndependent)
+  const nestedParent = nested.messages[0]
+  const nestedDay = nested.days[0]
+
+  const nextDay = new Date(at * 1000)
+  nextDay.setDate(nextDay.getDate() + 1)
+  const labels = projector.project([parent, independent], { locale: 'en-US', now: nextDay.getTime(), references: { quote, file } })
+  assert.equal(labels.messages[0], nestedParent)
+  assert.equal(labels.messages[1], nested.messages[1])
+  assert.equal(labels.days[0], nestedDay)
+  assert.equal(labels.days[0].label, 'Yesterday')
 })
 
 test('the unread divider follows the first message newer than the anchor and disappears when read', () => {

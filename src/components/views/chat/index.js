@@ -1,7 +1,7 @@
-import { f, useLocation, useStore, useTask } from '#f'
+import { eqKey, f, useLocation, useMemo, useStore, useTask } from '#f'
 import '#f/components/f-to-signals.js'
 import { t } from '#i18n/messages.js'
-import { chatTimeline, groupChatDays } from '#helpers/chat-timeline.js'
+import { createChatTimelineProjector, groupChatDays } from '#helpers/chat-timeline.js'
 import { i18n } from '#i18n/index.js'
 import { useRoutePage } from '#shared/route-page.js'
 import './contact-invitation.js'
@@ -45,6 +45,7 @@ f('z-chat', ({ h, props }) => {
   const identity = useAccount()
   const account = useConversation(() => props.person$().id, { open: true, active$: page.isActive$ })
   const feedback = useSendFeedback(account)
+  const projector = useMemo(() => createChatTimelineProjector({ eqKey }))
   const view = useStore(() => ({
     retryingLocal$: false,
     localFailure$ () { return this.real$() && account.localPersistenceFailures$().length > 0 },
@@ -60,15 +61,20 @@ f('z-chat', ({ h, props }) => {
     replyTo$: null,
     now$: Date.now(),
     real$ () { return !props.person$().demo },
-    messages$ () {
-      if (props.person$().demo && props.person$().saved === false) return []
-      if (!this.real$()) return getMessages(props.person$())
-      const tracing = optimisticSendTraceActive()
-      const startedAt = tracing ? performance.now() : 0
-      const messages = chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$(), owner: account.pubkey$() })
-      if (tracing) recordOptimisticTimelineProjected(messages, { workMs: performance.now() - startedAt, messageCount: messages.length })
-      return messages
+    projection$ () {
+      let messages
+      if (props.person$().demo && props.person$().saved === false) messages = []
+      else if (!this.real$()) messages = getMessages(props.person$())
+      else {
+        const tracing = optimisticSendTraceActive()
+        const startedAt = tracing ? performance.now() : 0
+        const projection = projector.project(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$(), owner: account.pubkey$() })
+        if (tracing) recordOptimisticTimelineProjected(projection.messages, { workMs: performance.now() - startedAt, messageCount: projection.messages.length })
+        return projection
+      }
+      return { messages, days: groupChatDays(messages) }
     },
+    messages$ () { return this.projection$().messages },
     anchor$ () {
       const person = props.person$()
       if (!this.real$() || person.self) return null
@@ -93,7 +99,7 @@ f('z-chat', ({ h, props }) => {
       if (this.anchor$() && !this.dividerReady$()) return 'pending'
       return null
     },
-    days$ () { return groupChatDays(this.messages$()) },
+    days$ () { return this.projection$().days },
     reply (id) { this.replyTo$(id); this.activeId$(null) },
     retry (id) { this.activeId$(null); return feedback.retry(id, () => account.retryMessage(id)) },
     remove (id, options) { this.activeId$(null); return account.deleteMessage(id, options) },

@@ -421,13 +421,21 @@ recursive sync loop. NostrDB quota, signer lock and storage errors remain visibl
 The shared encrypted session outbox now has independent serial local and remote
 processors. Local self sends never wait behind relay publication, channel setup
 or the network pause. Remote entries use the exact prepared-envelope checkpoint before
-publication. Self messages become saved on event-store commit; remote messages
-become saved after the first suitable relay ACK for each required event.
+publication. With libp2r2p 0.11.35, self entries may also start their local commit
+while the initial encrypted checkpoint is in flight. They remain hidden and
+ineligible for saved/publication/cleanup until admission, then become saved once
+the local commit succeeds. Remote local persistence still starts only after the
+checkpoint. Remote messages become saved after the first suitable relay ACK for
+each required event.
 Cleanup and recovery archival are independent and cannot revert confirmed bubbles
 to pending/error. Remote entries journal prepared signed envelopes in the same
 encrypted outbox before transmission, then archive recovery personal copies in
 the background. Old entries retain their progress through the same current flow.
 Interrupted removal replays the same inner identity through idempotent storage.
+The interactive timeline keeps message presentation models and calendar-day
+arrays stable. It reuses unchanged rows and invalidates only the affected
+message/day when an event, status, locale/owner context or used reference
+changes; `now` can relabel an existing day without rebuilding its messages.
 
 Development builds emit bounded `[messaging-performance]` traces grouped by
 event ID, with send/preparation, outbox encryption/admission, local persistence,

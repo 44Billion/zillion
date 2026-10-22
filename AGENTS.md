@@ -945,6 +945,10 @@ needed; empty folders mark the initial structure.
   Retried stages reuse identity and track local and remote commits separately.
   Direct standalone `createSelfChat` without a coordinator remains a local service
   API used by focused tests; the app supplies the durable coordinator.
+- libp2r2p 0.11.35 may run the serial local processor for a self entry while its
+  initial encrypted checkpoint is in flight. Keep that entry absent from the
+  copied outbox and ineligible for saved, publication or cleanup until admission.
+  Remote entries remain checkpoint-first; never apply this exception to a peer.
 - Real bubbles use `z-chat-message-status`: use 14px-wide icons at the
   current metadata height for the static Tabler clock and red alert-circle.
   Saved messages show only the time at its natural width. Visible expansion
@@ -1059,6 +1063,14 @@ needed; empty folders mark the initial structure.
   text-only history replay at multiple device pixel ratios.
 - Day separators live in groups keyed by calendar day, outside message
   components. Prepending history must preserve existing date DOM nodes.
+- `createChatTimelineProjector` owns the interactive chat's transient model/day
+  caches in `useMemo`. Reuse a message until its event snapshot or a resolved
+  direct/one-level quote reference changes; reuse day objects and arrays in
+  place, marking the public `eqKey` only when their contents or label changes.
+  `now` changes may update a day label without rebuilding message models.
+  Keep `chatTimeline()` and `groupChatDays()` pure for previews, fixtures and
+  focused tests. Browser regressions preserve existing row nodes across append
+  and pending/error/saved transitions.
 - Account readiness and initial history completion are separate. Self chat calls
   `onInitialLoad` after processing the initial query. Initial growth never animates;
   it ends after history and first resource attempts near the viewport settle,
@@ -1152,7 +1164,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.26`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.35`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and

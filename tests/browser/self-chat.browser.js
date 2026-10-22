@@ -355,10 +355,12 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => browser.evaluate('!!document.querySelector(".permission-button.deny-button:not(:disabled)")'), 'real encryption permission held')
     await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "pending" && document.querySelector(".chat-composer textarea").value === ""'), 'optimistic bubble frees composer before durable admission')
     const pendingId = await evaluate('document.querySelector(".message-row").dataset.messageId')
+    await evaluate(`window.pendingMessageRow = document.querySelector('[data-message-id="${pendingId}"]')`)
     assert.equal(await evaluate('document.querySelectorAll(".message-row").length'), 1)
     assert.equal(await evaluate(`selfChatAccount.outbox$().some(entry => entry.id === '${pendingId}')`), false, 'blocked encryption has not durably admitted the send')
     await browser.evaluate('document.querySelector(".permission-button.deny-button").click()')
     await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "error"'), 'denied preparation remains retryable on the same bubble')
+    assert.equal(await evaluate(`document.querySelector('[data-message-id="${pendingId}"]') === window.pendingMessageRow`), true, 'error transition preserves the pending row node')
     assert.equal(await evaluate('document.querySelector(".message-row").dataset.messageId'), pendingId)
     await setText('Preserved retry draft')
     allowPermissions = true
@@ -366,6 +368,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate('!!document.querySelector(".message-actions .message-retry")'), 'failed bubble offers Retry')
     await evaluate('document.querySelector(".message-actions .message-retry").click()')
     await browser.until(() => evaluate('document.querySelector(".message-status")?.dataset.status === "saved"'), 'durably accepted message saved', 45000)
+    assert.equal(await evaluate(`document.querySelector('[data-message-id="${pendingId}"]') === window.pendingMessageRow`), true, 'saved transition preserves the pending row node')
     assert.equal(await evaluate('document.querySelectorAll(".message-row").length'), 1, 'retry does not add another bubble')
     assert.equal(await evaluate('document.querySelector(".message-row").dataset.messageId'), pendingId, 'retry preserves the message identity')
     assert.equal(await evaluate('document.querySelector(".chat-composer textarea").value'), 'Preserved retry draft', 'retry never overwrites a new draft')
@@ -567,6 +570,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate(`!![...document.querySelectorAll('.quote-text')].find(el => el.title === ${JSON.stringify(longReply)})`), 'posted reply to long text')
 
     const queryUrl = 'https://tabler.io/icons?icon=server-bolt'
+    await evaluate('window.neighborRows = new Map([...document.querySelectorAll(".message-row")].map(row => [row.dataset.messageId, row]))')
     await setText(queryUrl)
     await evaluate('document.querySelector(".compose-action").click()')
     await browser.until(() => evaluate('document.querySelector(".chat-composer textarea").value === "" || document.querySelector(".toast-message")?.textContent === "Could not save message"'), 'query-string message outcome')
@@ -574,6 +578,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     await browser.until(() => evaluate(`!!document.querySelector('.reference-link[href="${queryUrl}"]')`), 'query-string link rendered intact')
     await browser.until(() => evaluate(`document.querySelector('.reference-link[href="${queryUrl}"]').closest('.chat-bubble').querySelector('.message-status').dataset.status === 'saved'`), 'query-string message persisted')
     assert.equal((await evaluate(readMessages)).filter(event => event.content === queryUrl).length, 1, 'query-string content is stored verbatim once')
+    assert.equal(await evaluate('[...window.neighborRows].every(([id, row]) => document.querySelector(\'[data-message-id="\' + id + \'"]\') === row)'), true, 'a new optimized message preserves every existing bubble node')
 
     const wrappingDraft = 'Long draft with automatic wrapping. '.repeat(40).trimEnd()
     await setText(wrappingDraft)

@@ -552,12 +552,20 @@ Retries reuse the original event and never overwrite a newer draft.
 Clicking Send immediately moves the selection into a pending bubble and frees
 the composer. Local chunk persistence, verification and durable enqueue run
 behind that bubble; failures remain there for Retry, reusing the prepared bytes.
+With libp2r2p 0.11.35, a text self-chat starts its local event-store commit while
+the encrypted outbox checkpoint is in flight. The pending bubble remains
+unadmitted until that checkpoint succeeds, and saved is visible only after the
+local commit. Remote chats retain checkpoint-first admission.
 Cancel prevents a later enqueue from restoring the message. Once durably queued,
 pending and failed messages survive reload in the encrypted outbox. The initial
 preparation phase is held in memory and cannot survive closing the app before
 that durable handoff; unsubmitted composer drafts remain local to retained routes.
 The app root owns history/profile subscriptions and cleans them up on unmount;
 home's self avatar and last-message preview share that state.
+The open timeline caches presentation models by message and keeps calendar-day
+objects stable. A status, upload-progress or resolved-reference update replaces
+only affected models and day entries; unrelated rows retain their DOM identity.
+Previews and other consumers continue using the pure timeline helpers.
 
 Every new message is kind 9. Sending an image or file writes its kind 1063
 first, then a kind 9 whose content is a NIP-21 `nostr:nevent1…` URI (kind and
