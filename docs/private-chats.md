@@ -437,6 +437,11 @@ Recovery archive traces include one aggregate result per `putMany`, correlated
 with the publication and opaque recovery record IDs. Counts distinguish rows,
 unique records, already-existing records, inserted records, blocked/expired
 records and skipped local writes; no ciphertext, filters or payloads are logged.
+Every `bubble-saved` completion also emits one sanitized single-line
+`console.debug` summary so external collectors can observe it. The richer table
+by event ID is opt-in through
+`globalThis.__ZILLION_MESSAGING_DETAILS__ = true`; normal development sessions
+do not print it.
 These are developer diagnostics, not a new scheduling API. No scope prefixes
 are interpreted by the launcher; kind-9 cache operations therefore also receive
 message priority in this first heuristic. Production tracing is disabled.

@@ -38,6 +38,9 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Development messaging traces may include one aggregate recovery-archive result
   per publication with opaque IDs and row/existing/inserted/blocked/expired/
   stored/skipped counts. Never add ciphertext, record payloads, filters or keys.
+  Emit one sanitized `console.debug` summary when a sent message reaches
+  `bubble-saved`; keep the full per-event trace table opt-in through the
+  development-only global `__ZILLION_MESSAGING_DETAILS__` flag.
 
 - Before implementing any Nostr behavior, check the public exports and
   implementation of the installed `libp2r2p` and, when needed, the sibling
