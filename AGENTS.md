@@ -41,6 +41,10 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Emit one sanitized `console.debug` summary when a sent message reaches
   `bubble-saved`; keep the full per-event trace table opt-in through the
   development-only global `__ZILLION_MESSAGING_DETAILS__` flag.
+  Opt-in send traces distinguish `send-started`, `optimistic-pending-queued`,
+  `send-returned` and `timeline-projected` through sanitized
+  `zillion:send-trace` events while `__ZILLION_SEND_TRACE__` is enabled. Keep
+  these observational: no send path may await instrumentation, storage or DOM work.
 
 - Before implementing any Nostr behavior, check the public exports and
   implementation of the installed `libp2r2p` and, when needed, the sibling

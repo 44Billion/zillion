@@ -218,6 +218,14 @@ test(readinessOnly ? 'locked startup sends promptly while other contacts recover
     }
     await evaluate('dmTest.rejectionReason = \'blocked: only accepts some kinds that support public mentions well\'')
     const first = await send('Rejected active send')
+    await browser.until(() => evaluate(`globalThis.__optimisticSendTraces?.some(entry => entry.eventId === '${first}' && entry.stage === 'timeline-projected')`), 'optimistic timeline trace')
+    const optimisticTraces = await evaluate('globalThis.__optimisticSendTraces')
+    for (const stage of ['send-returned', 'optimistic-pending-queued', 'timeline-projected']) {
+      assert.ok(optimisticTraces.some(entry => entry.eventId === first && entry.stage === stage), `optimistic send trace includes ${stage}`)
+    }
+    const projection = optimisticTraces.find(entry => entry.eventId === first && entry.stage === 'timeline-projected')
+    assert.ok(Number.isFinite(projection.timelineWorkMs))
+    assert.ok(Number.isSafeInteger(projection.messageCount))
     await failed(first)
     const failedBatches = await evaluate('dmTest.publicationBatches')
     const initial = failedBatches.find(batch => batch.relays.includes(readRelays[0]) && failedBatches.some(attempt => attempt.id === batch.id && attempt.relays.length === 1 && attempt.relays[0] === fallbackRelay))

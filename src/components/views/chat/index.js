@@ -15,6 +15,7 @@ import { useSendFeedback } from '#hooks/use-send-feedback.js'
 import { useAccount, useConversation } from '#hooks/use-account.js'
 import { firstUnreadMessageId } from '#helpers/conversation-preview.js'
 import { isAccountAvailable } from '#helpers/account-availability.js'
+import { beginOptimisticSendTrace, optimisticSendTraceActive, recordOptimisticSendReturned, recordOptimisticTimelineProjected } from '#services/messaging-performance.js'
 
 f('z-chat-route', ({ h, props }) => {
   const location = useLocation()
@@ -62,7 +63,11 @@ f('z-chat', ({ h, props }) => {
     messages$ () {
       if (props.person$().demo && props.person$().saved === false) return []
       if (!this.real$()) return getMessages(props.person$())
-      return chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$(), owner: account.pubkey$() })
+      const tracing = optimisticSendTraceActive()
+      const startedAt = tracing ? performance.now() : 0
+      const messages = chatTimeline(account.messages$(), { locale: i18n.getLocale(), now: this.now$(), t, references: account.references$(), owner: account.pubkey$() })
+      if (tracing) recordOptimisticTimelineProjected(messages, { workMs: performance.now() - startedAt, messageCount: messages.length })
+      return messages
     },
     anchor$ () {
       const person = props.person$()
@@ -103,7 +108,12 @@ f('z-chat', ({ h, props }) => {
     loading$ () { return this.contactsPending$() || !account.ready$() || (account.pubkey$() && !account.historyLoaded$()) },
     recover () { if (this.contactsPending$()) identity.recoverContacts(); account.recover() },
     canSend$ () { return this.real$() && !this.contactsPending$() && (props.person$().self || this.saved$()) && account.ready$() && !!account.pubkey$() && isAccountAvailable(identity.signerState$()) },
-    send (text, attachment) { return feedback.send(() => account.send(text, this.replyTo$(), attachment)) }
+    send (text, attachment) {
+      const trace = beginOptimisticSendTrace()
+      const id = feedback.send(() => account.send(text, this.replyTo$(), attachment))
+      recordOptimisticSendReturned(trace, id)
+      return id
+    }
   }))
   const layout = useInitChatLayout(view.timelineRef$, view.historyLoaded$, () => view.activeId$(null), () => view.messages$().length, view.initialAnchor$)
   useInitChatReadState(identity, {

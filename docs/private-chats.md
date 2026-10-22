@@ -442,9 +442,17 @@ Every `bubble-saved` completion also emits one sanitized single-line
 by event ID is opt-in through
 `globalThis.__ZILLION_MESSAGING_DETAILS__ = true`; normal development sessions
 do not print it.
+Opt-in send traces mark `send-started`, `optimistic-pending-queued`,
+`send-returned` and `timeline-projected`, with elapsed time, timeline work and
+projected message count. They are enabled at runtime by setting
+`globalThis.__ZILLION_SEND_TRACE__ = true`, including in production, and emit
+sanitized in-page `zillion:send-trace` events. Together with the iframe DOM probe,
+these separate synchronous send work, optimistic signal delivery, timeline
+projection and DOM rendering. They do not wait for storage or alter the send path.
 These are developer diagnostics, not a new scheduling API. No scope prefixes
 are interpreted by the launcher; kind-9 cache operations therefore also receive
-message priority in this first heuristic. Production tracing is disabled.
+message priority in this first heuristic. Production console tracing remains
+disabled; only the explicit in-page send trace can be enabled there.
 
 Send captures a monotonic attempt start before preparation and forwards it to the
 session. The three-second fallback budget includes preparation; an overdue

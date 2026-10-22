@@ -39,11 +39,70 @@ test('development messaging performance retains sanitized recovery archive count
       storedCount: 2,
       skippedCount: 2
     }])
+    recordMessagingPerformance({ stage: 'timeline-projected', eventId: 'event', elapsedMs: 75, timelineWorkMs: 4, messageCount: 51, messages: ['private'] })
+    assert.deepEqual(records.at(-1), {
+      stage: 'timeline-projected',
+      eventId: 'event',
+      elapsedMs: 75,
+      timelineWorkMs: 4,
+      messageCount: 51
+    })
   } finally {
     console.debug = previousDebug
     if (previousDevelopment === undefined) delete globalThis.IS_DEVELOPMENT
     else globalThis.IS_DEVELOPMENT = previousDevelopment
   }
+})
+
+test('optimistic send trace separates synchronous return from timeline projection', async () => {
+  const records = []
+  const events = []
+  let now = 100
+  let wall = 1000
+  const { createOptimisticSendTrace } = await import('../src/services/messaging-performance.js?optimistic-send-trace')
+  const tracer = createOptimisticSendTrace({
+    now: () => now,
+    wallNow: () => wall,
+    record: entry => records.push(entry),
+    emit: entry => events.push(entry)
+  })
+
+  const trace = tracer.begin()
+  now = 106
+  wall = 1006
+  tracer.pendingQueued('event', 990)
+  tracer.returned(trace, 'event')
+  now = 128
+  wall = 1028
+  tracer.projected([{ id: 'older' }, { id: 'event' }], { workMs: 4, messageCount: 2 })
+  now = 150
+  tracer.projected([{ id: 'event' }], { workMs: 3, messageCount: 1 })
+
+  assert.deepEqual(records, [
+    { stage: 'optimistic-pending-queued', eventId: 'event', elapsedMs: 16 },
+    { stage: 'send-returned', eventId: 'event', elapsedMs: 6 },
+    {
+      stage: 'timeline-projected',
+      eventId: 'event',
+      elapsedMs: 28,
+      timelineWorkMs: 4,
+      messageCount: 2
+    }
+  ])
+  assert.deepEqual(events, [
+    { stage: 'send-started', at: 1000, token: 'trace-1' },
+    { stage: 'optimistic-pending-queued', at: 1006, eventId: 'event', elapsedMs: 16 },
+    { stage: 'send-returned', at: 1006, token: 'trace-1', eventId: 'event', elapsedMs: 6 },
+    {
+      stage: 'timeline-projected',
+      at: 1028,
+      token: 'trace-1',
+      eventId: 'event',
+      elapsedMs: 28,
+      timelineWorkMs: 4,
+      messageCount: 2
+    }
+  ])
 })
 
 test('bubble completion has a single-line summary and detailed tables are opt-in', async () => {

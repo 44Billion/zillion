@@ -152,6 +152,28 @@ test('saving uses only personal copies, preserves text, quotes inner IDs with an
   f.chat.close()
 })
 
+test('opt-in tracing records the synchronous optimistic pending state', async () => {
+  const previousTrace = globalThis.__ZILLION_SEND_TRACE__
+  const previousDispatch = globalThis.dispatchEvent
+  const events = []
+  globalThis.__ZILLION_SEND_TRACE__ = true
+  globalThis.dispatchEvent = event => { events.push(event.detail); return true }
+  try {
+    const f = fixture()
+    await f.chat.start()
+    const id = f.chat.send('Optimistic trace')
+
+    assert.equal(f.messages.find(message => message.id === id)?.status, 'pending')
+    assert.ok(events.some(entry => entry.eventId === id && entry.stage === 'optimistic-pending-queued'))
+    f.chat.close()
+  } finally {
+    if (previousTrace === undefined) delete globalThis.__ZILLION_SEND_TRACE__
+    else globalThis.__ZILLION_SEND_TRACE__ = previousTrace
+    if (previousDispatch === undefined) delete globalThis.dispatchEvent
+    else globalThis.dispatchEvent = previousDispatch
+  }
+})
+
 test('concurrent sends and retries keep stable IDs, and live confirmation wins over a late rejection', async () => {
   const f = fixture()
   await f.chat.start()

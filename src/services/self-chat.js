@@ -1,4 +1,4 @@
-import { recordMessagingPerformance } from './messaging-performance.js'
+import { recordMessagingPerformance, recordOptimisticPendingQueued } from './messaging-performance.js'
 import { prefetchChatMedia } from './chat-media-prefetch.js'
 import { chatMessageReferences } from '#helpers/chat-timeline.js'
 import { compareChatMessages as compareMessages } from '#helpers/conversation-preview.js'
@@ -432,6 +432,7 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       outbox.set(id, { event, fileEvent, attachment, work: null })
       write(id)
     }
+    recordOptimisticPendingQueued(id, sendStartedAt)
     return id
   }
   function close () {
