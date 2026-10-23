@@ -437,7 +437,7 @@ arrays stable. It reuses unchanged rows and invalidates only the affected
 message/day when an event, status, locale/owner context or used reference
 changes; `now` can relabel an existing day without rebuilding its messages.
 
-Development builds emit bounded `[messaging-performance]` traces grouped by
+Development builds keep bounded `[messaging-performance]` records grouped by
 event ID, with send/preparation, outbox encryption/admission, local persistence,
 publication and bubble completion times. Launcher traces separately expose
 request/parent IDs, queue waits, vault duration and global quota-lock contention.
@@ -445,11 +445,10 @@ Recovery archive traces include one aggregate result per `putMany`, correlated
 with the publication and opaque recovery record IDs. Counts distinguish rows,
 unique records, already-existing records, inserted records, blocked/expired
 records and skipped local writes; no ciphertext, filters or payloads are logged.
-Every `bubble-saved` completion also emits one sanitized single-line
-`console.debug` summary so external collectors can observe it. The richer table
-by event ID is opt-in through
-`globalThis.__ZILLION_MESSAGING_DETAILS__ = true`; normal development sessions
-do not print it.
+Normal development sessions remain silent. Setting
+`globalThis.__ZILLION_MESSAGING_DETAILS__ = true` emits every sanitized record
+through `console.debug` and, at `bubble-saved`, the complete bounded table for
+that event ID.
 Opt-in send traces mark `send-started`, `optimistic-pending-queued`,
 `send-returned` and `timeline-projected`, with elapsed time, timeline work and
 projected message count. They are enabled at runtime by setting

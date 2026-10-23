@@ -3,9 +3,11 @@ import { test } from 'node:test'
 
 test('development messaging performance retains sanitized recovery archive counts', async () => {
   const previousDevelopment = globalThis.IS_DEVELOPMENT
+  const previousDetails = globalThis.__ZILLION_MESSAGING_DETAILS__
   const previousDebug = console.debug
   const records = []
   globalThis.IS_DEVELOPMENT = true
+  globalThis.__ZILLION_MESSAGING_DETAILS__ = true
   console.debug = value => records.push(JSON.parse(value.slice('[messaging-performance] '.length)))
   try {
     const { recordMessagingPerformance } = await import('../src/services/messaging-performance.js?recovery-diagnostics')
@@ -51,6 +53,8 @@ test('development messaging performance retains sanitized recovery archive count
     console.debug = previousDebug
     if (previousDevelopment === undefined) delete globalThis.IS_DEVELOPMENT
     else globalThis.IS_DEVELOPMENT = previousDevelopment
+    if (previousDetails === undefined) delete globalThis.__ZILLION_MESSAGING_DETAILS__
+    else globalThis.__ZILLION_MESSAGING_DETAILS__ = previousDetails
   }
 })
 
@@ -105,7 +109,55 @@ test('optimistic send trace separates synchronous return from timeline projectio
   ])
 })
 
-test('bubble completion has a single-line summary and detailed tables are opt-in', async () => {
+test('send trace events remain available without enabling messaging console output', async () => {
+  const previousDevelopment = globalThis.IS_DEVELOPMENT
+  const previousDetails = globalThis.__ZILLION_MESSAGING_DETAILS__
+  const previousSendTrace = globalThis.__ZILLION_SEND_TRACE__
+  const previousDebug = console.debug
+  const previousDispatch = globalThis.dispatchEvent
+  const records = []
+  const events = []
+  globalThis.IS_DEVELOPMENT = true
+  delete globalThis.__ZILLION_MESSAGING_DETAILS__
+  globalThis.__ZILLION_SEND_TRACE__ = true
+  console.debug = value => records.push(value)
+  globalThis.dispatchEvent = event => {
+    events.push(event.detail)
+    return true
+  }
+  try {
+    const {
+      beginOptimisticSendTrace,
+      recordOptimisticPendingQueued,
+      recordOptimisticSendReturned,
+      recordOptimisticTimelineProjected
+    } = await import('../src/services/messaging-performance.js?send-trace-without-console')
+    const trace = beginOptimisticSendTrace()
+    recordOptimisticPendingQueued('event', Date.now() - 5)
+    recordOptimisticSendReturned(trace, 'event')
+    recordOptimisticTimelineProjected([{ id: 'event' }], { workMs: 2, messageCount: 1 })
+
+    assert.deepEqual(records, [])
+    assert.deepEqual(events.map(event => event.stage), [
+      'send-started',
+      'optimistic-pending-queued',
+      'send-returned',
+      'timeline-projected'
+    ])
+  } finally {
+    console.debug = previousDebug
+    if (previousDispatch === undefined) delete globalThis.dispatchEvent
+    else globalThis.dispatchEvent = previousDispatch
+    if (previousDevelopment === undefined) delete globalThis.IS_DEVELOPMENT
+    else globalThis.IS_DEVELOPMENT = previousDevelopment
+    if (previousDetails === undefined) delete globalThis.__ZILLION_MESSAGING_DETAILS__
+    else globalThis.__ZILLION_MESSAGING_DETAILS__ = previousDetails
+    if (previousSendTrace === undefined) delete globalThis.__ZILLION_SEND_TRACE__
+    else globalThis.__ZILLION_SEND_TRACE__ = previousSendTrace
+  }
+})
+
+test('messaging console traces are opt-in while the bounded buffer remains available', async () => {
   const previousDevelopment = globalThis.IS_DEVELOPMENT
   const previousDetails = globalThis.__ZILLION_MESSAGING_DETAILS__
   const previousDebug = console.debug
@@ -125,17 +177,19 @@ test('bubble completion has a single-line summary and detailed tables are opt-in
     recordMessagingPerformance({ stage: 'send-start', eventId: 'bubble', content: 'private' })
     recordMessagingPerformance({ stage: 'bubble-saved', eventId: 'bubble', elapsedMs: 42 })
 
-    assert.deepEqual(records, [
-      { stage: 'send-start', eventId: 'bubble' },
-      { stage: 'bubble-saved', eventId: 'bubble', elapsedMs: 42 }
-    ])
+    assert.deepEqual(records, [])
     assert.deepEqual(groups, [])
 
     globalThis.__ZILLION_MESSAGING_DETAILS__ = true
     recordMessagingPerformance({ stage: 'bubble-saved', eventId: 'bubble', elapsedMs: 43 })
-    assert.equal(records.length, 3)
+    assert.deepEqual(records, [{ stage: 'bubble-saved', eventId: 'bubble', elapsedMs: 43 }])
     assert.deepEqual(groups.map(([kind]) => kind), ['groupCollapsed', 'table', 'groupEnd'])
     assert.equal(groups[0][1], '[messaging-performance] bubble')
+    assert.deepEqual(groups[1][1], [
+      { stage: 'send-start', eventId: 'bubble' },
+      { stage: 'bubble-saved', eventId: 'bubble', elapsedMs: 42 },
+      { stage: 'bubble-saved', eventId: 'bubble', elapsedMs: 43 }
+    ])
   } finally {
     console.debug = previousDebug
     console.groupCollapsed = previousGroupCollapsed

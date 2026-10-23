@@ -4,6 +4,7 @@ const prefix = '[messaging-performance]'
 const sendTraceEvent = 'zillion:send-trace'
 
 const optimisticSendTraceEnabled = () => globalThis.__ZILLION_SEND_TRACE__ === true
+const messagingDetailsEnabled = () => globalThis.__ZILLION_MESSAGING_DETAILS__ === true
 
 function emitOptimisticSendTrace (detail) {
   try {
@@ -25,8 +26,9 @@ export function recordMessagingPerformance (entry) {
   if (trace.length > 32) trace.shift()
   traces.delete(value.eventId); traces.set(value.eventId, trace)
   if (traces.size > 128) traces.delete(traces.keys().next().value)
+  if (!messagingDetailsEnabled()) return
   console.debug(`${prefix} ${JSON.stringify(value)}`)
-  if (entry.stage === 'bubble-saved' && globalThis.__ZILLION_MESSAGING_DETAILS__ === true) {
+  if (entry.stage === 'bubble-saved') {
     console.groupCollapsed(`${prefix} ${value.eventId}`)
     console.table(trace)
     console.groupEnd()

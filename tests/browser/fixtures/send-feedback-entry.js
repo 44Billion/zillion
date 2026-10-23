@@ -6,6 +6,7 @@ import { useAccount } from '#hooks/use-account.js'
 import { close } from '#shared/toast.js'
 
 window.__ZILLION_SEND_TRACE__ = true
+window.__ZILLION_MESSAGING_DETAILS__ = true
 window.__optimisticSendTraces = []
 window.addEventListener('zillion:send-trace', event => window.__optimisticSendTraces.push(event.detail))
 

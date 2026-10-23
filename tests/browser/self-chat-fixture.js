@@ -11,6 +11,7 @@ import { controlHistoryPaging, settleHistoryLayout } from './history-controls.js
 import { createChatHistory, createChatWorkers } from '#services/chat-history.js'
 import { decryptPersonalCopy } from '#services/chat-references.js'
 
+window.__ZILLION_MESSAGING_DETAILS__ = true
 window.controlHistoryPaging = () => { window.historyPaging = controlHistoryPaging(window.selfChatAccount) }
 window.settleHistoryLayout = settleHistoryLayout
 

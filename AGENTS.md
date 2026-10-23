@@ -38,9 +38,9 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Development messaging traces may include one aggregate recovery-archive result
   per publication with opaque IDs and row/existing/inserted/blocked/expired/
   stored/skipped counts. Never add ciphertext, record payloads, filters or keys.
-  Emit one sanitized `console.debug` summary when a sent message reaches
-  `bubble-saved`; keep the full per-event trace table opt-in through the
-  development-only global `__ZILLION_MESSAGING_DETAILS__` flag.
+  Keep the bounded development trace in memory without console output by
+  default. The development-only global `__ZILLION_MESSAGING_DETAILS__` flag
+  enables sanitized `console.debug` records and the per-event trace table.
   Opt-in send traces distinguish `send-started`, `optimistic-pending-queued`,
   `send-returned` and `timeline-projected` through sanitized
   `zillion:send-trace` events while `__ZILLION_SEND_TRACE__` is enabled. Keep
