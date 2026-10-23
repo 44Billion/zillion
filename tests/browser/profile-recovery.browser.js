@@ -121,7 +121,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
       await evaluate(`dmTest.events.set('${list.id}', ${JSON.stringify(list)})`)
     }
     for (const profile of profiles.slice(1, 3)) await evaluate(`window.napp.eventStore.add(${JSON.stringify(profile)})`)
-    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:30000,created_at:${profiles[0].created_at},tags:[['d','+zillion:contacts'],['p','${peers[0]}'],['p','${peers[1]}'],['p','${peers[2]}','','','p'],['p','${peers[3]}']],content:''},{context:''})`)
+    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:13300,created_at:${profiles[0].created_at},tags:[['pp','${peers[0]}'],['pp','${peers[1]}'],['pp','${peers[2]}','','','p'],['pp','${peers[3]}']],content:''},{context:''})`)
     const selector = `.contact-item[data-contact-id="${peers[0]}"]`
     await browser.until(() => evaluate(`document.querySelector('${selector} .contact-name')?.textContent.startsWith('npub1')`), 'missing profile fallback')
     await browser.until(() => evaluate(`profileRecovery.state.held.length>0 && profileRecovery.account.directory$()['${peers[1]}']?.name==='Mona'`), 'partial names with a pending first lookup')
@@ -263,7 +263,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
     // remote lookup stays held; the persisted order must paint and append it.
     const missingSecret = generateSecretKey()
     const missingPeer = getPublicKey(missingSecret)
-    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:30000,created_at:${ownTimestamp++},tags:[['d','+zillion:contacts'],['p','${peers[3]}'],['p','${missingPeer}'],['p','${peers[1]}'],['p','${peers[0]}'],['p','${peers[2]}','','','p']],content:''},{context:''})`)
+    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:13300,created_at:${ownTimestamp++},tags:[['pp','${peers[3]}'],['pp','${missingPeer}'],['pp','${peers[1]}'],['pp','${peers[0]}'],['pp','${peers[2]}','','','p']],content:''},{context:''})`)
     const missingRelays = finalizeEvent({ kind: 10002, created_at: profiles[0].created_at, tags: [['r', 'wss://healthy-profiles.example']], content: '' }, missingSecret)
     const bootScript = await browser.send('Page.addScriptToEvaluateOnNewDocument', {
       source: `
@@ -318,7 +318,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
     await evaluate(`document.querySelector('${ownPinButton}').click()`)
     await browser.until(() => evaluate(`profileRecovery.account.selfPinned$() && document.querySelector('${ownPinButton}')?.getAttribute('aria-pressed')==='true'`), 'self pin committed')
     const pinnedOverride = await evaluate('profileRecovery.readContactsOverride()')
-    assert.deepEqual(pinnedOverride.tags.find(tag => tag[0] === 'p' && tag[1] === pubkey).slice(0, 5), ['p', pubkey, '', '', 'p'])
+    assert.deepEqual(pinnedOverride.tags.find(tag => tag[0] === 'pp' && tag[1] === pubkey).slice(0, 5), ['pp', pubkey, '', '', 'p'])
     assert.equal(await evaluate(`profileRecovery.account.contacts$().some(contact=>contact.pubkey==='${pubkey}')`), false, 'self never becomes an external contact')
     await evaluate('testNavigation.back()')
     await browser.until(() => evaluate(`Boolean(document.querySelector('${ownItem} .contact-pin'))`), 'home shows persisted self pin')
@@ -331,8 +331,8 @@ test('shared profiles recover and avatars pulse only before their first presenta
     await evaluate(`document.querySelector('${ownPinButton}').click()`)
     await browser.until(() => evaluate(`!profileRecovery.account.selfPinned$() && document.querySelector('${ownPinButton}')?.getAttribute('aria-pressed')==='false'`), 'self unpin committed')
     const unpinnedOverride = await evaluate('profileRecovery.readContactsOverride()')
-    assert.equal(unpinnedOverride.tags.some(tag => tag[0] === 'p' && tag[1] === pubkey), false, 'unpin removes the self entry entirely')
-    assert.equal(unpinnedOverride.tags.find(tag => tag[0] === 'p' && tag[1] === peers[2])[4], 'p', 'other pins are preserved')
+    assert.equal(unpinnedOverride.tags.some(tag => tag[0] === 'pp' && tag[1] === pubkey), false, 'unpin removes the self entry entirely')
+    assert.equal(unpinnedOverride.tags.find(tag => tag[0] === 'pp' && tag[1] === peers[2])[4], 'p', 'other pins are preserved')
     await evaluate('testNavigation.pushState({},"","/chat/user")')
     await browser.until(() => evaluate("Boolean(document.querySelector('.route-page[data-active=true] .chat-composer'))"), 'self chat remains available after unpin')
     assert.equal(await evaluate("Boolean(document.querySelector('.route-page[data-active=true] .contact-invitation'))"), false)
@@ -341,7 +341,7 @@ test('shared profiles recover and avatars pulse only before their first presenta
     await browser.evaluate(`(() => {const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>frame.src.startsWith('${origin}'));frame.setAttribute('src',frame.src)})()`)
     await browser.until(() => evaluate(`window.profileRecovery?.account.contactsState$()==='loaded' && !profileRecovery.account.selfPinned$() && document.querySelector('${ownItem}')`), 'self unpin survives iframe reload')
     const finalOverride = await evaluate('profileRecovery.readContactsOverride()')
-    assert.equal(finalOverride.tags.some(tag => tag[0] === 'p' && tag[1] === pubkey), false)
+    assert.equal(finalOverride.tags.some(tag => tag[0] === 'pp' && tag[1] === pubkey), false)
   } catch (error) {
     if (appOrigin) {
       const state = await browser.evaluate(`(async()=>({

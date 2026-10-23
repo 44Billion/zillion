@@ -85,7 +85,7 @@ test('ready home avatars survive persistent eviction and the directory loads onl
     await evaluate(`profileRecovery.state.profiles=${JSON.stringify(profiles)}`)
     for (const secret of secrets) { const event = finalizeEvent({ kind: 10002, created_at: at, tags: [['r', 'wss://healthy-profiles.example']], content: '' }, secret); await evaluate(`dmTest.events.set('${event.id}',${JSON.stringify(event)})`) }
     for (const profile of profiles) await evaluate(`window.napp.eventStore.add(${JSON.stringify(profile)})`)
-    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:30000,created_at:${at},tags:[['d','+zillion:contacts'],${peers.map(peer => JSON.stringify(['p', peer])).join(',')}],content:''},{context:''})`)
+    await evaluate(`window.napp.eventStore.addPersonalCopy({kind:13300,created_at:${at},tags:[${peers.map(peer => JSON.stringify(['pp', peer])).join(',')}],content:''},{context:''})`)
     await browser.until(() => evaluate("document.querySelectorAll('.route-page[data-active=true] .contact-item .avatar-presentation[data-avatar-state=photo]').length>=4"), 'home photos prepared', 45000)
     await evaluate('new Promise(resolve=>setTimeout(resolve,500))')
     const home = await evaluate('Array.from(document.querySelectorAll(\'.route-page[data-active=true] .contact-item\')).filter(item=>item.querySelector(\'.avatar-presentation\')?.dataset.avatarState===\'photo\').map(item=>({id:item.dataset.contactId,name:item.querySelector(\'.contact-name\').textContent,url:profileRecovery.account.personFor(item.dataset.contactId).profile.picture}))')

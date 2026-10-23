@@ -13,7 +13,8 @@ No database reset is needed for the library's known legacy queue index.
 A private chat inspired by WhatsApp and Signal, built as a Nostr client.
 Messaging uses `libp2r2p/private-messenger`, with shared self/peer chat
 presentation, personal copies and an encrypted durable outbox. Real contacts are
-derived from owner kind-3 lists and a private kind-30000 override. The front-end
+derived from owner kind-3 lists and a private replaceable kind-13300 override.
+The front-end
 uses **thenameisf**. See [private chats](docs/private-chats.md) for contracts,
 routes, storage, recovery limits and validation.
 
@@ -553,7 +554,7 @@ Retries reuse the original event and never overwrite a newer draft.
 Clicking Send immediately moves the selection into a pending bubble and frees
 the composer. Local chunk persistence, verification and durable enqueue run
 behind that bubble; failures remain there for Retry, reusing the prepared bytes.
-With libp2r2p 0.11.35, a text self-chat starts its local event-store commit while
+With libp2r2p 0.11.36, a text self-chat starts its local event-store commit while
 the encrypted outbox checkpoint is in flight. The pending bubble remains
 unadmitted until that checkpoint succeeds, and saved is visible only after the
 local commit. Remote chats retain checkpoint-first admission.

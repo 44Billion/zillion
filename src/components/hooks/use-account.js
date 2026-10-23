@@ -580,6 +580,7 @@ function useInitPrivateChats (account, queue) {
     runtime.transport.setPendingDecryptionPriority(runtime.decryptionPriority?.peer ?? null)
     runtime.contacts = createContacts({
       owner, signer: window.nostr, eventStore: window.napp.eventStore,
+      canMigrate: () => isAccountAvailable(account.signerState$()),
       onChange: (contacts, { selfPinned }) => {
         if (closed) return
         account.prepareContactProfiles(owner, contacts, { start: true })

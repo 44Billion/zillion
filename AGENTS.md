@@ -20,6 +20,17 @@ foundations, and build/publishing tooling. Do not describe planned features as a
 
 ## Nostr and messaging
 
+- Private contact overrides use replaceable kind 13300 in context `''`, without
+  an inner `d` tag, and entries use multi-character `pp` tags. Public/private
+  kind-3 snapshots retain `p`. Migrate only `30000/+zillion:contacts`, sanitize
+  legacy CRDT marker/tombstone values during that conversion, commit 13300
+  before writing the private coordinate deletion, and serialize migration plus
+  edits in the contact write tail and account-scoped Web Lock. Read-only views
+  may present the converted event but must not persist either write. Remove the
+  legacy migration after 2027-04-23. Admit the legacy local snapshot in the
+  initial authorization wave, but do not decrypt or present it when 13300
+  exists.
+
 - The coordinated 0.11.23 library owns legacy index migration and the separate
   16 MiB pending-decryption FIFO. The stable account root subscribes once to
   onContentKeysChanged when available, deduplicates revisions and waits for
@@ -947,7 +958,7 @@ needed; empty folders mark the initial structure.
   Retried stages reuse identity and track local and remote commits separately.
   Direct standalone `createSelfChat` without a coordinator remains a local service
   API used by focused tests; the app supplies the durable coordinator.
-- libp2r2p 0.11.35 may run the serial local processor for a self entry while its
+- libp2r2p 0.11.36 may run the serial local processor for a self entry while its
   initial encrypted checkpoint is in flight. Keep that entry absent from the
   copied outbox and ineligible for saved, publication or cleanup until admission.
   Remote entries remain checkpoint-first; never apply this exception to a peer.
@@ -1166,7 +1177,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.35`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.11.36`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and

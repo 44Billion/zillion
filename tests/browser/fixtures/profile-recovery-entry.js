@@ -81,8 +81,7 @@ f('z-profile-recovery-fixture', ({ h }) => {
     async readContactsOverride () {
       const pubkey = account.pubkey$()
       const context = await window.nostr.obfuscate('', String(PERSONAL_COPY), '')
-      const coordinate = await window.nostr.obfuscate(`${context}:30000:${pubkey}:+zillion:contacts`, String(PERSONAL_COPY), '.coordinate')
-      const { results } = await window.napp.eventStore.query({ kinds: [PERSONAL_COPY], authors: [pubkey], '#c': [context], '#k': ['30000'], '#v': ['0', '1'], '#d': [coordinate], limit: 1 })
+      const { results } = await window.napp.eventStore.query({ kinds: [PERSONAL_COPY], authors: [pubkey], '#c': [context], '#k': ['13300'], '#v': ['0', '1'], limit: 1 })
       return results[0] ? decryptPersonalCopy(results[0], { pubkey, signer: window.nostr, encodedContext: context }) : null
     },
     mountAvatars: host => { host.innerHTML = '<z-profile-recovery-avatars></z-profile-recovery-avatars>' },

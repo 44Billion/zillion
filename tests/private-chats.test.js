@@ -108,21 +108,21 @@ test('both peer-chat participants seed recovery, retain NIP-65 routing and exclu
 
 test('contacts merge owner lists and explicit override labels without confusing CRDT metadata', () => {
   const list = tags => ({ pubkey: owner, tags })
-  assert.deepEqual(contactMembership([list([['p', peer], ['p', other]]), list([['p', 'd'.repeat(64)]]), list([['p', peer, '', '', 'r', '~u=1;o=x'], ['p', other, '', '', '~u=2;o=x']])], owner).map(value => value.pubkey), [other, 'd'.repeat(64)])
+  assert.deepEqual(contactMembership([list([['p', peer], ['p', other]]), list([['p', 'd'.repeat(64)]]), list([['pp', peer, '', '', 'r', '~u=1;o=x'], ['pp', other, '', '', '~u=2;o=x']])], owner).map(value => value.pubkey), [other, 'd'.repeat(64)])
   assert.deepEqual(contactMembership([{ pubkey: peer, tags: [['p', other]] }, null, null], owner), [])
   assert.deepEqual(
-    contactMembership([list([['p', peer]]), null, list([['p', peer, '', '', 'p'], ['p', other, '', '', 'px']])], owner).map(contact => [contact.pubkey, contact.pinned]),
+    contactMembership([list([['p', peer]]), null, list([['pp', peer, '', '', 'p'], ['pp', other, '', '', 'px']])], owner).map(contact => [contact.pubkey, contact.pinned]),
     [[peer, true], [other, true]],
     'the label is a letter set and ignores unknown letters'
   )
-  assert.deepEqual(contactMembership([null, null, list([['p', peer, '', '', 'rp']])], owner), [], 'r wins over p and a removed contact cannot stay pinned')
+  assert.deepEqual(contactMembership([null, null, list([['pp', peer, '', '', 'rp']])], owner), [], 'r wins over p and a removed contact cannot stay pinned')
   assert.deepEqual(
     contactMembership([list([['p', peer, '~u=1;o=x'], ['p', other, 'wss://relay.example', 'Alice', '~u=2;o=x']]), null, null], owner).map(contact => [contact.pubkey, contact.relayHint, contact.petname]),
     [[peer, '', ''], [other, 'wss://relay.example', 'Alice']],
     'kind-3 CRDT decorations are not relay hints or petnames'
   )
   assert.deepEqual(
-    contactMembership([null, null, list([['p', peer, '', '', '1'], ['p', other, '', '', ''], ['p', 'd'.repeat(64), '', '', 'x']])], owner).map(contact => [contact.pubkey, contact.pinned]),
+    contactMembership([null, null, list([['pp', peer, '', '', '1'], ['pp', other, '', '', ''], ['pp', 'd'.repeat(64), '', '', 'x']])], owner).map(contact => [contact.pubkey, contact.pinned]),
     [[peer, false], [other, false], ['d'.repeat(64), false]],
     'legacy and unknown values mean an unpinned contact'
   )

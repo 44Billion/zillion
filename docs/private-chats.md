@@ -20,22 +20,31 @@ removed contact. Recovery gaps, cooldowns and durable ACK/NACK remain unchanged.
 ## Contacts and routes
 
 The directory combines owner kind 3 public and personal lists with the owner's
-personal kind 30000 (`d=+zillion:contacts`), in context `''`. Only the override
-list is written. The public list refresh uses a 15-second relay budget per
+personal replaceable kind 13300, in context `''`. Only the override list is
+written, without an inner `d` tag. Its entries use `pp`; kind-3 lists retain
+`p`. The public list refresh uses a 15-second relay budget per
 attempt and retries with exponential backoff from 1s up to 5 minutes while no
 local public list is known; generic connectivity probes never gate attempts.
 When a probe confirms the device is offline, the wait also ends on the next
-`onOnline` notification instead of only on the timer. `p` fields are pubkey,
+`onOnline` notification instead of only on the timer. Override `pp` fields are pubkey,
 relay hint, petname, label: the label merges every state letter, `r` removes the
 contact and wins over `p`, `p` pins it, and absent/empty/unknown values mean an
 unpinned contact. Letter order never matters and unknown letters are ignored so
 newer writers can add labels without breaking older ones. CRDT decorations are
 never relay hints, petnames or labels, and a removed contact is never pinned.
-Other entries and their metadata survive edits. Each edit also compacts the
+Other entries and their legitimate CRDT metadata survive edits. Each edit also compacts the
 override: a removed entry whose pubkey appears in neither the public nor the
 private kind-3 snapshot is dropped, and the store's local CRDT
 merge records the omission as a tombstone. While no public snapshot is known,
 every override is preserved because the missing list may follow the peer.
+Legacy kind-30000 `d=+zillion:contacts` records are converted in memory, then
+migrated in background to kind 13300. The legacy CRDT marker, `z`/`zz`
+tombstones, decorations and extra `p` fields are not copied. Only after the
+new event commits does the account write a private kind-5 request for
+`30000:<owner>:+zillion:contacts`. The code migration is scheduled for removal
+on 2027-04-23. The initial local legacy snapshot shares the authorization wave
+with the other contact snapshots; when 13300 exists, that wrapper is ignored
+without being decrypted or presented.
 Removing a contact keeps history and suspends sending/listening; re-adding
 resumes the available recovery interval.
 
@@ -427,7 +436,7 @@ recursive sync loop. NostrDB quota, signer lock and storage errors remain visibl
 The shared encrypted session outbox now has independent serial local and remote
 processors. Local self sends never wait behind relay publication, channel setup
 or the network pause. Remote entries use the exact prepared-envelope checkpoint before
-publication. With libp2r2p 0.11.35, self entries may also start their local commit
+publication. With libp2r2p 0.11.36, self entries may also start their local commit
 while the initial encrypted checkpoint is in flight. They remain hidden and
 ineligible for saved/publication/cleanup until admission, then become saved once
 the local commit succeeds. Remote local persistence still starts only after the
