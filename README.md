@@ -117,17 +117,18 @@ The snapshot is read/decrypted after unlock, in parallel with local contacts,
 and displayed only after membership is confirmed. Its first render takes
 priority over initial bulk channel and read-anchor work; opening a chat bypasses
 that priority window immediately.
-Initial cache reads for contact order and chat summaries have a maximum wait
-of 1.5 seconds at widths up to 718px, or 250ms otherwise. Ready caches render
-without a minimum delay; contact confirmation and resizing do not restart the
-selected budget.
+Initial fallback reads for contact profiles and chat summaries have a maximum
+wait of 1.5 seconds at widths up to 718px, or 250ms otherwise. A contact-order
+ledger avoids that wait when present. Ready caches render without a minimum
+delay; contact confirmation and resizing do not restart the selected budget.
 Source existence is checked before cached messages seed bubbles or prefetch.
 Missing/corrupt caches fall back to ordinary reads. New previews appear before
 their reference metadata finishes, using translated placeholders when necessary.
-Startup positions stay stable until the initial message snapshots settle, for
-at most three seconds; reference enrichment never changes positions. Afterward
-new messages and deletions reorder live. The snapshot has a 1 MiB plaintext
-limit and stores only ciphertext in its disposable IndexedDB queue.
+Startup positions stay stable until the initial rows with messages settle, for
+at most three seconds; empty contacts cannot hold this freeze. Reference
+enrichment never changes positions. Afterward new messages and deletions
+reorder live. The snapshot has a 1 MiB plaintext limit and stores only
+ciphertext in its disposable IndexedDB queue.
 Unread badges are exact incoming-message counts above the synced read anchor,
 capped at 99+; the count stops reading after the badge limit and never counts
 self-chat or outgoing messages. Visible rows also request a recent-window
@@ -898,17 +899,15 @@ rate-limited publications do not block profile reads. Profile,
 contact and messaging recovery keep their existing backoff policy and standard
 WebSocket events; relay origin/policy claims are ignored.
 
-The home contact strip first sorts from petnames and cached profiles, including
-the owner's local name, with pinned contacts first. Shared local reads have a
-250 ms maximum wait and no minimum delay; missing names use the usual fallback.
-That initial order stays fixed while the first nonempty contact batch resolves
-profile readiness, for at most 30 seconds from list availability. One uncached
-contact cannot hold back the initial cached order. A failed, empty or offline
-first lookup also completes readiness. Names/avatars remain reactive throughout;
-after readiness or the deadline, alphabetical ordering stays live. Returning to
-home does not restart either stage. Profile cache writes preserve public
-signed kind-0 events, report both rejected promises and `ok: false` results, and
-never occupy remote-query slots or delay ordering.
+The home contact strip restores its last stable order from one encrypted,
+account-scoped IndexedDB snapshot. Removed peers are filtered, new contacts are
+appended and pinned contacts keep priority. The snapshot contains only ordered
+IDs; names and avatars refresh through a batched local kind-0 read of up to 64
+authors instead of one query per contact. Without a usable snapshot, cached
+profiles and petnames seed the order using the 1.5s mobile/250ms desktop
+fallback. That seed stays fixed while the first profile cohort settles, for at
+most 30 seconds. Names/avatars remain reactive throughout; after readiness or
+the deadline, alphabetical ordering stays live and is persisted with debounce.
 Avatar presentation is shared across home, contact search/listing and profiles:
 already prepared photos and pending URL lookups are reused, and a failed update
 keeps the last valid photo on every screen. Initial loading lasts at most 22 seconds

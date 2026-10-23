@@ -13,7 +13,8 @@ import { onOnline } from 'libp2r2p/network'
 import { useGlobalStore, useMemo, useStore, useTask } from '#f'
 import { createSelfChat, createChat } from '#services/self-chat.js'
 import { createProfiles, attachProfiles, observeProfile } from '#services/profiles.js'
-import { createContactOrder } from '#services/contact-order.js'
+import { createContactOrder, orderHomeContacts } from '#services/contact-order.js'
+import { createContactOrderCache } from '#services/contact-order-cache.js'
 import { contactName, profileName } from '#helpers/profile-presentation.js'
 import avatarCache from '#services/avatar-cache.js'
 import { createAvatars, attachAvatars } from '#services/avatars.js'
@@ -222,7 +223,7 @@ function useInitConversationOrder (account) {
       const event = latestConversationMessage(summaries[peer], peer === owner ? self : conversations[peer]?.messages)
       return { contact: { pubkey: peer }, lastMessageAt: event ? new Date(event.created_at * 1000).toISOString() : '' }
     }).filter(row => row.lastMessageAt || row.contact.pubkey === owner).toSorted((a, b) => b.lastMessageAt.localeCompare(a.lastMessageAt))
-    runtime.order?.reconcile(rows, peers, summaries)
+    runtime.order?.reconcile(rows, summaries)
   })
 }
 
@@ -374,7 +375,25 @@ function useInitAvatars (account) {
 
 function useInitProfiles (account) {
   const retained = useMemo(() => new Map())
-  const runtime = useMemo(() => ({ service: null, order: null, owner: null }))
+  const runtime = useMemo(() => ({ service: null, order: null, owner: null, orderCache: null, orderCacheTimer: null, pendingOrder: null }))
+  const flushOrderCache = () => {
+    clearTimeout(runtime.orderCacheTimer)
+    runtime.orderCacheTimer = null
+    const ids = runtime.pendingOrder
+    runtime.pendingOrder = null
+    if (!ids || !runtime.orderCache) return Promise.resolve()
+    return runtime.orderCache.write(ids).catch(error => { if (runtime.owner) console.warn('Could not cache contact order', error) })
+  }
+  const scheduleOrderCache = ids => {
+    if (!runtime.orderCache) return
+    runtime.pendingOrder = [...ids]
+    if (runtime.orderCacheTimer) return
+    runtime.orderCacheTimer = setTimeout(() => { flushOrderCache() }, 250)
+  }
+  const visibleContactIds = (state = account.contactOrder$()) => orderHomeContacts(
+    [...account.people$().filter(person => person.saved !== false), account.person$()],
+    state
+  ).map(person => person.id)
   // Establish contact-owned work before local-only avatars can finish a local miss.
   account.prepareContactProfiles = (owner, contacts, { start = false } = {}) => {
     if (runtime.owner !== owner) return
@@ -406,21 +425,36 @@ function useInitProfiles (account) {
     })
     runtime.service = service
     runtime.owner = owner
+    const orderCache = globalThis.indexedDB ? createContactOrderCache({ owner, signer: window.nostr }) : null
+    runtime.orderCache = orderCache
     const own = service.retain(owner, { remote: false })
     const order = createContactOrder({
       initialReady: pubkey => retained.get(pubkey)?.initialReady,
       localReady: pubkey => pubkey === owner ? own.localReady : retained.get(pubkey)?.localReady,
       nameFor: (pubkey, profile, contact) => pubkey === owner ? profileName(profile) : contactName(profile, contact?.petname, npubEncode(pubkey)),
       self: { id: 'user', pubkey: owner },
-      onChange: state => { if (runtime.order === order) account.contactOrder$(state) }
+      onChange: state => {
+        if (runtime.order !== order) return
+        account.contactOrder$(state)
+        if (state.alphabetical && !demoEnabled) scheduleOrderCache(visibleContactIds(state))
+      }
     })
     runtime.order = order
+    orderCache?.read().then(ids => {
+      if (runtime.order === order && ids.length) order.hydrate(ids)
+    }).catch(error => { if (runtime.owner === owner) console.warn('Could not restore contact order', error) })
+    const flush = () => { flushOrderCache() }
+    window.addEventListener('pagehide', flush)
     const detach = attachProfiles(service)
     cleanup(() => {
+      window.removeEventListener('pagehide', flush)
+      const flushing = flushOrderCache()
       order.close(); runtime.order = null
       for (const interest of retained.values()) interest.release()
       retained.clear()
       own.release(); detach(); service.close(); runtime.service = null
+      flushing.finally(() => orderCache?.close()).catch(() => {})
+      runtime.orderCache = null
       runtime.owner = null
       account.directory$({}); account.contactOrder$({ ids: [], alphabetical: false })
     })
@@ -432,6 +466,15 @@ function useInitProfiles (account) {
     if (!owner || contactsOwner !== owner || state !== 'loaded') return
     account.prepareContactProfiles(owner, contacts)
     runtime.order?.reconcile(contacts)
+  })
+  useTask(({ track }) => {
+    const [owner, contactsOwner, state] = track(() => [
+      account.pubkey$(), account.contactsOwner$(), account.contactOrder$(), account.contacts$(),
+      account.directory$(), account.profile$(), account.selfPinned$()
+    ])
+    if (demoEnabled || !owner || contactsOwner !== owner || !state.alphabetical) return
+    const ids = visibleContactIds(state)
+    if (ids.length) scheduleOrderCache(ids)
   })
   useTask(({ track }) => { track(() => [account.recovery$(), account.retry$()]); runtime.service?.recoverLocal() })
   useTask(({ cleanup }) => cleanup(() => { for (const interest of retained.values()) interest.release(); retained.clear() }))

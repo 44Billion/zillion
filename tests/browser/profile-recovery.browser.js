@@ -256,8 +256,11 @@ test('shared profiles recover and avatars pulse only before their first presenta
       if (result.result.value) { appContext = context; break }
     }
     assert.ok(appContext)
+    await browser.until(() => evaluate('profileRecovery.account.contactOrder$().alphabetical'), 'contact order stable before reload')
+    const previousVisibleOrder = await evaluate("Array.from(document.querySelectorAll('.route-page[data-active=true] .contact-item')).map(item=>item.dataset.contactId)")
+    await evaluate('new Promise(resolve => setTimeout(resolve, 500))')
     // Persist one uncached contact among known profiles before reloading. Its
-    // remote lookup stays held; cached peers must still paint in name order.
+    // remote lookup stays held; the persisted order must paint and append it.
     const missingSecret = generateSecretKey()
     const missingPeer = getPublicKey(missingSecret)
     await evaluate(`window.napp.eventStore.addPersonalCopy({kind:30000,created_at:${ownTimestamp++},tags:[['d','+zillion:contacts'],['p','${peers[3]}'],['p','${missingPeer}'],['p','${peers[1]}'],['p','${peers[0]}'],['p','${peers[2]}','','','p']],content:''},{context:''})`)
@@ -277,19 +280,32 @@ test('shared profiles recover and avatars pulse only before their first presenta
     }, appContext.sessionId)
     // Reload through the parent's iframe URL, retaining the trusted bridge marker.
     await browser.evaluate(`(() => {const frame=[...document.querySelectorAll('app-window iframe')].find(frame=>frame.src.startsWith('${origin}'));frame.setAttribute('src',frame.src)})()`)
-    await browser.until(() => evaluate(`globalThis.__profileRecoveryHoldAll && window.profileRecovery?.account.contactsState$()==='loaded' && !profileRecovery.account.contactOrder$().localPending && profileRecovery.account.directory$()['${peers[0]}']?.name==='Aaron' && __contactBootFrames.length>0`), 'partially cached startup paints before remote completion', 5000)
+    await browser.until(() => evaluate('globalThis.__profileRecoveryHoldAll && window.profileRecovery?.account.contactsState$()===\'loaded\' && !profileRecovery.account.contactOrder$().localPending && __contactBootFrames.length>0'), 'persisted startup order paints before profile completion', 5000)
     assert.equal(await evaluate('profileRecovery.account.contactOrder$().alphabetical'), false, 'the missing contact still owns its first lookup')
-    const expectedOrder = [peers[2], 'user', peers[0], peers[1], missingPeer, peers[3]]
+    const expectedOrder = [...previousVisibleOrder, missingPeer]
     const bootFrames = await evaluate('__contactBootFrames')
-    assert.deepEqual(bootFrames[0].ids, expectedOrder, 'the first peer frame already uses cached names')
+    assert.deepEqual(bootFrames[0].ids, expectedOrder, 'the first peer frame reuses the persisted order and appends the new contact')
     assert.ok(bootFrames[0].at < 5000, 'the initial cached order does not wait thirty seconds')
+    await browser.until(() => evaluate('profileRecovery.state.localProfileQueries.some(query => query.authors.length > 1)'), 'contact profiles enter one local batch')
+    assert.equal(await evaluate('profileRecovery.state.localProfileQueries.filter(query => query.authors.length > 1).length'), 1, 'contact profile names are read as one batch')
+    await browser.until(() => evaluate(`profileRecovery.account.directory$()['${peers[0]}']?.name==='Aaron'`), 'batched local profile names arrive while remote lookups stay held').catch(async error => {
+      console.log('Contact batch diagnostic:', await evaluate(`({
+        queries: profileRecovery.state.localProfileQueries.map(query => ({ authors: query.authors.length, resultCount: query.resultCount, error: query.error })),
+        directory: Object.fromEntries(Object.entries(profileRecovery.account.directory$()).map(([pk,profile])=>[pk,profile.name])),
+        order: profileRecovery.account.contactOrder$()
+      })`).catch(diagnostic => ({ diagnostic })))
+      throw error
+    })
     console.log(`Partially cached contacts: first peer frame in ${Math.round(bootFrames[0].at)} ms; remote lookup still pending.`)
     assert.equal(await evaluate("document.querySelector('.route-page[data-active=true] .contact-list').scrollLeft"), 0)
     await browser.until(() => evaluate('profileRecovery.state.held.length>0'), 'cached remote refresh still pending')
     await evaluate('testNavigation.pushState(null,"","/contacts")')
     await evaluate('testNavigation.pushState(null,"","/")')
-    await browser.until(() => evaluate(`document.querySelectorAll('.route-page[data-active=true] .contact-item').length===${expectedOrder.length}`), 'retained home is visible again')
-    assert.deepEqual(await evaluate("Array.from(document.querySelectorAll('.route-page[data-active=true] .contact-item')).map(item=>item.dataset.contactId)"), expectedOrder, 'route navigation preserves the cached seed')
+    const retainedOrder = await browser.until(() => evaluate(`(() => {
+      const ids = Array.from(document.querySelectorAll('.route-page[data-active=true] .contact-item')).map(item => item.dataset.contactId)
+      return ids.length === ${expectedOrder.length} ? ids : null
+    })()`), 'retained home is visible again')
+    assert.deepEqual(retainedOrder, expectedOrder, 'route navigation preserves the cached seed')
     await evaluate('globalThis.__profileRecoveryHoldAll=false;profileRecovery.state.held.splice(0).forEach(reply=>reply())')
     await browser.until(() => evaluate('profileRecovery.account.contactOrder$().alphabetical'), 'remote completion releases the final alphabetical order')
     await browser.send('Page.removeScriptToEvaluateOnNewDocument', { identifier: bootScript.identifier }, appContext.sessionId)

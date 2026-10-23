@@ -3,6 +3,9 @@ import { eventToProfile, getProfile, selectPreferredProfile } from '#helpers/nos
 import { createRelayRead, REFRESH_MS } from './relay-read.js'
 
 const hex = value => /^[0-9a-f]{64}$/.test(value || '')
+const LOCAL_PROFILE_BATCH_SIZE = 64
+const LOCAL_PROFILE_RESULT_LIMIT = 200
+const LOCAL_PROFILE_BATCH_CONCURRENCY = 2
 
 export function createProfiles ({ owner, eventStore, onProfile = () => {}, onError = () => {}, checkOnline = isOnline, watchOnline = onOnline, queryLatest, getEvents, now = Date.now, retryDelays, timeout, remote = true }) {
   const entries = new Map()
@@ -16,6 +19,9 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
   let probe
   let stream
   let streamFailed = false
+  const localQueue = new Set()
+  let localBatchScheduled = false
+  let localBatchesActive = 0
   const interested = entry => remote && entry.pubkey !== owner && [...entry.consumers].some(consumer => consumer.remote)
   const current = entry => !lifetime.signal.aborted && entries.get(entry.pubkey) === entry
   function notifyInitial (entry) {
@@ -136,22 +142,91 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
       read: createRelayRead({ pubkey, kind: 0, now, retryDelays, cooldowns, queryLatest, getEvents, timeout })
     }
     entries.set(pubkey, entry)
-    readLocal(entry)
+    queueLocal(entry)
     return entry
   }
-  function readLocal (entry) {
-    entry.localFailed = false
-    entry.local = getProfile(entry.pubkey, { eventStore }).then(profile => { update(entry, profile); return profile })
-      .catch(error => { entry.localFailed = true; if (current(entry)) onError(error); return null })
-      .finally(() => {
-        entry.localDone = true
-        if (!interested(entry) || offline) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
-        if (offline) finishInitial(entry)
-        else notifyInitial(entry)
-        schedule()
+  function settleLocal (entry, profile) {
+    entry.localDone = true
+    if (!interested(entry) || offline) { entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile) }
+    if (offline) finishInitial(entry)
+    else notifyInitial(entry)
+    entry.localState.resolve(profile)
+    entry.localSnapshot.resolve(profile)
+    schedule()
+  }
+  async function readLocalProfiles (pubkeys) {
+    const { results = [] } = await eventStore.query({
+      kinds: [0],
+      authors: pubkeys,
+      limit: LOCAL_PROFILE_RESULT_LIMIT
+    })
+    const profiles = new Map()
+    for (const event of results) {
+      const profile = eventToProfile(event)
+      if (!profile) continue
+      profiles.set(event.pubkey, selectPreferredProfile(profiles.get(event.pubkey), profile))
+    }
+    const missing = pubkeys.filter(pubkey => !profiles.has(pubkey))
+    if (results.length >= LOCAL_PROFILE_RESULT_LIMIT && missing.length) {
+      if (pubkeys.length === 1) {
+        const profile = await getProfile(pubkeys[0], { eventStore })
+        if (profile) profiles.set(pubkeys[0], profile)
+      } else {
+        const middle = Math.ceil(pubkeys.length / 2)
+        const [left, right] = await Promise.all([
+          readLocalProfiles(pubkeys.slice(0, middle)),
+          readLocalProfiles(pubkeys.slice(middle))
+        ])
+        for (const [pubkey, profile] of left) profiles.set(pubkey, profile)
+        for (const [pubkey, profile] of right) profiles.set(pubkey, profile)
+      }
+    }
+    return profiles
+  }
+  async function runLocalBatch (batch) {
+    let profiles
+    try { profiles = await readLocalProfiles(batch.map(entry => entry.pubkey)) } catch (error) {
+      if (!lifetime.signal.aborted) onError(error)
+      for (const entry of batch) {
+        if (!current(entry)) continue
+        entry.localFailed = true
+        settleLocal(entry, null)
+      }
+      return
+    }
+    for (const entry of batch) {
+      if (lifetime.signal.aborted) break
+      const profile = profiles.get(entry.pubkey) || null
+      if (current(entry) && profile) update(entry, profile)
+      if (current(entry)) settleLocal(entry, profile)
+    }
+  }
+  function pumpLocalBatches () {
+    while (!lifetime.signal.aborted && localBatchesActive < LOCAL_PROFILE_BATCH_CONCURRENCY && localQueue.size) {
+      const batch = [...localQueue].slice(0, LOCAL_PROFILE_BATCH_SIZE)
+      for (const entry of batch) localQueue.delete(entry)
+      localBatchesActive++
+      runLocalBatch(batch).catch(onError).finally(() => {
+        localBatchesActive--
+        if (!lifetime.signal.aborted && localQueue.size) scheduleLocalBatch()
       })
+    }
+  }
+  function scheduleLocalBatch () {
+    if (localBatchScheduled || lifetime.signal.aborted) return
+    localBatchScheduled = true
+    queueMicrotask(() => {
+      localBatchScheduled = false
+      pumpLocalBatches()
+    })
+  }
+  function queueLocal (entry) {
+    entry.localFailed = false
+    entry.localState = Promise.withResolvers()
+    entry.local = entry.localState.promise
     entry.localSnapshot = Promise.withResolvers()
-    entry.local.then(entry.localSnapshot.resolve)
+    localQueue.add(entry)
+    scheduleLocalBatch()
   }
   const stopOnline = watchOnline(() => {
     if (lifetime.signal.aborted) return
@@ -189,7 +264,7 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     recoverLocal () {
       if (lifetime.signal.aborted) return
       if (streamFailed) openLocalStream()
-      for (const entry of entries.values()) if (entry.localFailed && entry.consumers.size) readLocal(entry)
+      for (const entry of entries.values()) if (entry.localFailed && entry.consumers.size) queueLocal(entry)
     },
     retain (pubkey, { remote = true, onProfile, onInitialState } = {}) {
       if (!hex(pubkey) || lifetime.signal.aborted) {
@@ -221,7 +296,15 @@ export function createProfiles ({ owner, eventStore, onProfile = () => {}, onErr
     close () {
       lifetime.abort(); stopOnline(); clearTimeout(timer)
       stream?.return().catch(() => {})
-      for (const entry of entries.values()) { entry.controller?.abort(); entry.ready.resolve(entry.profile); entry.initial.resolve(entry.profile); entry.localSnapshot.resolve(null); entry.consumers.clear() }
+      localQueue.clear()
+      for (const entry of entries.values()) {
+        entry.controller?.abort()
+        entry.ready.resolve(entry.profile)
+        entry.initial.resolve(entry.profile)
+        entry.localState?.resolve(null)
+        entry.localSnapshot.resolve(null)
+        entry.consumers.clear()
+      }
       entries.clear(); cooldowns.clear()
     }
   }

@@ -45,6 +45,12 @@ NIP-19/NIP-05 identifiers through point profile lookups; profile cache is shared
 with home and chat. `/profile/:contactId` persists contact and pin changes.
 Pinning persists in the override entry and profile editing remains a local
 preview; removing a contact clears its pin.
+Home restores the last stable contact order from one encrypted disposable
+IndexedDB snapshot containing only owner and ordered IDs. Hydration runs beside
+contact loading, filters removed peers and appends new ones before the first
+paint. Profile names arrive through coalesced local kind-0 batches rather than
+one query per contact. The snapshot is rewritten with a short debounce after
+the order stabilizes or membership changes.
 No bottom navigation is added.
 
 ## Delivery and storage

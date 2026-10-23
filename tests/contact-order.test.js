@@ -134,6 +134,36 @@ test('a partial cache seeds the first peer paint, including self, and remote nam
   assert.deepEqual(f.visible(), ['b', 'a', 'c', 'user'])
 })
 
+test('a persisted visual order hydrates immediately and filters membership without waiting for profile reads', async t => {
+  const a = 'a'.repeat(64); const b = 'b'.repeat(64); const c = 'c'.repeat(64)
+  let state
+  const order = createContactOrder({
+    initialReady: () => Promise.resolve(null),
+    self: { id: 'user', pubkey: 'd'.repeat(64) },
+    onChange: value => { state = value }
+  })
+  t.after(() => order.close())
+  order.hydrate(['user', c, a, 'removed'])
+  order.reconcile([contact(b), contact(a), contact(c)])
+  assert.equal(state.localPending, false)
+  assert.equal(state.alphabetical, false)
+  assert.deepEqual(state.ids, ['user', c, a, b])
+
+  let late
+  const second = createContactOrder({
+    initialReady: () => new Promise(() => {}),
+    localReady: () => new Promise(() => {}),
+    self: { id: 'user', pubkey: 'd'.repeat(64) },
+    onChange: value => { late = value }
+  })
+  t.after(() => second.close())
+  second.reconcile([contact(b), contact(a), contact(c)])
+  assert.equal(late.localPending, true)
+  second.hydrate(['user', c, a])
+  assert.equal(late.localPending, false)
+  assert.deepEqual(late.ids, ['user', c, a, b])
+})
+
 test('local names form one snapshot regardless of read order or faster remote metadata', async t => {
   const f = cachedFixture(t)
   f.order.reconcile([contact('b'), contact('a'), contact('c')])

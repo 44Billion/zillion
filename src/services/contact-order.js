@@ -15,6 +15,8 @@ export function createContactOrder ({ initialReady, localReady, nameFor, self, o
   let localPending = false
   let cohort = []
   let contactsById = new Map()
+  let hydratedIds = []
+  let cacheSeeded = false
   const pending = new Map()
   const localReads = new Set()
   const localProfiles = new Map()
@@ -31,6 +33,14 @@ export function createContactOrder ({ initialReady, localReady, nameFor, self, o
     emit()
   }
   const check = () => { if (started && !localPending && !pending.size) finish() }
+  const applyHydrated = () => {
+    if (!cacheSeeded) return
+    const members = new Set(ids)
+    const next = hydratedIds.filter(id => members.has(id))
+    const seen = new Set(next)
+    for (const id of ids) if (!seen.has(id)) next.push(id)
+    ids = next
+  }
   const finishLocal = () => {
     if (closed || !localPending) return
     localPending = false
@@ -54,6 +64,7 @@ export function createContactOrder ({ initialReady, localReady, nameFor, self, o
       const seen = new Set(ids)
       for (const contact of contacts) if (!seen.has(contact.pubkey)) { ids.push(contact.pubkey); seen.add(contact.pubkey) }
       if (self && !seen.has(self.id)) ids.push(self.id)
+      applyHydrated()
       for (const [id] of pending) {
         if (!members.has(id) || contacts.some(contact => contact.pubkey === id && contact.petname)) pending.delete(id)
       }
@@ -61,7 +72,7 @@ export function createContactOrder ({ initialReady, localReady, nameFor, self, o
       if (!started && start && contacts.length) {
         started = true
         timer = setTimeout(finish, timeout)
-        if (localReady) {
+        if (localReady && !cacheSeeded) {
           localPending = true
           cohort = [...contacts.map(contact => ({ id: contact.pubkey, pubkey: contact.pubkey })), ...(self ? [self] : [])]
           localTimer = setTimeout(finishLocal, localTimeout)
@@ -89,6 +100,27 @@ export function createContactOrder ({ initialReady, localReady, nameFor, self, o
       }
       emit()
       if (localPending && !localReads.size) finishLocal()
+      check()
+    },
+    hydrate (values) {
+      if (closed || !Array.isArray(values)) return
+      const next = []
+      const seen = new Set()
+      for (const id of values) {
+        if (id !== 'user' && !/^[0-9a-f]{64}$/.test(id || '')) continue
+        if (seen.has(id)) continue
+        seen.add(id); next.push(id)
+        if (next.length === 512) break
+      }
+      hydratedIds = next
+      if (!next.length) return
+      cacheSeeded = true
+      localPending = false
+      clearTimeout(localTimer)
+      localReads.clear()
+      localProfiles.clear()
+      applyHydrated()
+      emit()
       check()
     },
     close () { closed = true; clearTimeout(timer); clearTimeout(localTimer); pending.clear(); localReads.clear(); localProfiles.clear(); contactsById.clear(); cohort = [] }

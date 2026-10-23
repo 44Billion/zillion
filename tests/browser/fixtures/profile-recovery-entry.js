@@ -10,7 +10,27 @@ import { decryptPersonalCopy } from '#services/chat-references.js'
 installPrivateChatFixture()
 for (const event of globalThis.__profileRecoveryRelayLists ?? []) window.dmTest.events.set(event.id, event)
 const originalGetEvents = relayPool.getEvents.bind(relayPool)
-const state = { peer: null, profiles: [], requests: [], frames: [], releaseAt: 0, holdPeers: [], held: [] }
+const state = {
+  peer: null, profiles: [], requests: [], frames: [], releaseAt: 0, holdPeers: [], held: [],
+  localProfileQueries: []
+}
+const originalQuery = window.napp.eventStore.query.bind(window.napp.eventStore)
+window.napp.eventStore.query = (...args) => {
+  const filter = args[0]
+  if (Array.isArray(filter?.authors) && Array.isArray(filter?.kinds) && filter.kinds.length === 1 && filter.kinds[0] === 0) {
+    const record = { authors: [...filter.authors], at: Date.now(), resultCount: null, error: null }
+    state.localProfileQueries.push(record)
+    const query = () => originalQuery(...args).then(result => {
+      record.resultCount = result.results?.length ?? null
+      return result
+    }, error => {
+      record.error = error.message
+      throw error
+    })
+    return query()
+  }
+  return originalQuery(...args)
+}
 const pool = new RelayPool({
   WebSocket: class ProfileRelaySocket {
     constructor (url) {

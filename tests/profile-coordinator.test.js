@@ -14,7 +14,7 @@ const response = (pubkey, profile, error, relay = 'wss://profiles.test') => ({
 const temporary = (extra = {}) => Object.assign(new Error('rate-limited: busy'), { category: 'relay', ...extra })
 function fixture (t, { query, local = [], readLocal, persist, timeout } = {}) {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
-  const state = { online: true, reads: [], calls: [], saved: [], updates: [], subscriptions: 0, errors: [] }
+  const state = { online: true, reads: [], localQueries: [], calls: [], saved: [], updates: [], subscriptions: 0, errors: [] }
   let wake
   let next
   let closed = false
@@ -26,7 +26,12 @@ function fixture (t, { query, local = [], readLocal, persist, timeout } = {}) {
   const service = createProfiles({
     owner: peers[8], timeout,
     eventStore: {
-      query: async filter => { state.reads.push(filter.authors[0]); return readLocal ? readLocal(filter) : { results: local.filter(event => event.pubkey === filter.authors[0]) } },
+      query: async filter => {
+        const authors = Array.isArray(filter.authors) ? filter.authors : []
+        state.localQueries.push({ ...filter, authors: [...authors] })
+        state.reads.push(...authors)
+        return readLocal ? readLocal(filter) : { results: local.filter(event => authors.includes(event.pubkey)) }
+      },
       subscribe: () => { state.subscriptions++; return stream },
       add: async event => { state.saved.push(event); if (persist) return await persist(event) }
     },
@@ -243,6 +248,25 @@ test('local readiness returns a cached profile or miss without waiting for any r
   gate.resolve(response(peers[0], event(0, { name: 'Fresh' }, 2)))
   await known.ready
   assert.equal((await known.localReady).name, 'Alice', 'remote refresh cannot rewrite the local snapshot')
+})
+
+test('same-turn local profile reads share one bounded author query', async t => {
+  const cached = peers.slice(0, 5).map((pubkey, index) => event(index, { name: `Cached ${index}` }))
+  const f = fixture(t, { local: cached, query: () => new Promise(() => {}) })
+  const interests = peers.slice(0, 5).map(pubkey => f.service.retain(pubkey))
+  const profiles = await Promise.all(interests.map(interest => interest.localReady))
+  assert.deepEqual(profiles.map(profile => profile.name), ['Cached 0', 'Cached 1', 'Cached 2', 'Cached 3', 'Cached 4'])
+  assert.equal(f.localQueries.length, 1)
+  assert.deepEqual(new Set(f.localQueries[0].authors), new Set(peers.slice(0, 5)))
+  assert.equal(f.localQueries[0].limit, 200)
+})
+
+test('local batch misses do not trigger one query per absent author', async t => {
+  const f = fixture(t, { local: [event(0)], query: () => new Promise(() => {}) })
+  const interests = [f.service.retain(peers[0]), f.service.retain(peers[1]), f.service.retain(peers[2])]
+  await Promise.all(interests.map(interest => interest.localReady))
+  assert.equal(f.localQueries.length, 1)
+  assert.equal(f.localQueries[0].authors.length, 3)
 })
 
 test('local read errors settle the snapshot while the first remote lookup remains owned', async t => {

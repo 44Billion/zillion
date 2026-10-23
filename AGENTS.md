@@ -764,10 +764,12 @@ needed; empty folders mark the initial structure.
   removals remain immediate.
 - `conversation-order.js` owns a single account startup cohort and stable row
   ledger, seeded from restored rows ordered by latest timestamp. Keep empty
-  self last while other previews arrive. Release the freeze on initial message
-  readiness (not reference completion), removals/errors or an absolute three-
-  second deadline. New contacts and retained routes cannot restart the cohort.
-  This order policy never gates eligible visible history work.
+  self last while other previews arrive. The cohort contains only peers present
+  in the first rows with `lastMessageAt`; contacts without a rendered
+  conversation cannot hold the freeze. Release on initial message readiness
+  (not reference completion), removals/errors or an absolute three-second
+  deadline. New contacts and retained routes cannot restart the cohort. This
+  order policy never gates eligible visible history work.
 - A shared local kind-5/1063 subscription invalidates the affected context, then
   rereads authoritative storage; do not execute deletion claims in presentation.
   New/live kind-9 messages update unopened chats; older backfills cannot replace
@@ -1716,17 +1718,22 @@ Restore the method on teardown; do not replace signer or storage providers.
 ## Initial home contact order
 
 - `services/contact-order.js` owns an account-scoped order ledger and a single
-  startup cohort from the first nonempty, locally loaded contact list. Before
-  rendering peers, seed the ledger alphabetically from shared local profile
-  snapshots and current petnames, including the implicit owner's `user` id.
-  Local reads have a maximum wait of 1.5s at widths up to 718px, otherwise 250ms,
-  selected once per account coordinator by `helpers/home-cache.js`, with no
-  minimum delay and no new profile IO;
-  missed/failed/pending reads use the normal name fallback. Keep self visible
-  during preparation. Preserve pinned priority in both stages. Then freeze the
-  ledger until every initial member is ready or the absolute 30s deadline from
-  list availability expires. Only then compare reactive names dynamically.
-  Late local results cannot reseed the ledger. Demo ordering stays immediate.
+  startup cohort from the first nonempty, locally loaded contact list.
+  `contact-order-cache.js` restores one encrypted snapshot from
+  `zillion:contact-order:v1:<owner>:idb-queue`; it contains only `owner` and
+  ordered IDs, never names or pins. Hydration filters removed peers, preserves
+  `user`, appends new contacts and paints before profile reads finish.
+  Without a valid snapshot, seed alphabetically from shared local profile
+  snapshots and petnames, keeping self visible. Persist the visible stabilized
+  order with a 250ms debounce and pagehide flush. Preserve pinned priority in
+  both stages. The 30s remote-name freeze still gates the transition to live
+  alphabetical ordering; late local results cannot reseed the ledger. Demo
+  ordering stays immediate.
+- `profiles.js` coalesces same-turn local reads in author batches of at most 64
+  with a 200-result limit. Select the preferred kind-0 per author and treat a
+  miss in an unsaturated response as final for that snapshot. Split only missing
+  authors when a response saturates. Local profile batching must not serialize
+  remote refreshes or change `ready`, `initialReady` and `localReady` semantics.
 - `profiles.js` exposes `initialReady` separately from ordinary `ready`: memory
   or valid local metadata resolves it before remote refresh; the first query
   outcome/offline also resolves it regardless of success or usable name. Reuse
