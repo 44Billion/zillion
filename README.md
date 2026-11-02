@@ -893,7 +893,7 @@ The coordinated 0.11.16 release also stops definitive live-read refusals while
 recovering transient failures with offline-aware backoff and relay cooldowns.
 The account profile coordinator and contact presentation retain their own policy.
 
-The installed libp2r2p 0.11.20 accepts optional Nostr `params` as relative
+The installed libp2r2p 0.12.1 accepts optional Nostr `params` as relative
 milliseconds or `@` Unix milliseconds, avoiding a renewed wait after delayed
 bridge delivery. Connection cooldowns apply only to the refused message type;
 rate-limited publications do not block profile reads. Profile,
