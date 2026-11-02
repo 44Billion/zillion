@@ -34,7 +34,10 @@ foundations, and build/publishing tooling. Do not describe planned features as a
 - The coordinated 0.11.23 library owns legacy index migration and the separate
   16 MiB pending-decryption FIFO. The stable account root subscribes once to
   onContentKeysChanged when available, deduplicates revisions and waits for
-  signer availability/contact membership before requesting a retry. Cleanup
+  signer availability/contact membership before requesting a retry. A new
+  content-key revision preserves a pending forced retry through those readiness
+  gates so records suspended by earlier MAC failures are reconsidered; ordinary
+  startup, resume and channel reconciliation retries remain non-forced. Cleanup
   releases the subscription. Older launchers keep startup/unlock recovery.
   Construct the session with `pendingDecryptionReady: false`; release through
   the existing home startup gate after restored rows render, or explicit route

@@ -602,13 +602,18 @@ function useInitPrivateChats (account, queue) {
     let availableApplied = false
     let wasAvailable = false
     let keysPending = true
+    let forceKeysPending = false
     let keysRevision
-    const retryPendingKeys = () => {
+    const retryPendingKeys = (force = false) => {
+      if (force) forceKeysPending = true
       if (closed || !keysPending || !availableApplied || !channelsKnown) return
+      const useForce = forceKeysPending
       keysPending = false
-      runtime.transport.retryPendingDecryptions().catch(error => {
+      forceKeysPending = false
+      runtime.transport.retryPendingDecryptions(useForce ? { force: true } : undefined).catch(error => {
         if (closed) return
         keysPending = true
+        forceKeysPending ||= useForce
         console.warn('Could not retry pending decryptions', error)
       })
     }
@@ -659,7 +664,7 @@ function useInitPrivateChats (account, queue) {
       if (closed || state.pubkey !== owner || state.revision === keysRevision) return
       keysRevision = state.revision
       keysPending = true
-      retryPendingKeys()
+      retryPendingKeys(true)
     })
     stopKeys?.ready?.catch(error => { if (!closed) console.warn('Content key notifications unavailable', error) })
     const stopOnline = onOnline(async () => {

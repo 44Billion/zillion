@@ -3,7 +3,9 @@
 With libp2r2p 0.11.23, missing content keys and MAC failures are retained as
 ciphertext in a separate 16 MiB FIFO, allowing later history to continue.
 Startup/unlock and committed content-key notifications schedule pending retries
-after initial list presentation. Recovery waits for 250 ms of channel inactivity,
+after initial list presentation. A new content-key revision forces one retry so
+packets suspended by earlier MAC failures can recover when the missing key
+arrives. Recovery waits for 250 ms of channel inactivity,
 or advances one packet after a five-second maximum wait; the active conversation
 gets priority without blocking new messages or sends. Old launchers retain
 startup/unlock recovery. MAC retries stop after three
