@@ -67,3 +67,59 @@ test('paused diagnostics preserve cause and safe reason snapshots without persis
   assert.deepEqual(result.cause.pauseReasons, result.pauseReasons)
   assert.doesNotMatch(JSON.stringify(result), /secret-body/)
 })
+
+test('aggregated cancellation diagnostics preserve only safe counters and pause context', () => {
+  const cause = new DOMException('signal is aborted without reason', 'AbortError')
+  const error = Object.assign(new Error('PRIVATE_MESSENGER_CANCELLED', { cause }), {
+    name: 'AbortError',
+    code: 'PRIVATE_MESSENGER_CANCELLED',
+    operation: 'private-messenger',
+    phase: 'paused',
+    expectedCancellation: true,
+    suppressedCount: 81,
+    pauseReasons: ['capacity'],
+    content: 'private-payload'
+  })
+
+  assert.deepEqual(privateChatDiagnostic(error, 'owner'), {
+    owner: 'owner',
+    name: 'AbortError',
+    message: 'PRIVATE_MESSENGER_CANCELLED',
+    code: 'PRIVATE_MESSENGER_CANCELLED',
+    operation: 'private-messenger',
+    phase: 'paused',
+    expectedCancellation: true,
+    suppressedCount: 81,
+    pauseReasons: ['capacity'],
+    cause: { name: 'AbortError', message: 'signal is aborted without reason', code: 20 }
+  })
+})
+
+test('capacity diagnostics include only bounded operation codes and byte aggregates', () => {
+  const error = Object.assign(new Error('PRIVATE_MESSENGER_CAPACITY_PRESSURE'), {
+    code: 'PRIVATE_MESSENGER_CAPACITY_PRESSURE',
+    queue: 'inbox',
+    usedBytes: 11792753,
+    summary: {
+      count: 81,
+      bytes: 11790601,
+      channelCount: 1,
+      buckets: [{ type: 'yell', ageBucket: '<1h', count: 79, bytes: 11772241, channelPubkey: 'secret' }],
+      codes: [
+        { type: 'yell', code: 'nostrDbSync_push_kpkr', count: 79, bytes: 11772241, payload: 'secret' },
+        { type: 'invalid', code: 'secret', count: 1, bytes: 1 }
+      ],
+      channelPubkey: 'secret'
+    },
+    content: 'secret'
+  })
+
+  assert.deepEqual(privateChatDiagnostic(error, 'owner').summary, {
+    count: 81,
+    bytes: 11790601,
+    channelCount: 1,
+    buckets: [{ type: 'yell', ageBucket: '<1h', count: 79, bytes: 11772241 }],
+    codes: [{ type: 'yell', code: 'nostrDbSync_push_kpkr', count: 79, bytes: 11772241 }]
+  })
+  assert.doesNotMatch(JSON.stringify(privateChatDiagnostic(error, 'owner')), /secret/)
+})

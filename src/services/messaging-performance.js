@@ -1,10 +1,23 @@
-const enabled = typeof IS_DEVELOPMENT !== 'undefined' && IS_DEVELOPMENT
 let traces
 const prefix = '[messaging-performance]'
 const sendTraceEvent = 'zillion:send-trace'
 
+const developmentEnabled = () => typeof IS_DEVELOPMENT !== 'undefined' && IS_DEVELOPMENT
+const productionDiagnosticsEnabled = () => globalThis.__ZILLION_MESSAGING_DIAGNOSTICS__ === true
 const optimisticSendTraceEnabled = () => globalThis.__ZILLION_SEND_TRACE__ === true
 const messagingDetailsEnabled = () => globalThis.__ZILLION_MESSAGING_DETAILS__ === true
+const messagingDiagnosticsEnabled = () => developmentEnabled() || productionDiagnosticsEnabled()
+const messagingConsoleEnabled = () => messagingDetailsEnabled() || productionDiagnosticsEnabled()
+
+function safeRelay (value) {
+  if (typeof value !== 'string') return undefined
+  try {
+    const url = new URL(value)
+    return ['ws:', 'wss:'].includes(url.protocol) ? `${url.protocol}//${url.host}` : undefined
+  } catch {
+    return undefined
+  }
+}
 
 function emitOptimisticSendTrace (detail) {
   try {
@@ -14,21 +27,40 @@ function emitOptimisticSendTrace (detail) {
 }
 
 export function recordMessagingPerformance (entry) {
-  if (!enabled) return
-  const ids = ['stage', 'eventId', 'publicationId', 'seedRecordId', 'requestId', 'parentId', 'reason', 'state']
-  const value = Object.fromEntries([...ids, 'at', 'elapsedMs', 'expediteRemainingMs', 'timelineWorkMs', 'messageCount', 'rowCount', 'uniqueCount', 'existingCount', 'insertedCount', 'blockedCount', 'expiredCount', 'storedCount', 'skippedCount'].filter(key => ids.includes(key)
-    ? typeof entry[key] === 'string' && /^[a-zA-Z0-9:_-]{1,160}$/.test(entry[key])
-    : Number.isFinite(entry[key])).map(key => [key, entry[key]]))
-  if (!value.eventId) return
-  traces ??= new Map()
-  const trace = traces.get(value.eventId) ?? []
-  trace.push(value)
-  if (trace.length > 32) trace.shift()
-  traces.delete(value.eventId); traces.set(value.eventId, trace)
-  if (traces.size > 128) traces.delete(traces.keys().next().value)
-  if (!messagingDetailsEnabled()) return
+  if (!messagingDiagnosticsEnabled()) return
+  const strings = [
+    'stage', 'source', 'action', 'eventId', 'publicationId', 'seedRecordId', 'requestId', 'parentId',
+    'reason', 'state', 'code', 'errorCode', 'operation', 'phase', 'bufferStage', 'type', 'outcome', 'pauseReason'
+  ]
+  const numbers = [
+    'at', 'elapsedMs', 'expediteRemainingMs', 'timelineWorkMs', 'messageCount', 'rowCount',
+    'uniqueCount', 'existingCount', 'insertedCount', 'blockedCount', 'expiredCount', 'storedCount',
+    'skippedCount', 'queueBytes', 'payloadBytes', 'queuedAgeMs', 'chunkIndex', 'eventCount',
+    'flushEventCount', 'remainingEvents', 'remainingInterruptedRelays', 'pendingRelayCount', 'failureCount',
+    'queuedEvents', 'queuedBytes', 'oldestQueuedMs', 'maxBytes', 'rangeStart', 'rangeEnd',
+    'recoverySince', 'bytes', 'backoffMs', 'retryAt', 'retryAfterMs', 'suppressedCount'
+  ]
+  const booleans = ['complete', 'isLast', 'expectedCancellation']
+  const isAllowed = key => {
+    if (strings.includes(key)) return typeof entry[key] === 'string' && /^[a-zA-Z0-9][a-zA-Z0-9:._-]{0,159}$/.test(entry[key])
+    if (numbers.includes(key)) return Number.isFinite(entry[key])
+    return typeof entry[key] === 'boolean'
+  }
+  const value = Object.fromEntries([...strings, ...numbers, ...booleans].filter(isAllowed).map(key => [key, entry[key]]))
+  const relay = safeRelay(entry.relay)
+  if (relay) value.relay = relay
+  if (value.eventId) {
+    traces ??= new Map()
+    const trace = traces.get(value.eventId) ?? []
+    trace.push(value)
+    if (trace.length > 32) trace.shift()
+    traces.delete(value.eventId); traces.set(value.eventId, trace)
+    if (traces.size > 128) traces.delete(traces.keys().next().value)
+  }
+  if (!messagingConsoleEnabled()) return
   console.debug(`${prefix} ${JSON.stringify(value)}`)
-  if (entry.stage === 'bubble-saved') {
+  if (entry.stage === 'bubble-saved' && value.eventId) {
+    const trace = traces?.get(value.eventId) || []
     console.groupCollapsed(`${prefix} ${value.eventId}`)
     console.table(trace)
     console.groupEnd()

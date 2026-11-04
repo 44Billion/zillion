@@ -464,6 +464,14 @@ Normal development sessions remain silent. Setting
 `globalThis.__ZILLION_MESSAGING_DETAILS__ = true` emits every sanitized record
 through `console.debug` and, at `bubble-saved`, the complete bounded table for
 that event ID.
+For production support, setting the runtime-only
+`globalThis.__ZILLION_MESSAGING_DIAGNOSTICS__ = true` enables allowlisted
+operational records, including subscription interruption/recovery and capacity
+code buckets, without enabling the development trace table. It is checked at
+record time and remains disabled by default. Repeated native `AbortError`
+cancellations are emitted by libp2r2p as one
+`PRIVATE_MESSENGER_CANCELLED` diagnostic per 30-second window with pause context
+and a suppressed count; they are not independent message failures.
 Opt-in send traces mark `send-started`, `optimistic-pending-queued`,
 `send-returned` and `timeline-projected`, with elapsed time, timeline work and
 projected message count. They are enabled at runtime by setting

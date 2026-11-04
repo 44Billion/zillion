@@ -55,6 +55,11 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Keep the bounded development trace in memory without console output by
   default. The development-only global `__ZILLION_MESSAGING_DETAILS__` flag
   enables sanitized `console.debug` records and the per-event trace table.
+  Production support may set the runtime-only
+  `__ZILLION_MESSAGING_DIAGNOSTICS__` flag to emit the same allowlisted
+  operational records without enabling development-only traces. It remains
+  silent by default and must never include payloads, ciphertext, filters or
+  channel/owner identities.
   Opt-in send traces distinguish `send-started`, `optimistic-pending-queued`,
   `send-returned` and `timeline-projected` through sanitized
   `zillion:send-trace` events while `__ZILLION_SEND_TRACE__` is enabled. Keep
@@ -1877,6 +1882,11 @@ Restore the method on teardown; do not replace signer or storage providers.
   `session-storage` is distinct from internal messenger storage/capacity pauses;
   retry the actual save and ACK before release. Self-chat/personal writes remain
   independent, and historical recovery does not gate text publication.
+- Repeated `AbortError` cancellations are aggregated by libp2r2p as
+  `PRIVATE_MESSENGER_CANCELLED` once per 30-second window. Preserve safe pause
+  reasons and suppressed counts; do not treat the count as distinct lost messages.
+  Capacity summaries may include bounded inner-message codes such as
+  `nostrDbSync_push_kpkr` without payloads or identities.
 
 ## Early message fallback
 

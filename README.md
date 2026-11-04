@@ -34,6 +34,10 @@ Private-chat errors also log copyable nested causes, the instance owner and
 relay/operation context when provided by the library;
 [recovery diagnostics](docs/private-chats.md#recovery-diagnostics) explain incomplete
 history reads and the companion library update needed for subscription context.
+For production troubleshooting, set the runtime-only
+`globalThis.__ZILLION_MESSAGING_DIAGNOSTICS__ = true` in the app console to emit
+sanitized queue, cancellation and recovery records. It is off by default and
+never enables payload, ciphertext, filter or identity logging.
 
 Self-chat text uses `libp2r2p/nip27.compactWhitespace` before sending and for
 displaying history, reply excerpts and conversation previews. Spaces and tabs

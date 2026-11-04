@@ -58,6 +58,50 @@ test('development messaging performance retains sanitized recovery archive count
   }
 })
 
+test('production messaging diagnostics require the explicit global opt-in and redact payloads', async () => {
+  const previousDevelopment = globalThis.IS_DEVELOPMENT
+  const previousDiagnostics = globalThis.__ZILLION_MESSAGING_DIAGNOSTICS__
+  const previousDebug = console.debug
+  const records = []
+  globalThis.IS_DEVELOPMENT = false
+  globalThis.__ZILLION_MESSAGING_DIAGNOSTICS__ = true
+  console.debug = value => records.push(JSON.parse(value.slice('[messaging-performance] '.length)))
+  try {
+    const { recordMessagingPerformance } = await import('../src/services/messaging-performance.js?production-diagnostics')
+    recordMessagingPerformance({
+      source: 'private-messenger',
+      action: 'subscription-interrupted',
+      operation: 'private-channel.subscribe',
+      errorCode: 'RELAY_LIVE_BUFFER_FULL',
+      relay: 'wss://relay.example/path?secret=yes',
+      queuedEvents: 190,
+      queuedBytes: 8_376_916,
+      oldestQueuedMs: 126_207,
+      maxBytes: 8_388_608,
+      channelPubkey: 'private-channel',
+      payload: 'private-payload',
+      ciphertext: 'private-ciphertext'
+    })
+    assert.deepEqual(records, [{
+      source: 'private-messenger',
+      action: 'subscription-interrupted',
+      operation: 'private-channel.subscribe',
+      errorCode: 'RELAY_LIVE_BUFFER_FULL',
+      relay: 'wss://relay.example',
+      queuedEvents: 190,
+      queuedBytes: 8_376_916,
+      oldestQueuedMs: 126_207,
+      maxBytes: 8_388_608
+    }])
+  } finally {
+    console.debug = previousDebug
+    if (previousDevelopment === undefined) delete globalThis.IS_DEVELOPMENT
+    else globalThis.IS_DEVELOPMENT = previousDevelopment
+    if (previousDiagnostics === undefined) delete globalThis.__ZILLION_MESSAGING_DIAGNOSTICS__
+    else globalThis.__ZILLION_MESSAGING_DIAGNOSTICS__ = previousDiagnostics
+  }
+})
+
 test('optimistic send trace separates synchronous return from timeline projection', async () => {
   const records = []
   const events = []
