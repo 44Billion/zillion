@@ -1710,7 +1710,9 @@ Restore the method on teardown; do not replace signer or storage providers.
 - `relay-read.js` owns app read policy for profiles and the missing public contact
   list. Consume public libp2r2p diagnostics/predicates; do not parse relay prose
   or import internal library paths. Keep refusals scoped by phase and lookup,
-  and preserve partial/native diagnostics and shared absolute relay cooldowns.
+  preserve partial/native diagnostics and shared absolute relay cooldowns, and
+  pass `rateLimitRetries: 0` to event and discovery reads so this scheduler owns
+  rate-limit retry timing.
 - Retry transient failures at 1, 2, 4... seconds capped at five minutes. A confirmed
   offline failure spends no backoff step; wait for `onOnline` rather than adding
   a connectivity polling loop. Relative millisecond or absolute `@` timestamp `params` are normalized by the library:

@@ -7,6 +7,28 @@ const pubkey = 'd'.repeat(64)
 const response = relays => ({ byPubkey: {}, requests: [{ phase: 'primary', authors: [pubkey], relays }] })
 const fail = (relay, message, extra = {}) => ({ relay, status: 'error', error: Object.assign(new Error(message), { category: 'relay', ...extra }) })
 
+test('delegates rate-limit retries for event and discovery reads', async () => {
+  const calls = []
+  const read = createRelayRead({
+    pubkey,
+    kind: 0,
+    queryLatest: async (_pubkeys, options) => {
+      await options.relayListOptions._getEvents({}, ['wss://discovery.test'], {})
+      await options._getEvents({}, ['wss://events.test'], {})
+      return response([])
+    },
+    getEvents: async (_filter, relays, options) => {
+      calls.push({ relay: relays[0], rateLimitRetries: options.rateLimitRetries })
+      return { result: [], relays: relays.map(relay => ({ relay, status: 'eose' })) }
+    }
+  })
+  read.settle(await read.query(new AbortController().signal))
+  assert.deepEqual(calls, [
+    { relay: 'wss://discovery.test', rateLimitRetries: 0 },
+    { relay: 'wss://events.test', rateLimitRetries: 0 }
+  ])
+})
+
 test('mixed outcomes retry only eligible routes, without losing relay cooldown or restarting its deadline', async t => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 10000 })
   const calls = []

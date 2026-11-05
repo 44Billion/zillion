@@ -44,7 +44,9 @@ export function createRelayRead ({ pubkey, kind, now = Date.now, retryDelays = R
       // Keep those original events if our overall attempt later times out.
       const readEvents = async (filter, relays, options) => {
         const response = await (getEvents || ((...args) => relayPool.getEvents(...args)))(filter, relays, {
-          ...options, callback: item => { if (item.type === 'event') collect(item.event); options.callback?.(item) }
+          ...options,
+          rateLimitRetries: 0,
+          callback: item => { if (item.type === 'event') collect(item.event); options.callback?.(item) }
         })
         for (const { event } of response.result || []) collect(event)
         return response
@@ -54,7 +56,14 @@ export function createRelayRead ({ pubkey, kind, now = Date.now, retryDelays = R
           kinds: [kind], signal: combined,
           ...(discoveryUnavailable ? { relaysByPubkey: { [pubkey]: discoveryUnavailable } } : {}),
           excludeRelaysByPubkey: { [pubkey]: exclusions('events') },
-          relayListOptions: { excludeRelays: exclusions('discovery'), ...(getEvents ? { _getEvents: getEvents } : {}) },
+          relayListOptions: {
+            excludeRelays: exclusions('discovery'),
+            _getEvents: (filter, relays, options) => (getEvents || ((...args) => relayPool.getEvents(...args)))(
+              filter,
+              relays,
+              { ...options, rateLimitRetries: 0 }
+            )
+          },
           _getEvents: readEvents,
           onQueryResult: request => requests.push(request)
         })
