@@ -144,7 +144,33 @@ export function installPrivateChatFixture () {
     await fixture.transport.setState(await window.napp.getSignerState({ pubkey: peer }))
     fixture.chat = createChat({ pubkey: peer, peer: owner, signer, eventStore, transport: fixture.transport, onMessages: messages => { fixture.messages = messages }, onError })
     await fixture.chat.start()
-    fixture.signer = signer; fixture.eventStore = eventStore
+    fixture.signer = signer; fixture.eventStore = eventStore; fixture.owner = owner; fixture.peer = peer
+  }
+  fixture.publishKind9IdentityPair = async (rumor, event) => {
+    if (!fixture.messenger || !fixture.owner) throw new Error('PRIVATE_CHAT_FIXTURE_NOT_READY')
+    await fixture.messenger.broadcastRumor({
+      receiverPubkeys: [fixture.owner],
+      rumor
+    })
+    await fixture.messenger.broadcastEvent({
+      receiverPubkeys: [fixture.owner],
+      event
+    })
+    return event.id
+  }
+  fixture.kind9CopySignatures = async id => {
+    const owner = await window.nostr.peekPublicKey()
+    const { results } = await window.napp.eventStore.query({ kinds: [1006], '#k': ['9'], limit: 2000 })
+    const signatures = []
+    for (const wrapper of results) {
+      if (wrapper.pubkey !== owner) continue
+      try {
+        const plaintext = await window.nostr.nip44v3.decrypt(owner, 9, '', wrapper.content)
+        const inner = JSON.parse(new TextDecoder().decode(plaintext))
+        if (inner?.id === id) signatures.push(inner.sig || '')
+      } catch {}
+    }
+    return signatures
   }
   fixture.fileStorage = async () => {
     const owner = await fixture.signer.getPublicKey()

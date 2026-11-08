@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { generateSecretKey, getPublicKey } from 'libp2r2p/key'
 import { bytesToBase16 } from 'libp2r2p/base16'
+import { finalizeEvent } from 'libp2r2p/event'
 
 export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, pubkey, performanceOnly = false, readDiagnostics = () => [] }) {
   const secret = generateSecretKey(); const peer = getPublicKey(secret)
@@ -72,6 +73,22 @@ export async function checkPrivateChats ({ browser, evaluate, grant = evaluate, 
     assert.equal(await evaluate(`selfChatAccount.conversations$()['${peer}'].messages.find(event => event.id === '${reply}').pubkey`), peer)
     assert.equal(await evaluate('dmTest.messenger.presenceTimers.size'), 1, 'peer keeps its seeder presence publisher active')
     assert.equal(await evaluate('JSON.stringify([...dmTest.events.values()]).includes("Private hello")'), false, 'relay receives encrypted content')
+
+    const identityTemplate = {
+      kind: 9,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [],
+      content: 'Identity upgrade in a distinct wrapper'
+    }
+    const signedIdentity = finalizeEvent(identityTemplate, secret)
+    await evaluate('dmTest.holdLocalWrites = true')
+    const upgraded = await evaluate(`dmTest.publishKind9IdentityPair(${JSON.stringify({ ...identityTemplate, pubkey: peer })}, ${JSON.stringify(signedIdentity)})`)
+    await browser.until(() => evaluate('dmTest.pendingLocalWrites() > 0'), 'first duplicate reserves the primary inbox')
+    await evaluate('dmTest.holdLocalWrites = false; dmTest.releaseLocalWrites()')
+    await browser.until(() => evaluate(`selfChatAccount.conversations$()['${peer}']?.messages.filter(event => event.id === '${upgraded}').length === 1`), 'one kind 9 bubble survives two wrapper deliveries', 60000)
+    assert.equal(await evaluate(`!!document.querySelector('[data-message-id="${upgraded}"] .unverified')`), false, 'signed wrapper upgrades the direct rumor')
+    assert.ok((await evaluate(`dmTest.kind9CopySignatures('${upgraded}')`)).includes(signedIdentity.sig), 'the signed full event is retained in the event store')
+    console.log('Private chats: same-event wrappers coalesce and the signed copy wins')
   }
   if (performanceOnly) {
     await evaluate('dmTest.holdRecoveryArchive = true')

@@ -191,7 +191,7 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Probes cannot guarantee any particular relay/server is reachable, nor can
   background timers guarantee immediate detection. Handle each request failure
   and clean up listeners, timers, and stale async work when consumers unmount.
-- The installed libp2r2p 0.12.14 includes the shared connectivity monitor.
+- The installed libp2r2p 0.12.15 includes the shared connectivity monitor.
   Validate against the lockfile-managed dependency; do not require a sibling link
   for this capability.
 
@@ -1185,7 +1185,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.12.14`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.12.15`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1638,6 +1638,10 @@ Restore the method on teardown; do not replace signer or storage providers.
   catalog, pin IRFS roots with grants, or renew timestamps after sync/retry.
 - Preserve existing zillion outbox/download database names and encryption scopes;
   extraction is not a pending-work migration. No legacy file-seed migration.
+- libp2r2p 0.12.15 coalesces inbox types by resolver/`D` first, then Nostr address
+  or event ID within channel and type. Signed full events outrank direct rumors
+  for the same ID; replaceable/addressable versions follow NIP-01 and hearsay
+  cannot displace direct/signed state. The event store remains the complete copy.
 
 ## Send failure feedback
 

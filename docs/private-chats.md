@@ -188,6 +188,10 @@ Internally observed network pauses share connectivity monitoring and recover eve
 without another native online event. Retryable watch failures recover by channel.
 Session inbox persistence uses `session-storage`, retries the actual reservation,
 and releases after save/ACK, leaving independent storage/account pauses intact.
+With libp2r2p 0.12.15, pending inbox entries with the same channel and type
+coalesce by Nostr address or event ID when no resolver or `D` identity applies.
+Address versions follow NIP-01, and a signed full event supersedes a rumor of
+the same ID while hearsay never displaces direct or signed state.
 Operational recovery uses 1..30s exponential backoff with 20% jitter; offline waits
 do not advance it. Historical scans/presence are not prerequisites for text sends.
 Paused diagnostics include a copied `pauseReasons` array on the error and cause;

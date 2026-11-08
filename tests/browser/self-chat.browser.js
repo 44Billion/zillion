@@ -179,7 +179,7 @@ test('real self chat persists offline, quotes inner IDs and receives event-store
     // the app's real retry control before testing write permission separately.
     await browser.until(() => evaluate('document.querySelector(".chat-date .retry-btn")?.click(); document.querySelector(".chat-timeline").dataset.historyLoaded === "true"'), 'initial history before menu interactions')
 
-    if (process.env.ZILLION_PRIVATE_ONLY === '1' || process.argv.includes('--private-performance-only')) {
+    if (process.env.ZILLION_PRIVATE_ONLY === '1' || process.argv.includes('--private-only') || process.argv.includes('--private-performance-only')) {
       // This phase exercises remote relay failures, not offline parking. Keep
       // the real connectivity monitor and answer its HTTP probes positively.
       offline = false
