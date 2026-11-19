@@ -191,7 +191,7 @@ foundations, and build/publishing tooling. Do not describe planned features as a
   Probes cannot guarantee any particular relay/server is reachable, nor can
   background timers guarantee immediate detection. Handle each request failure
   and clean up listeners, timers, and stale async work when consumers unmount.
-- The installed libp2r2p 0.12.16 includes the shared connectivity monitor.
+- The installed libp2r2p 0.12.17 includes the shared connectivity monitor.
   Validate against the lockfile-managed dependency; do not require a sibling link
   for this capability.
 
@@ -1185,7 +1185,7 @@ needed; empty folders mark the initial structure.
   devices, applies the removal optimistically and restores the message if the
   write fails. Successful deletions invalidate local and resolved references and
   prevent in-flight lookups or history replays from restoring removed events.
-- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.12.16`
+- Use public irfs/nip94/nip19 APIs from the published `libp2r2p@^0.12.17`
   package range, with the resolved release recorded in the lockfile; do not restore the local tarball.
   Hash/previews at selection; batches of at most three chunk writes on Send;
   confirm local bytes before saving metadata. Retry keeps timestamp/event/ID and
@@ -1638,7 +1638,7 @@ Restore the method on teardown; do not replace signer or storage providers.
   catalog, pin IRFS roots with grants, or renew timestamps after sync/retry.
 - Preserve existing zillion outbox/download database names and encryption scopes;
   extraction is not a pending-work migration. No legacy file-seed migration.
-- libp2r2p 0.12.16 coalesces inbox types by resolver/`D` first, then Nostr address
+- libp2r2p 0.12.17 coalesces inbox types by resolver/`D` first, then Nostr address
   or event ID within channel and type. Signed full events outrank direct rumors
   for the same ID; replaceable/addressable versions follow NIP-01 and hearsay
   cannot displace direct/signed state. The event store remains the complete copy.
@@ -1646,6 +1646,11 @@ Restore the method on teardown; do not replace signer or storage providers.
   and `lowest` from the stored wrapper kind/context and only permits remote
   payloads to lower their own class. Keep self-chat and image metadata in their
   existing non-empty `dm:` contexts; do not add app priority fields or APIs.
+- The 0.12.17 session coalesces simultaneous channel-watch rebuilds and defers
+  cold bulk history to the recent six-hour tail. A chat/home priority request
+  still schedules the normal foreground recovery workflow. Keep the existing
+  `account.prioritizeRange` calls and local conversation summaries; do not make
+  restored home rows wait for bulk history.
 
 ## Send failure feedback
 

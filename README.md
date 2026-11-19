@@ -1,6 +1,6 @@
 # Zillion
 
-With libp2r2p 0.11.23, missing content keys and MAC failures are retained as
+With libp2r2p 0.12.17, missing content keys and MAC failures are retained as
 ciphertext in a separate 16 MiB FIFO, allowing later history to continue.
 Startup/unlock and committed content-key notifications schedule pending retries
 after initial list presentation. A new content-key revision forces one retry so
@@ -11,6 +11,10 @@ gets priority without blocking new messages or sends. Old launchers retain
 startup/unlock recovery. MAC retries stop after three
 attempts, retaining the ciphertext until FIFO eviction or explicit cleanup.
 No database reset is needed for the library's known legacy queue index.
+Stored conversations share one coalesced watch rebuild, recover only the recent
+six-hour tail during cold startup, and run requested chat/home ranges ahead of
+older bulk history. Historical MAC failures are cleaned only after 30 days and
+never remove records still waiting for a content key.
 
 A private chat inspired by WhatsApp and Signal, built as a Nostr client.
 Messaging uses `libp2r2p/private-messenger`, with shared self/peer chat
@@ -722,7 +726,7 @@ Blob. Closing that instance may interrupt downloads; these local downloads are
 not promised outside the launcher. Copy/share includes caption and full nostr.alt
 URL. No file-specific quota policy is added in this release.
 
-This checkout consumes the public APIs from the published `libp2r2p@^0.11.19`
+This checkout consumes the public APIs from the published `libp2r2p@^0.12.17`
 range, with the resolved release recorded in package-lock.json. No vendored tarball or
 sibling source imports are required.
 
@@ -899,7 +903,7 @@ The coordinated 0.11.16 release also stops definitive live-read refusals while
 recovering transient failures with offline-aware backoff and relay cooldowns.
 The account profile coordinator and contact presentation retain their own policy.
 
-The installed libp2r2p 0.12.16 accepts optional Nostr `params` as relative
+The installed libp2r2p 0.12.17 accepts optional Nostr `params` as relative
 milliseconds or `@` Unix milliseconds, avoiding a renewed wait after delayed
 bridge delivery. Connection cooldowns apply only to the refused message type;
 rate-limited publications do not block profile reads. Profile,
