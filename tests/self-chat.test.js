@@ -778,6 +778,7 @@ for (const failure of ['verification', 'enqueue']) {
     await retry
     assert.equal(f.messages[0].id, id)
     assert.equal(getEventHash(sent.at(-1).event), id)
+    assert.equal(sent.at(-1).allowCapacityEgress, true)
     assert.equal(attachment.closes, 1)
     f.chat.applyOutbox([{ id, peer: pubkey, event: { ...sent.at(-1).event, id }, status: 'pending' }])
     assert.equal(f.messages[0].status, 'pending')
@@ -787,6 +788,23 @@ for (const failure of ['verification', 'enqueue']) {
     assert.equal(attachment.closes, 1)
   })
 }
+
+test('user-requested private deletion opts into capacity egress', async () => {
+  const sent = []
+  const f = fixture([wrapper(inner('Delete everywhere'))], {
+    transport: {
+      enqueue: async entry => sent.push(entry),
+      cancel: async () => {}
+    }
+  })
+  await f.chat.start()
+  const id = f.messages[0].id
+  assert.equal(await f.chat.deleteMessage(id, { everyone: true }), true)
+  assert.equal(sent.length, 1)
+  assert.equal(sent[0].deletion, true)
+  assert.equal(sent[0].allowCapacityEgress, true)
+  f.chat.close()
+})
 
 test('cancel during local preparation never enqueues and releases bytes after the reader settles', async () => {
   const entered = Promise.withResolvers()

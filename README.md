@@ -572,6 +572,11 @@ Cancel prevents a later enqueue from restoring the message. Once durably queued,
 pending and failed messages survive reload in the encrypted outbox. The initial
 preparation phase is held in memory and cannot survive closing the app before
 that durable handoff; unsubmitted composer drafts remain local to retained routes.
+User-authored text, replies, attachments and requested deletions opt into the
+private session's capacity egress. If the messenger inbox is paused only because
+of capacity, the durable user outbox can still publish while control and recovery
+traffic wait. Network, storage, signer or any compound pause still blocks remote
+user messages.
 The app root owns history/profile subscriptions and cleans them up on unmount;
 home's self avatar and last-message preview share that state.
 The open timeline caches presentation models by message and keeps calendar-day

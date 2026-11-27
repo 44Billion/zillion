@@ -339,7 +339,14 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
       if (entry.fileEvent) context.push(entry.fileEvent)
       debug(id, 'preparation-complete', startedAt)
       entry.enqueuing = true
-      await transport.enqueue({ peer, attemptStartedAt: entry.attemptStartedAt, event: { ...entry.event, pubkey }, context, requiredFiles: entry.fileEvent ? [getEventHash({ ...entry.fileEvent, pubkey })] : [] })
+      await transport.enqueue({
+        peer,
+        attemptStartedAt: entry.attemptStartedAt,
+        event: { ...entry.event, pubkey },
+        context,
+        requiredFiles: entry.fileEvent ? [getEventHash({ ...entry.fileEvent, pubkey })] : [],
+        allowCapacityEgress: true
+      })
       entry.accepted = true
     }).catch(error => {
       if (signal.aborted || entry.observed) return
@@ -479,7 +486,15 @@ export function createChat ({ pubkey, peer = pubkey, transport, eventStore, sign
     }
     return Promise.resolve().then(async () => {
       await transport?.cancel(id)
-      if (everyone && transport) await transport.enqueue({ peer, attemptStartedAt: performance.now(), event: { ...request, pubkey }, deletion: true })
+      if (everyone && transport) {
+        await transport.enqueue({
+          peer,
+          attemptStartedAt: performance.now(),
+          event: { ...request, pubkey },
+          deletion: true,
+          allowCapacityEgress: true
+        })
+      }
       return eventStore.addPersonalCopy(request, { context })
     })
       .then(result => result?.result?.ok === true)

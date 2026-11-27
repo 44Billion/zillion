@@ -1897,6 +1897,13 @@ Restore the method on teardown; do not replace signer or storage providers.
   `session-storage` is distinct from internal messenger storage/capacity pauses;
   retry the actual save and ACK before release. Self-chat/personal writes remain
   independent, and historical recovery does not gate text publication.
+- User-authored text, replies and all attachment/chunk events pass
+  `allowCapacityEgress: true` to the private-session outbox. User-requested
+  deletion envelopes do the same. This opt-in persists through retry/reload and
+  applies only when `capacity` is the sole messenger pause reason. Never apply
+  it to protocol control, presence, recovery or background synchronization
+  traffic. Network, signer, storage, session-storage and compound pauses remain
+  authoritative.
 - Repeated `AbortError` cancellations are aggregated by libp2r2p as
   `PRIVATE_MESSENGER_CANCELLED` once per 30-second window. Preserve safe pause
   reasons and suppressed counts; do not treat the count as distinct lost messages.
